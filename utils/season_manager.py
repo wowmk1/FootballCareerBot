@@ -189,13 +189,163 @@ async def check_match_day_trigger(bot=None):
     return False
 
 async def end_season():
-    """End the current season"""
+    """End the current season with relegation and promotion"""
     
     print("Season ending...")
     
     await db.age_all_players()
     
     retirements = await db.retire_old_players()
+    
+    # RELEGATION AND PROMOTION SYSTEM
+    print("Processing relegation and promotion...")
+    
+    # Get final league tables
+    pl_table = await db.get_league_table('Premier League')
+    champ_table = await db.get_league_table('Championship')
+    l1_table = await db.get_league_table('League One')
+    
+    # Relegation from Premier League (bottom 3)
+    relegated_from_pl = pl_table[-3:] if len(pl_table) >= 3 else []
+    
+    # Promotion to Premier League (top 2 from Championship)
+    promoted_to_pl = champ_table[:2] if len(champ_table) >= 2 else []
+    
+    # Relegation from Championship (bottom 3)
+    relegated_from_champ = champ_table[-3:] if len(champ_table) >= 3 else []
+    
+    # Promotion to Championship (top 2 from League One)
+    promoted_to_champ = l1_table[:2] if len(l1_table) >= 2 else []
+    
+    # Apply Premier League changes
+    async with db.pool.acquire() as conn:
+        for team in relegated_from_pl:
+            await conn.execute(
+                "UPDATE teams SET league = 'Championship' WHERE team_id = $1",
+                team['team_id']
+            )
+            # Update players in that team
+            await conn.execute(
+                "UPDATE players SET league = 'Championship' WHERE team_id = $1 AND retired = FALSE",
+                team['team_id']
+            )
+            await conn.execute(
+                "UPDATE npc_players SET team_id = $1 WHERE team_id = $1",
+                team['team_id']
+            )
+            
+            await db.add_news(
+                f"RELEGATION: {team['team_name']} Relegated",
+                f"{team['team_name']} have been relegated to the Championship after finishing in the relegation zone.",
+                "league_news",
+                None,
+                10
+            )
+            print(f"  ⬇️ {team['team_name']} relegated to Championship")
+        
+        for team in promoted_to_pl:
+            await conn.execute(
+                "UPDATE teams SET league = 'Premier League' WHERE team_id = $1",
+                team['team_id']
+            )
+            await conn.execute(
+                "UPDATE players SET league = 'Premier League' WHERE team_id = $1 AND retired = FALSE",
+                team['team_id']
+            )
+            await conn.execute(
+                "UPDATE npc_players SET team_id = $1 WHERE team_id = $1",
+                team['team_id']
+            )
+            
+            await db.add_news(
+                f"PROMOTION: {team['team_name']} Promoted!",
+                f"Congratulations to {team['team_name']} on winning promotion to the Premier League!",
+                "league_news",
+                None,
+                10
+            )
+            print(f"  ⬆️ {team['team_name']} promoted to Premier League")
+        
+        # Apply Championship changes
+        for team in relegated_from_champ:
+            await conn.execute(
+                "UPDATE teams SET league = 'League One' WHERE team_id = $1",
+                team['team_id']
+            )
+            await conn.execute(
+                "UPDATE players SET league = 'League One' WHERE team_id = $1 AND retired = FALSE",
+                team['team_id']
+            )
+            await conn.execute(
+                "UPDATE npc_players SET team_id = $1 WHERE team_id = $1",
+                team['team_id']
+            )
+            
+            await db.add_news(
+                f"{team['team_name']} Relegated to League One",
+                f"{team['team_name']} drop down to League One after a difficult season.",
+                "league_news",
+                None,
+                7
+            )
+            print(f"  ⬇️ {team['team_name']} relegated to League One")
+        
+        for team in promoted_to_champ:
+            await conn.execute(
+                "UPDATE teams SET league = 'Championship' WHERE team_id = $1",
+                team['team_id']
+            )
+            await conn.execute(
+                "UPDATE players SET league = 'Championship' WHERE team_id = $1 AND retired = FALSE",
+                team['team_id']
+            )
+            await conn.execute(
+                "UPDATE npc_players SET team_id = $1 WHERE team_id = $1",
+                team['team_id']
+            )
+            
+            await db.add_news(
+                f"{team['team_name']} Promoted to Championship!",
+                f"{team['team_name']} celebrate promotion to the Championship!",
+                "league_news",
+                None,
+                8
+            )
+            print(f"  ⬆️ {team['team_name']} promoted to Championship")
+    
+    # Announce champions
+    if pl_table:
+        champion = pl_table[0]
+        await db.add_news(
+            f"CHAMPIONS: {champion['team_name']} Win Premier League!",
+            f"{champion['team_name']} are Premier League champions with {champion['points']} points!",
+            "league_news",
+            None,
+            10
+        )
+        print(f"  🏆 Premier League Champions: {champion['team_name']}")
+    
+    if champ_table:
+        champion = champ_table[0]
+        await db.add_news(
+            f"{champion['team_name']} Win Championship Title!",
+            f"{champion['team_name']} are Championship champions with {champion['points']} points!",
+            "league_news",
+            None,
+            9
+        )
+        print(f"  🏆 Championship Champions: {champion['team_name']}")
+    
+    if l1_table:
+        champion = l1_table[0]
+        await db.add_news(
+            f"{champion['team_name']} Win League One!",
+            f"{champion['team_name']} are League One champions with {champion['points']} points!",
+            "league_news",
+            None,
+            8
+        )
+        print(f"  🏆 League One Champions: {champion['team_name']}")
     
     # Decrease contract years for all players
     async with db.pool.acquire() as conn:
@@ -245,7 +395,7 @@ async def end_season():
     
     await db.add_news(
         f"Season {config.CURRENT_SEASON} Concludes",
-        f"The season has ended! {retirements} players have retired. Contracts have been updated. New season begins soon.",
+        f"The season has ended! Promotions and relegations complete. {retirements} players have retired. Contracts updated. New season begins soon.",
         "league_news",
         None,
         10,
@@ -260,5 +410,5 @@ async def end_season():
         transfer_window_active=False
     )
     
-    print(f"Season ended. {retirements} retirements processed.")
+    print(f"Season ended. {retirements} retirements. Promotion/Relegation complete.")
     print("Ready for new season to start")
