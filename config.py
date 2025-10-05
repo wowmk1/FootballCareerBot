@@ -5,6 +5,9 @@ DISCORD_TOKEN = os.getenv('DISCORD_TOKEN')
 BOT_PREFIX = os.getenv('BOT_PREFIX', '/')
 
 # Database Configuration
+DATABASE_URL = os.getenv('DATABASE_URL')
+
+# Database Configuration
 DATABASE_PATH = os.getenv('DATABASE_PATH', 'football.db')
 
 # Game Configuration
