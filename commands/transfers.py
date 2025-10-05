@@ -1,6 +1,6 @@
 """
-Updated Transfer Commands with Transfer Window System
-COMPLETELY REPLACE your existing commands/transfers.py with this file
+Complete Transfer Commands with Transfer Window System
+FIXED: Circular import issue resolved
 """
 
 import discord
@@ -8,14 +8,6 @@ from discord import app_commands
 from discord.ext import commands
 from database import db
 import random
-from utils.transfer_window_manager import (
-    is_transfer_window_open,
-    get_pending_offers,
-    accept_transfer_offer,
-    reject_transfer_offer,
-    reject_all_offers,
-    get_current_transfer_window
-)
 
 class TransferCommands(commands.Cog):
     def __init__(self, bot):
@@ -24,6 +16,13 @@ class TransferCommands(commands.Cog):
     @app_commands.command(name="offers", description="View your current transfer offers")
     async def offers(self, interaction: discord.Interaction):
         """View pending transfer offers"""
+        
+        # Import here to avoid circular import
+        from utils.transfer_window_manager import (
+            is_transfer_window_open,
+            get_pending_offers,
+            get_current_transfer_window
+        )
         
         player = await db.get_player(interaction.user.id)
         
@@ -162,6 +161,11 @@ class TransferCommands(commands.Cog):
     async def accept_offer(self, interaction: discord.Interaction, offer_id: int):
         """Accept a transfer offer"""
         
+        from utils.transfer_window_manager import (
+            is_transfer_window_open,
+            accept_transfer_offer
+        )
+        
         player = await db.get_player(interaction.user.id)
         
         if not player:
@@ -230,6 +234,8 @@ class TransferCommands(commands.Cog):
     async def reject_offer(self, interaction: discord.Interaction, offer_id: int):
         """Reject a single offer"""
         
+        from utils.transfer_window_manager import reject_transfer_offer
+        
         player = await db.get_player(interaction.user.id)
         
         if not player:
@@ -255,6 +261,11 @@ class TransferCommands(commands.Cog):
     @app_commands.command(name="reject_all", description="Reject all current offers and stay at your club")
     async def reject_all_cmd(self, interaction: discord.Interaction):
         """Reject all pending offers"""
+        
+        from utils.transfer_window_manager import (
+            get_pending_offers,
+            reject_all_offers
+        )
         
         player = await db.get_player(interaction.user.id)
         
@@ -305,6 +316,8 @@ class TransferCommands(commands.Cog):
     @app_commands.command(name="my_contract", description="View your current contract details")
     async def my_contract(self, interaction: discord.Interaction):
         """View contract info"""
+        
+        from utils.transfer_window_manager import is_transfer_window_open
         
         player = await db.get_player(interaction.user.id)
         
@@ -457,9 +470,146 @@ class TransferCommands(commands.Cog):
         
         await interaction.response.send_message(embed=embed)
     
+    @app_commands.command(name="market_value", description="Check your estimated market value and potential suitors")
+    async def market_value(self, interaction: discord.Interaction):
+        """Show player's market value and interested clubs"""
+        
+        from utils.transfer_window_manager import is_transfer_window_open
+        
+        player = await db.get_player(interaction.user.id)
+        
+        if not player:
+            await interaction.response.send_message(
+                "❌ You haven't created a player yet! Use `/start` to begin.",
+                ephemeral=True
+            )
+            return
+        
+        if player['retired']:
+            await interaction.response.send_message(
+                "🏆 Your player has retired! Use `/start` to create a new player.",
+                ephemeral=True
+            )
+            return
+        
+        # Calculate market value
+        base_value = player['overall_rating'] * 100000
+        age_modifier = 1.0
+        if player['age'] < 23:
+            age_modifier = 1.5
+        elif player['age'] > 30:
+            age_modifier = 0.6
+        
+        estimated_value = int(base_value * age_modifier)
+        
+        # Calculate wage expectation
+        base_wage = (player['overall_rating'] ** 2) * 10
+        
+        embed = discord.Embed(
+            title=f"💰 Market Valuation - {player['player_name']}",
+            description=f"Your current market standing",
+            color=discord.Color.gold()
+        )
+        
+        embed.add_field(
+            name="📊 Player Profile",
+            value=f"⭐ Rating: **{player['overall_rating']}** OVR\n"
+                  f"🌟 Potential: **{player['potential']}** OVR\n"
+                  f"🎂 Age: **{player['age']}** years\n"
+                  f"📋 Position: **{player['position']}**",
+            inline=True
+        )
+        
+        embed.add_field(
+            name="💵 Estimated Transfer Value",
+            value=f"**£{estimated_value:,}**\n"
+                  f"{'⬆️ Youth premium' if player['age'] < 23 else '⬇️ Age discount' if player['age'] > 30 else '✅ Prime age'}",
+            inline=True
+        )
+        
+        # Determine interested leagues
+        rating = player['overall_rating']
+        potential = player['potential']
+        
+        interested_leagues = []
+        if rating >= 75 or potential >= 82:
+            interested_leagues.append("⭐ **Premier League** clubs")
+        if rating >= 65 or potential >= 72:
+            interested_leagues.append("🥈 **Championship** clubs")
+        if rating >= 55:
+            interested_leagues.append("🥉 **League One** clubs")
+        
+        if interested_leagues:
+            embed.add_field(
+                name="🔍 Clubs Interested In You",
+                value="\n".join(interested_leagues),
+                inline=False
+            )
+        else:
+            embed.add_field(
+                name="🔍 Interest Level",
+                value="⚠️ Limited interest - improve your rating!",
+                inline=False
+            )
+        
+        # Wage expectations by league
+        pl_wage = int(base_wage * 2.0)
+        champ_wage = int(base_wage * 1.0)
+        l1_wage = int(base_wage * 0.5)
+        
+        embed.add_field(
+            name="💼 Wage Expectations",
+            value=f"⭐ Premier League: **£{pl_wage:,}**/week\n"
+                  f"🥈 Championship: **£{champ_wage:,}**/week\n"
+                  f"🥉 League One: **£{l1_wage:,}**/week",
+            inline=True
+        )
+        
+        # Current contract status
+        if player['team_id'] != 'free_agent':
+            team = await db.get_team(player['team_id'])
+            embed.add_field(
+                name="📄 Current Contract",
+                value=f"🏠 **{team['team_name']}**\n"
+                      f"💰 £{player['contract_wage']:,}/week\n"
+                      f"⏳ {player['contract_years']} years left",
+                inline=True
+            )
+            
+            if player['contract_wage'] < base_wage * 0.7:
+                embed.add_field(
+                    name="💡 Contract Status",
+                    value="⚠️ You're underpaid! Look for offers during transfer windows.",
+                    inline=False
+                )
+        else:
+            embed.add_field(
+                name="📄 Current Status",
+                value="🆓 **Free Agent**\nAvailable for transfer",
+                inline=True
+            )
+        
+        state = await db.get_game_state()
+        current_week = state['current_week']
+        
+        if await is_transfer_window_open(current_week):
+            embed.add_field(
+                name="🟢 Transfer Window Open",
+                value="Use `/offers` to see actual offers from clubs!",
+                inline=False
+            )
+        else:
+            next_windows = [w for w in [4, 5, 6, 20, 21, 22] if w > current_week]
+            if next_windows:
+                embed.set_footer(text=f"Next transfer window: Week {min(next_windows)} | Use /offers during windows")
+        
+        await interaction.response.send_message(embed=embed)
+    
     @app_commands.command(name="transfer_market", description="[OLD SYSTEM - Use /offers instead]")
     async def transfer_market(self, interaction: discord.Interaction):
         """Legacy command - redirects to new system"""
+        
+        from utils.transfer_window_manager import is_transfer_window_open
         
         state = await db.get_game_state()
         current_week = state['current_week']
