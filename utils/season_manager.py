@@ -91,6 +91,10 @@ async def open_match_window(bot=None):
         else:
             print("Bot instance not provided, skipping transfer notifications")
 
+        # Simulate NPC transfers
+        from utils.transfer_window_manager import simulate_npc_transfers
+        await simulate_npc_transfers()
+
 async def close_match_window():
     """Close match window and auto-simulate unplayed matches"""
     from utils.match_simulator import simulate_match
