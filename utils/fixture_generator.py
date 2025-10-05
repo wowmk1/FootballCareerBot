@@ -17,11 +17,11 @@ async def generate_all_fixtures():
 async def generate_league_fixtures(league: str):
     """Generate round-robin fixtures for a league"""
     
-    async with db.db.execute(
-        "SELECT team_id, team_name FROM teams WHERE league = ? ORDER BY team_name",
-        (league,)
-    ) as cursor:
-        rows = await cursor.fetchall()
+    async with db.pool.acquire() as conn:
+        rows = await conn.fetch(
+            "SELECT team_id, team_name FROM teams WHERE league = $1 ORDER BY team_name",
+            league
+        )
         teams = [dict(row) for row in rows]
     
     if not teams:
@@ -68,19 +68,18 @@ async def generate_league_fixtures(league: str):
     for idx, fixture in enumerate(fixtures):
         fixture['week_number'] = (idx // fixtures_per_week) + 1
     
-    for fixture in fixtures:
-        await db.db.execute('''
-            INSERT INTO fixtures (home_team_id, away_team_id, league, competition, week_number, season, played, playable)
-            VALUES (?, ?, ?, ?, ?, ?, 0, 0)
-        ''', (
-            fixture['home_team_id'],
-            fixture['away_team_id'],
-            league,
-            league,
-            fixture['week_number'],
-            config.CURRENT_SEASON
-        ))
-    
-    await db.db.commit()
+    async with db.pool.acquire() as conn:
+        for fixture in fixtures:
+            await conn.execute('''
+                INSERT INTO fixtures (home_team_id, away_team_id, league, competition, week_number, season, played, playable)
+                VALUES ($1, $2, $3, $4, $5, $6, FALSE, FALSE)
+            ''',
+                fixture['home_team_id'],
+                fixture['away_team_id'],
+                league,
+                league,
+                fixture['week_number'],
+                config.CURRENT_SEASON
+            )
     
     print(f"✅ Generated {len(fixtures)} fixtures for {league}")
