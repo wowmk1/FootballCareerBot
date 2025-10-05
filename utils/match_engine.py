@@ -682,26 +682,33 @@ class MatchEngine:
             for p in participants:
                 player = await db.get_player(p['user_id'])
                 if player:
-                    final_rating = max(0, min(10, p['match_rating']))
+                    # FIXED: Clamp rating between 0-10 to prevent negative ratings
+                    raw_rating = p['match_rating']
+                    final_rating = max(0.0, min(10.0, raw_rating))
                     
-                    # FEATURE: FIX rating calculation
+                    # FIXED: Proper rating calculation
                     async with db.pool.acquire() as conn:
                         if player['season_apps'] > 0:
+                            # Calculate new average properly
                             old_total = player['season_rating'] * player['season_apps']
                             new_total = old_total + final_rating
                             new_avg = new_total / (player['season_apps'] + 1)
                         else:
+                            # First match of season
                             new_avg = final_rating
                         
-                        await conn.execute(
-                            "UPDATE players SET season_apps = season_apps + 1, career_apps = career_apps + 1, season_rating = $1 WHERE user_id = $2",
-                            new_avg, p['user_id']
-                        )
+                        await conn.execute("""
+                            UPDATE players 
+                            SET season_apps = season_apps + 1, 
+                                career_apps = career_apps + 1, 
+                                season_rating = $1 
+                            WHERE user_id = $2
+                        """, new_avg, p['user_id'])
                     
                     ratings_text += f"**{player['player_name']}**: {final_rating:.1f}/10\n"
             
             if ratings_text:
-                embed.add_field(name="⭐ Player Ratings", value=ratings_text, inline=False)
+                embed.add_field(name="Player Ratings", value=ratings_text, inline=False)
         
         embed.add_field(
             name="📊 Match Stats",
