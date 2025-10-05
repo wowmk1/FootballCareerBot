@@ -50,6 +50,46 @@ async def open_match_window():
     
     print(f"✅ Match window opened for Week {current_week}")
     print(f"⏰ Window closes at {window_closes.strftime('%Y-%m-%d %H:%M')}")
+    
+    # Generate transfer offers if window is open
+    from utils.transfer_window_manager import (
+        is_transfer_window_open,
+        generate_offers_for_player,
+        send_offer_notification,
+        get_current_transfer_window
+    )
+    
+    if await is_transfer_window_open(current_week):
+        print(f"📬 Generating weekly transfer offers...")
+        
+        try:
+            # Import bot instance
+            from bot import bot
+            
+            # Get all active players
+            async with db.pool.acquire() as conn:
+                players = await conn.fetch(
+                    "SELECT user_id FROM players WHERE retired = FALSE AND team_id != 'free_agent'"
+                )
+            
+            for player_row in players:
+                user_id = player_row['user_id']
+                player = await db.get_player(user_id)
+                
+                # Skip if already transferred this window
+                if player.get('last_transfer_window') == get_current_transfer_window(current_week):
+                    continue
+                
+                # Generate 2-4 offers
+                offers = await generate_offers_for_player(player, current_week, num_offers=3)
+                
+                # Send DM notification
+                if offers:
+                    await send_offer_notification(bot, user_id, len(offers))
+            
+            print(f"✅ Transfer offers generated and notifications sent")
+        except Exception as e:
+            print(f"⚠️ Could not send transfer notifications: {e}")
 
 async def close_match_window():
     """Close match window and auto-simulate unplayed matches"""
@@ -113,6 +153,13 @@ async def advance_week():
     )
     
     print(f"✅ Advanced to Week {new_week}/{config.SEASON_TOTAL_WEEKS}")
+    
+    # Check and update transfer window status
+    from utils.transfer_window_manager import check_and_update_transfer_window
+    window_active = await check_and_update_transfer_window()
+    
+    if window_active:
+        print(f"🔓 Transfer window active - Week {new_week}")
     
     if new_week <= config.SEASON_TOTAL_WEEKS:
         print(f"📅 Next match day: {next_match.strftime('%Y-%m-%d %H:%M')}")
@@ -185,7 +232,8 @@ async def end_season():
         season_started=False,
         current_week=0,
         fixtures_generated=False,
-        match_window_open=False
+        match_window_open=False,
+        transfer_window_active=False
     )
     
     print(f"✅ Season ended. {retirements} retirements processed.")
