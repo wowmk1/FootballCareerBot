@@ -50,177 +50,6 @@ class TransferCommands(commands.Cog):
             if next_window_weeks:
                 next_window = min(next_window_weeks)
                 await interaction.response.send_message(
-                    "🔒 **Transfer Window is CLOSED**\n\n"
-                    f"📅 Next window opens: **Week {next_window}**\n\n"
-                    "✅ Use `/offers` when the window opens to see clubs interested in you!",
-                    ephemeral=True
-                )
-            else:
-                await interaction.response.send_message(
-                    "🔒 **Transfer Window is CLOSED**\n\n"
-                    "Season is ending. Windows were Weeks 4-6 and 20-22.",
-                    ephemeral=True
-                )
-    
-    @app_commands.command(name="my_contract", description="View your current contract details")
-    async def my_contract(self, interaction: discord.Interaction):
-        """View contract info"""
-        
-        player = await db.get_player(interaction.user.id)
-        
-        if not player:
-            await interaction.response.send_message(
-                "❌ You haven't created a player yet! Use `/start` to begin.",
-                ephemeral=True
-            )
-            return
-        
-        if player['team_id'] == 'free_agent':
-            await interaction.response.send_message(
-                "🆓 You're a free agent! Use `/offers` during transfer windows to find a club.",
-                ephemeral=True
-            )
-            return
-        
-        team = await db.get_team(player['team_id'])
-        
-        embed = discord.Embed(
-            title="📄 Contract Details",
-            description=f"**{player['player_name']}**",
-            color=discord.Color.gold()
-        )
-        
-        embed.add_field(name="🏠 Club", value=f"**{team['team_name']}**", inline=True)
-        embed.add_field(name="🏆 League", value=team['league'], inline=True)
-        embed.add_field(name="📋 Position", value=player['position'], inline=True)
-        
-        embed.add_field(
-            name="💰 Wages",
-            value=f"**£{player['contract_wage']:,}** per week\n"
-                  f"**£{player['contract_wage'] * 52:,}** per year",
-            inline=True
-        )
-        
-        embed.add_field(
-            name="⏳ Contract Length",
-            value=f"**{player['contract_years']} years** remaining",
-            inline=True
-        )
-        
-        total_value = player['contract_wage'] * 52 * player['contract_years']
-        embed.add_field(
-            name="💵 Total Contract Value",
-            value=f"**£{total_value:,}**",
-            inline=True
-        )
-        
-        embed.add_field(
-            name="📊 Your Stats",
-            value=f"⭐ Overall: **{player['overall_rating']}**\n"
-                  f"🌟 Potential: **{player['potential']}**\n"
-                  f"🎂 Age: **{player['age']}**",
-            inline=False
-        )
-        
-        if player['contract_years'] <= 1:
-            embed.add_field(
-                name="⚠️ Contract Expiring Soon!",
-                value="Your contract expires soon. Check `/offers` during transfer windows for opportunities!",
-                inline=False
-            )
-        
-        state = await db.get_game_state()
-        current_week = state['current_week']
-        
-        if await is_transfer_window_open(current_week):
-            embed.add_field(
-                name="🟢 Transfer Window Open",
-                value="Use `/offers` to see clubs interested in you!",
-                inline=False
-            )
-        else:
-            next_windows = [w for w in [4, 5, 6, 20, 21, 22] if w > current_week]
-            if next_windows:
-                embed.set_footer(text=f"Next transfer window: Week {min(next_windows)}")
-        
-        await interaction.response.send_message(embed=embed)
-    
-    @app_commands.command(name="transfer_history", description="View your transfer history")
-    async def transfer_history(self, interaction: discord.Interaction):
-        """View past transfers"""
-        
-        player = await db.get_player(interaction.user.id)
-        
-        if not player:
-            await interaction.response.send_message(
-                "❌ You haven't created a player yet! Use `/start` to begin.",
-                ephemeral=True
-            )
-            return
-        
-        async with db.pool.acquire() as conn:
-            rows = await conn.fetch(
-                """SELECT * FROM transfers 
-                   WHERE user_id = $1 
-                   ORDER BY transfer_date DESC 
-                   LIMIT 10""",
-                interaction.user.id
-            )
-            transfers = [dict(row) for row in rows]
-        
-        if not transfers:
-            await interaction.response.send_message(
-                "📋 No transfer history yet!",
-                ephemeral=True
-            )
-            return
-        
-        embed = discord.Embed(
-            title="📜 Transfer History",
-            description=f"**{player['player_name']}** - Career moves",
-            color=discord.Color.blue()
-        )
-        
-        for transfer in transfers:
-            from_team = await db.get_team(transfer['from_team']) if transfer['from_team'] != 'free_agent' else None
-            to_team = await db.get_team(transfer['to_team']) if transfer['to_team'] != 'free_agent' else None
-            
-            from_name = from_team['team_name'] if from_team else '🆓 Free Agent'
-            to_name = to_team['team_name'] if to_team else '🆓 Free Agent'
-            
-            transfer_type_emoji = {
-                'signing': '✏️',
-                'transfer': '🔄',
-                'loan': '🔀',
-                'free_transfer': '🆓',
-                'admin_assignment': '⚙️'
-            }.get(transfer['transfer_type'], '➡️')
-            
-            date = transfer['transfer_date']
-            if isinstance(date, str):
-                date_str = date[:10]
-            else:
-                date_str = date.strftime('%Y-%m-%d')
-            
-            if transfer['fee'] > 0:
-                fee_text = f"Fee: £{transfer['fee']:,}"
-            else:
-                fee_text = "Free transfer"
-            
-            embed.add_field(
-                name=f"{transfer_type_emoji} {from_name} → {to_name}",
-                value=f"{fee_text}\n"
-                      f"💰 £{transfer['wage']:,}/week | ⏳ {transfer['contract_length']}y\n"
-                      f"📅 {date_str}",
-                inline=False
-            )
-        
-        await interaction.response.send_message(embed=embed)
-
-async def setup(bot):
-    await bot.add_cog(TransferCommands(bot))
-
-                await interaction.response.send_message(
                     f"🔒 **Transfer Window is CLOSED**\n\n"
                     f"📅 Next window opens: **Week {next_window}**\n"
                     f"⏰ Current week: **Week {current_week}**\n\n"
@@ -251,7 +80,7 @@ async def setup(bot):
         
         if not offers:
             await interaction.response.send_message(
-                "📭 **No offers yet this week!**\n\n"
+                "🔭 **No offers yet this week!**\n\n"
                 "Clubs scout during the week and make offers.\n"
                 "Check back later or wait for notifications!",
                 ephemeral=True
@@ -440,7 +269,7 @@ async def setup(bot):
         
         if not offers:
             await interaction.response.send_message(
-                "📭 You have no pending offers to reject!",
+                "🔭 You have no pending offers to reject!",
                 ephemeral=True
             )
             return
@@ -473,6 +302,161 @@ async def setup(bot):
         
         await interaction.response.send_message(embed=embed, ephemeral=True)
     
+    @app_commands.command(name="my_contract", description="View your current contract details")
+    async def my_contract(self, interaction: discord.Interaction):
+        """View contract info"""
+        
+        player = await db.get_player(interaction.user.id)
+        
+        if not player:
+            await interaction.response.send_message(
+                "❌ You haven't created a player yet! Use `/start` to begin.",
+                ephemeral=True
+            )
+            return
+        
+        if player['team_id'] == 'free_agent':
+            await interaction.response.send_message(
+                "🆓 You're a free agent! Use `/offers` during transfer windows to find a club.",
+                ephemeral=True
+            )
+            return
+        
+        team = await db.get_team(player['team_id'])
+        
+        embed = discord.Embed(
+            title="📄 Contract Details",
+            description=f"**{player['player_name']}**",
+            color=discord.Color.gold()
+        )
+        
+        embed.add_field(name="🏠 Club", value=f"**{team['team_name']}**", inline=True)
+        embed.add_field(name="🏆 League", value=team['league'], inline=True)
+        embed.add_field(name="📋 Position", value=player['position'], inline=True)
+        
+        embed.add_field(
+            name="💰 Wages",
+            value=f"**£{player['contract_wage']:,}** per week\n"
+                  f"**£{player['contract_wage'] * 52:,}** per year",
+            inline=True
+        )
+        
+        embed.add_field(
+            name="⏳ Contract Length",
+            value=f"**{player['contract_years']} years** remaining",
+            inline=True
+        )
+        
+        total_value = player['contract_wage'] * 52 * player['contract_years']
+        embed.add_field(
+            name="💵 Total Contract Value",
+            value=f"**£{total_value:,}**",
+            inline=True
+        )
+        
+        embed.add_field(
+            name="📊 Your Stats",
+            value=f"⭐ Overall: **{player['overall_rating']}**\n"
+                  f"🌟 Potential: **{player['potential']}**\n"
+                  f"🎂 Age: **{player['age']}**",
+            inline=False
+        )
+        
+        if player['contract_years'] <= 1:
+            embed.add_field(
+                name="⚠️ Contract Expiring Soon!",
+                value="Your contract expires soon. Check `/offers` during transfer windows for opportunities!",
+                inline=False
+            )
+        
+        state = await db.get_game_state()
+        current_week = state['current_week']
+        
+        if await is_transfer_window_open(current_week):
+            embed.add_field(
+                name="🟢 Transfer Window Open",
+                value="Use `/offers` to see clubs interested in you!",
+                inline=False
+            )
+        else:
+            next_windows = [w for w in [4, 5, 6, 20, 21, 22] if w > current_week]
+            if next_windows:
+                embed.set_footer(text=f"Next transfer window: Week {min(next_windows)}")
+        
+        await interaction.response.send_message(embed=embed)
+    
+    @app_commands.command(name="transfer_history", description="View your transfer history")
+    async def transfer_history(self, interaction: discord.Interaction):
+        """View past transfers"""
+        
+        player = await db.get_player(interaction.user.id)
+        
+        if not player:
+            await interaction.response.send_message(
+                "❌ You haven't created a player yet! Use `/start` to begin.",
+                ephemeral=True
+            )
+            return
+        
+        async with db.pool.acquire() as conn:
+            rows = await conn.fetch(
+                """SELECT * FROM transfers 
+                   WHERE user_id = $1 
+                   ORDER BY transfer_date DESC 
+                   LIMIT 10""",
+                interaction.user.id
+            )
+            transfers = [dict(row) for row in rows]
+        
+        if not transfers:
+            await interaction.response.send_message(
+                "📋 No transfer history yet!",
+                ephemeral=True
+            )
+            return
+        
+        embed = discord.Embed(
+            title="📜 Transfer History",
+            description=f"**{player['player_name']}** - Career moves",
+            color=discord.Color.blue()
+        )
+        
+        for transfer in transfers:
+            from_team = await db.get_team(transfer['from_team']) if transfer['from_team'] != 'free_agent' else None
+            to_team = await db.get_team(transfer['to_team']) if transfer['to_team'] != 'free_agent' else None
+            
+            from_name = from_team['team_name'] if from_team else '🆓 Free Agent'
+            to_name = to_team['team_name'] if to_team else '🆓 Free Agent'
+            
+            transfer_type_emoji = {
+                'signing': '✍️',
+                'transfer': '🔄',
+                'loan': '🔀',
+                'free_transfer': '🆓',
+                'admin_assignment': '⚙️'
+            }.get(transfer['transfer_type'], '➡️')
+            
+            date = transfer['transfer_date']
+            if isinstance(date, str):
+                date_str = date[:10]
+            else:
+                date_str = date.strftime('%Y-%m-%d')
+            
+            if transfer['fee'] > 0:
+                fee_text = f"Fee: £{transfer['fee']:,}"
+            else:
+                fee_text = "Free transfer"
+            
+            embed.add_field(
+                name=f"{transfer_type_emoji} {from_name} → {to_name}",
+                value=f"{fee_text}\n"
+                      f"💰 £{transfer['wage']:,}/week | ⏳ {transfer['contract_length']}y\n"
+                      f"📅 {date_str}",
+                inline=False
+            )
+        
+        await interaction.response.send_message(embed=embed)
+    
     @app_commands.command(name="transfer_market", description="[OLD SYSTEM - Use /offers instead]")
     async def transfer_market(self, interaction: discord.Interaction):
         """Legacy command - redirects to new system"""
@@ -495,3 +479,18 @@ async def setup(bot):
             next_window_weeks = [w for w in [4, 5, 6, 20, 21, 22] if w > current_week]
             if next_window_weeks:
                 next_window = min(next_window_weeks)
+                await interaction.response.send_message(
+                    "🔒 **Transfer Window is CLOSED**\n\n"
+                    f"📅 Next window opens: **Week {next_window}**\n\n"
+                    "✅ Use `/offers` when the window opens to see clubs interested in you!",
+                    ephemeral=True
+                )
+            else:
+                await interaction.response.send_message(
+                    "🔒 **Transfer Window is CLOSED**\n\n"
+                    "Season is ending. Windows were Weeks 4-6 and 20-22.",
+                    ephemeral=True
+                )
+
+async def setup(bot):
+    await bot.add_cog(TransferCommands(bot))
