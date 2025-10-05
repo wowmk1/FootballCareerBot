@@ -4,11 +4,11 @@ import random
 async def simulate_all_matches(week: int):
     """Simulate all matches for a given week across all leagues"""
     
-    async with db.db.execute(
-        "SELECT * FROM fixtures WHERE week_number = ? AND played = 0",
-        (week,)
-    ) as cursor:
-        rows = await cursor.fetchall()
+    async with db.pool.acquire() as conn:
+        rows = await conn.fetch(
+            "SELECT * FROM fixtures WHERE week_number = $1 AND played = FALSE",
+            week
+        )
         fixtures = [dict(row) for row in rows]
     
     results = []
@@ -27,11 +27,11 @@ async def simulate_match(fixture: dict):
     home_team = await db.get_team(fixture['home_team_id'])
     away_team = await db.get_team(fixture['away_team_id'])
     
-    async with db.db.execute(
-        "SELECT COUNT(*) as count FROM players WHERE (team_id = ? OR team_id = ?) AND retired = 0",
-        (fixture['home_team_id'], fixture['away_team_id'])
-    ) as cursor:
-        result = await cursor.fetchone()
+    async with db.pool.acquire() as conn:
+        result = await conn.fetchrow(
+            "SELECT COUNT(*) as count FROM players WHERE (team_id = $1 OR team_id = $2) AND retired = FALSE",
+            fixture['home_team_id'], fixture['away_team_id']
+        )
         has_user_players = result['count'] > 0
     
     home_strength = random.randint(0, 3) + 1
@@ -40,16 +40,15 @@ async def simulate_match(fixture: dict):
     home_score = home_strength
     away_score = away_strength
     
-    await db.db.execute('''
-        UPDATE fixtures 
-        SET home_score = ?, away_score = ?, played = 1, playable = 0
-        WHERE fixture_id = ?
-    ''', (home_score, away_score, fixture['fixture_id']))
+    async with db.pool.acquire() as conn:
+        await conn.execute('''
+            UPDATE fixtures 
+            SET home_score = $1, away_score = $2, played = TRUE, playable = FALSE
+            WHERE fixture_id = $3
+        ''', home_score, away_score, fixture['fixture_id'])
     
     await update_team_stats(fixture['home_team_id'], home_score, away_score, is_home=True)
     await update_team_stats(fixture['away_team_id'], away_score, home_score, is_home=False)
-    
-    await db.db.commit()
     
     return {
         'home_team': fixture['home_team_id'],
@@ -80,14 +79,15 @@ async def update_team_stats(team_id: str, goals_for: int, goals_against: int, is
         lost = 1
         points = 0
     
-    await db.db.execute('''
-        UPDATE teams SET
-        played = played + 1,
-        won = won + ?,
-        drawn = drawn + ?,
-        lost = lost + ?,
-        goals_for = goals_for + ?,
-        goals_against = goals_against + ?,
-        points = points + ?
-        WHERE team_id = ?
-    ''', (won, drawn, lost, goals_for, goals_against, points, team_id))
+    async with db.pool.acquire() as conn:
+        await conn.execute('''
+            UPDATE teams SET
+            played = played + 1,
+            won = won + $1,
+            drawn = drawn + $2,
+            lost = lost + $3,
+            goals_for = goals_for + $4,
+            goals_against = goals_against + $5,
+            points = points + $6
+            WHERE team_id = $7
+        ''', won, drawn, lost, goals_for, goals_against, points, team_id)
