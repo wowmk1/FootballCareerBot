@@ -219,7 +219,7 @@ class MatchEngine:
         await self.end_match(match_id, fixture, channel, home_score, away_score, participants)
     
     async def handle_player_moment(self, channel, player, participant, minute, attacking_team, defending_team, is_home):
-    """Handle a player's interactive moment"""
+        """Handle a player's interactive moment"""
     
     member = channel.guild.get_member(player['user_id'])
     if not member:
