@@ -7,7 +7,7 @@ class LeagueCommands(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
     
-    @app_commands.command(name="league", description="View league tables and standings")
+    @app_commands.command(name="league", description="View league table")
     @app_commands.describe(league="Which league to view")
     @app_commands.choices(league=[
         app_commands.Choice(name="Premier League", value="Premier League"),
@@ -15,151 +15,124 @@ class LeagueCommands(commands.Cog):
         app_commands.Choice(name="League One", value="League One"),
     ])
     async def league(self, interaction: discord.Interaction, league: str = "Premier League"):
-        """View league table"""
+        """View league standings"""
         
-        teams = await db.get_league_table(league)
+        table = await db.get_league_table(league)
         
-        if not teams:
+        if not table:
             await interaction.response.send_message(
-                f"❌ No teams found in {league}!",
+                f"❌ No data found for {league}!",
                 ephemeral=True
             )
             return
-        
-        state = await db.get_game_state()
-        current_week = state['current_week'] if state['season_started'] else 0
         
         embed = discord.Embed(
             title=f"🏆 {league} Table",
-            description=f"Week {current_week}/{38}",
-            color=discord.Color.gold()
+            color=discord.Color.blue()
         )
         
-        table_text = "```\nPos | Team                | Pld | Pts\n"
-        table_text += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+        table_text = "```\n"
+        table_text += "Pos Team                 Pld  W  D  L  GF  GA  GD  Pts\n"
+        table_text += "─" * 60 + "\n"
         
-        for idx, team in enumerate(teams, 1):
-            team_name = team['team_name'][:18].ljust(18)
+        for pos, team in enumerate(table, 1):
+            gd = team['goals_for'] - team['goals_against']
+            gd_str = f"+{gd}" if gd > 0 else str(gd)
             
-            if league == "Premier League":
-                if idx <= 4:
-                    pos = f"{idx}🟢"
-                elif idx <= 6:
-                    pos = f"{idx}🔵"
-                elif idx == 7:
-                    pos = f"{idx}🟡"
-                elif idx >= 18:
-                    pos = f"{idx}🔴"
-                else:
-                    pos = f"{idx}  "
+            team_name = team['team_name'][:20].ljust(20)
+            
+            if pos <= 4:
+                prefix = "🟢"
+            elif pos <= 6:
+                prefix = "🔵"
+            elif pos >= len(table) - 2:
+                prefix = "🔴"
             else:
-                if idx <= 2:
-                    pos = f"{idx}🟢"
-                elif idx <= 6:
-                    pos = f"{idx}🟡"
-                elif idx >= 22:
-                    pos = f"{idx}🔴"
-                else:
-                    pos = f"{idx}  "
+                prefix = "  "
             
-            async with db.db.execute(
-                "SELECT COUNT(*) as count FROM players WHERE team_id = ? AND retired = 0",
-                (team['team_id'],)
-            ) as cursor:
-                result = await cursor.fetchone()
-                player_count = result['count']
-            
-            marker = " ⭐" if player_count > 0 else "   "
-            
-            table_text += f"{pos.ljust(4)}| {team_name} | {str(team['played']).rjust(3)} | {str(team['points']).rjust(3)}{marker}\n"
+            table_text += f"{prefix} {pos:2d} {team_name} {team['played']:3d} {team['won']:2d} {team['drawn']:2d} {team['lost']:2d} {team['goals_for']:3d} {team['goals_against']:3d} {gd_str:4s} {team['points']:3d}\n"
         
         table_text += "```"
         
-        embed.description = f"Week {current_week}/{38}\n\n{table_text}"
+        embed.description = table_text
         
-        if league == "Premier League":
-            legend = (
-                "🟢 Champions League | 🔵 Europa League\n"
-                "🟡 Conference League | 🔴 Relegation | ⭐ Your team"
-            )
-        else:
-            legend = (
-                "🟢 Promotion | 🟡 Playoffs\n"
-                "🔴 Relegation | ⭐ Your team"
-            )
+        embed.add_field(
+            name="🔑 Key",
+            value="🟢 Champions League\n🔵 Europa League\n🔴 Relegation",
+            inline=False
+        )
         
-        embed.add_field(name="Legend", value=legend, inline=False)
-        embed.set_footer(text="Use /standings for detailed stats")
+        state = await db.get_game_state()
+        embed.set_footer(text=f"Season {state['current_season']} • Week {state['current_week']}")
         
         await interaction.response.send_message(embed=embed)
     
-    @app_commands.command(name="standings", description="View detailed league standings with stats")
-    @app_commands.describe(league="Which league to view")
-    @app_commands.choices(league=[
-        app_commands.Choice(name="Premier League", value="Premier League"),
-        app_commands.Choice(name="Championship", value="Championship"),
-        app_commands.Choice(name="League One", value="League One"),
-    ])
-    async def standings(self, interaction: discord.Interaction, league: str = "Premier League"):
-        """View detailed standings"""
+    @app_commands.command(name="top_scorers", description="View top scorers in your league")
+    async def top_scorers(self, interaction: discord.Interaction):
+        """View top scorers"""
         
-        teams = await db.get_league_table(league)
+        player = await db.get_player(interaction.user.id)
         
-        if not teams:
+        if player and player['league']:
+            league = player['league']
+        else:
+            league = "Premier League"
+        
+        async with db.pool.acquire() as conn:
+            user_rows = await conn.fetch(
+                """SELECT p.player_name, p.season_goals, p.season_assists, p.season_apps, t.team_name
+                   FROM players p
+                   LEFT JOIN teams t ON p.team_id = t.team_id
+                   WHERE p.league = $1 AND p.retired = FALSE
+                   ORDER BY p.season_goals DESC
+                   LIMIT 10""",
+                league
+            )
+            
+            npc_rows = await conn.fetch(
+                """SELECT n.player_name, n.season_goals, n.season_assists, n.season_apps, t.team_name
+                   FROM npc_players n
+                   LEFT JOIN teams t ON n.team_id = t.team_id
+                   WHERE t.league = $1 AND n.retired = FALSE
+                   ORDER BY n.season_goals DESC
+                   LIMIT 10""",
+                league
+            )
+        
+        all_scorers = []
+        for row in user_rows:
+            all_scorers.append(dict(row))
+        for row in npc_rows:
+            all_scorers.append(dict(row))
+        
+        all_scorers.sort(key=lambda x: x['season_goals'], reverse=True)
+        all_scorers = all_scorers[:10]
+        
+        if not all_scorers:
             await interaction.response.send_message(
-                f"❌ No teams found in {league}!",
+                f"📊 No goals scored yet in {league}!",
                 ephemeral=True
             )
             return
         
-        state = await db.get_game_state()
-        current_week = state['current_week'] if state['season_started'] else 0
-        
         embed = discord.Embed(
-            title=f"📊 {league} - Full Standings",
-            description=f"Week {current_week}/{38}",
-            color=discord.Color.blue()
+            title=f"👟 {league} - Top Scorers",
+            color=discord.Color.gold()
         )
         
-        table_text = "```\nPos | Team           | P  W  D  L | GF GA GD | Pts\n"
-        table_text += "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-        
-        for idx, team in enumerate(teams[:20], 1):
-            team_name = team['team_name'][:14].ljust(14)
-            gd = team['goals_for'] - team['goals_against']
-            gd_str = f"+{gd}" if gd > 0 else str(gd)
+        scorers_text = ""
+        for i, scorer in enumerate(all_scorers, 1):
+            emoji = "🥇" if i == 1 else "🥈" if i == 2 else "🥉" if i == 3 else f"{i}."
             
-            table_text += (
-                f"{str(idx).rjust(2)} | {team_name} | "
-                f"{str(team['played']).rjust(2)} "
-                f"{str(team['won']).rjust(2)} "
-                f"{str(team['drawn']).rjust(2)} "
-                f"{str(team['lost']).rjust(2)} | "
-                f"{str(team['goals_for']).rjust(2)} "
-                f"{str(team['goals_against']).rjust(2)} "
-                f"{gd_str.rjust(3)} | "
-                f"{str(team['points']).rjust(3)}\n"
-            )
+            team_name = scorer['team_name'] if scorer['team_name'] else 'Free Agent'
+            
+            scorers_text += f"{emoji} **{scorer['player_name']}** ({team_name})\n"
+            scorers_text += f"   ⚽ {scorer['season_goals']} goals | 🅰️ {scorer['season_assists']} assists | 👕 {scorer['season_apps']} apps\n\n"
         
-        table_text += "```"
+        embed.description = scorers_text
         
-        embed.description = f"Week {current_week}/{38}\n\n{table_text}"
-        
-        async with db.db.execute("""
-            SELECT p.player_name, p.season_goals, p.team_id, t.team_name
-            FROM players p
-            LEFT JOIN teams t ON p.team_id = t.team_id
-            WHERE p.retired = 0 AND t.league = ? AND p.season_goals > 0
-            ORDER BY p.season_goals DESC
-            LIMIT 5
-        """, (league,)) as cursor:
-            top_scorers = await cursor.fetchall()
-        
-        if top_scorers:
-            scorers_text = ""
-            for idx, scorer in enumerate(top_scorers, 1):
-                scorers_text += f"{idx}. **{scorer['player_name']}** ({scorer['team_name']}) - {scorer['season_goals']} goals\n"
-            embed.add_field(name="⚽ Top Scorers (Players)", value=scorers_text, inline=False)
+        state = await db.get_game_state()
+        embed.set_footer(text=f"Season {state['current_season']} • Week {state['current_week']}")
         
         await interaction.response.send_message(embed=embed)
 
