@@ -221,9 +221,9 @@ class MatchEngine:
     async def handle_player_moment(self, channel, player, participant, minute, attacking_team, defending_team, is_home):
         """Handle a player's interactive moment"""
     
-    member = channel.guild.get_member(player['user_id'])
-    if not member:
-        return await self.auto_resolve_moment(player, minute, attacking_team, defending_team)
+        member = channel.guild.get_member(player['user_id'])
+        if not member:
+            return await self.auto_resolve_moment(player, minute, attacking_team, defending_team)
     
     # Get a random defender
     async with db.pool.acquire() as conn:
