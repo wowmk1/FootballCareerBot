@@ -261,9 +261,19 @@ async def help_command(interaction: discord.Interaction):
     embed.add_field(
         name="🎮 Getting Started",
         value=(
-            "`/start` - Create your player\n"
+            "`/start` - Create your player (auto-assigned to team!)\n"
             "`/profile [@user]` - View stats\n"
             "`/compare @user` - Compare players"
+        ),
+        inline=False
+    )
+    
+    embed.add_field(
+        name="💼 Transfers & Contracts",
+        value=(
+            "`/transfer_market` - Browse clubs interested in you\n"
+            "`/my_contract` - View your current deal\n"
+            "`/transfer_history` - See all your moves"
         ),
         inline=False
     )
@@ -336,7 +346,7 @@ async def help_command(interaction: discord.Interaction):
         inline=False
     )
     
-    embed.set_footer(text=f"Season: {config.CURRENT_SEASON} | Interactive DnD matches enabled!")
+    embed.set_footer(text=f"Season: {config.CURRENT_SEASON} | Transfer system enabled!")
     
     await interaction.response.send_message(embed=embed)
 
@@ -414,6 +424,65 @@ async def admin_close_window(interaction: discord.Interaction):
     )
     
     await interaction.followup.send(embed=embed)
+
+@bot.tree.command(name="admin_assign_team", description="[ADMIN] Manually assign a player to a team")
+@app_commands.describe(
+    user="Player to assign",
+    team_id="Team ID (e.g., 'man_city', 'arsenal', 'leeds')"
+)
+async def admin_assign_team(interaction: discord.Interaction, user: discord.User, team_id: str):
+    """Admin: Assign player to team"""
+    
+    if not interaction.user.guild_permissions.administrator:
+        await interaction.response.send_message(
+            "❌ Administrator permissions required!",
+            ephemeral=True
+        )
+        return
+    
+    player = await db.get_player(user.id)
+    
+    if not player:
+        await interaction.response.send_message(
+            f"❌ {user.mention} hasn't created a player yet!",
+            ephemeral=True
+        )
+        return
+    
+    team = await db.get_team(team_id)
+    
+    if not team:
+        await interaction.response.send_message(
+            f"❌ Team '{team_id}' not found!\n\n"
+            f"💡 **Examples:** `man_city`, `arsenal`, `liverpool`, `chelsea`, `leeds`, `burnley`, `barnsley`",
+            ephemeral=True
+        )
+        return
+    
+    wage = player['overall_rating'] * 1000
+    
+    async with db.pool.acquire() as conn:
+        await conn.execute(
+            "UPDATE players SET team_id = $1, league = $2, contract_wage = $3, contract_years = $4 WHERE user_id = $5",
+            team_id, team['league'], wage, 3, user.id
+        )
+        
+        await conn.execute('''
+            INSERT INTO transfers (user_id, from_team, to_team, fee, wage, contract_length, transfer_type)
+            VALUES ($1, $2, $3, $4, $5, $6, $7)
+        ''', user.id, player['team_id'], team_id, 0, wage, 3, 'admin_assignment')
+    
+    embed = discord.Embed(
+        title="✅ Player Assigned",
+        description=f"{user.mention} → **{team['team_name']}**",
+        color=discord.Color.green()
+    )
+    
+    embed.add_field(name="🏆 League", value=team['league'], inline=True)
+    embed.add_field(name="💰 Wage", value=f"£{wage:,}/week", inline=True)
+    embed.add_field(name="⏳ Contract", value="3 years", inline=True)
+    
+    await interaction.response.send_message(embed=embed)
 
 @bot.tree.command(name="admin_wipe_players", description="[ADMIN] ⚠️ DELETE ALL USER PLAYERS AND RESET TO DAY 1")
 async def admin_wipe_players(interaction: discord.Interaction):
