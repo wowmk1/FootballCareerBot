@@ -39,8 +39,8 @@ class PlayerCommands(commands.Cog):
                     )
             else:
                 await interaction.response.send_message(
-                    f"❌ You already have an active player: **{existing['player_name']}** ({existing['age']} years old)!\n\n"
-                    f"💡 Players retire at age {config.RETIREMENT_AGE}. You can create a new player after retirement.",
+                    f"You already have an active player: **{existing['player_name']}** ({existing['age']} years old)!\n\n"
+                    f"Players retire at age {config.RETIREMENT_AGE}. You can create a new player after retirement.",
                     ephemeral=True
                 )
                 return
@@ -54,7 +54,7 @@ class PlayerCommands(commands.Cog):
             current_week = 1
             
             await db.add_news(
-                "⚽ Season 2027/28 Begins!",
+                "Season 2027/28 Begins!",
                 "The football season has officially started! 38 weeks of intense competition await.",
                 "league_news",
                 None,
@@ -89,18 +89,11 @@ class PlayerCommands(commands.Cog):
         overall = sum(base_stats.values()) // 6
         potential = random.randint(overall + 12, overall + 28)
         
-        # Auto-assign to a team based on potential
-        if potential >= 85:
-            target_league = 'Premier League'
-            wage = random.randint(50000, 100000)
-        elif potential >= 75:
-            target_league = 'Championship'
-            wage = random.randint(15000, 30000)
-        else:
-            target_league = 'League One'
-            wage = random.randint(5000, 10000)
+        # CHANGED: Everyone starts in Championship
+        target_league = 'Championship'
+        wage = random.randint(8000, 15000)  # Championship wages
         
-        # Get random team from that league
+        # Get random Championship team
         async with db.pool.acquire() as conn2:
             result = await conn2.fetchrow(
                 "SELECT team_id FROM teams WHERE league = $1 ORDER BY RANDOM() LIMIT 1",
@@ -155,7 +148,7 @@ class PlayerCommands(commands.Cog):
         await db.add_news(
             f"New Talent: {player_name}",
             f"{player_name} ({position}) joins {target_league} at age {config.STARTING_AGE}. "
-            f"Scouts rate potential at {potential} OVR.",
+            f"Scouts rate potential at {potential} OVR. Every great career starts somewhere!",
             "transfer_news",
             interaction.user.id,
             5,
@@ -163,62 +156,54 @@ class PlayerCommands(commands.Cog):
         )
         
         embed = discord.Embed(
-            title="⚽ Welcome to Your Football Career!",
+            title="Welcome to Your Football Career!",
             description=f"**{player_name}** has been created!\n\n*\"Every legend starts somewhere...\"*",
             color=discord.Color.green()
         )
         
-        embed.add_field(name="📋 Position", value=position, inline=True)
-        embed.add_field(name="🎂 Age", value=f"{config.STARTING_AGE} years old", inline=True)
-        embed.add_field(name="⭐ Overall", value=f"**{overall}** OVR", inline=True)
+        embed.add_field(name="Position", value=position, inline=True)
+        embed.add_field(name="Age", value=f"{config.STARTING_AGE} years old", inline=True)
+        embed.add_field(name="Overall", value=f"**{overall}** OVR", inline=True)
         
-        embed.add_field(name="📊 Attributes", value=(
-            f"⚡ Pace: **{base_stats['pace']}**\n"
-            f"🎯 Shooting: **{base_stats['shooting']}**\n"
-            f"🎪 Passing: **{base_stats['passing']}**\n"
-            f"🪄 Dribbling: **{base_stats['dribbling']}**\n"
-            f"🛡️ Defending: **{base_stats['defending']}**\n"
-            f"💪 Physical: **{base_stats['physical']}**"
+        embed.add_field(name="Attributes", value=(
+            f"Pace: **{base_stats['pace']}**\n"
+            f"Shooting: **{base_stats['shooting']}**\n"
+            f"Passing: **{base_stats['passing']}**\n"
+            f"Dribbling: **{base_stats['dribbling']}**\n"
+            f"Defending: **{base_stats['defending']}**\n"
+            f"Physical: **{base_stats['physical']}**"
         ), inline=True)
         
-        embed.add_field(name="🌟 Potential", value=f"**{potential}** OVR", inline=True)
+        embed.add_field(name="Potential", value=f"**{potential}** OVR", inline=True)
         
         if assigned_team != 'free_agent':
             assigned_team_obj = await db.get_team(assigned_team)
             embed.add_field(
-                name="🏠 First Club", 
+                name="First Club", 
                 value=f"**{assigned_team_obj['team_name']}**\n{target_league}", 
                 inline=True
             )
             embed.add_field(
-                name="💼 Contract",
-                value=f"💰 £{wage:,}/week\n⏳ {contract_years} years",
+                name="Contract",
+                value=f"£{wage:,}/week\n{contract_years} years",
                 inline=False
             )
-        else:
-            embed.add_field(name="🏠 Status", value="🆓 Free Agent", inline=True)
         
-        if current_week == 1:
-            season_info = f"🎉 **You started the season!**\nWeek 1/{config.SEASON_TOTAL_WEEKS}"
-        else:
-            season_info = f"📅 **Joined mid-season**\nCurrent: Week {current_week}/{config.SEASON_TOTAL_WEEKS}"
-        
-        embed.add_field(name="📅 Season Status", value=season_info, inline=False)
-        
-        embed.add_field(name="⏳ Career Length", value=(
-            f"You'll play until age **{config.RETIREMENT_AGE}**\n"
-            f"That's **{config.RETIREMENT_AGE - config.STARTING_AGE} years** to build your legacy!"
+        embed.add_field(name="Career Path", value=(
+            f"**Starting Point: Championship**\n"
+            f"Perform well to attract Premier League interest!\n"
+            f"Train daily, play matches, and build your legacy.\n\n"
+            f"You'll play until age **{config.RETIREMENT_AGE}** - that's **{config.RETIREMENT_AGE - config.STARTING_AGE} years** to become a legend!"
         ), inline=False)
         
-        embed.add_field(name="💡 Next Steps", value=(
-            "• `/train` - Train daily to improve\n"
-            "• `/transfer_market` - Browse transfer opportunities\n"
-            "• `/season` - Check current week & schedule\n"
-            "• `/play_match` - Play matches during windows\n"
-            "• `/help` - See all commands"
+        embed.add_field(name="Next Steps", value=(
+            "`/train` - Train daily to improve\n"
+            "`/season` - Check current week & schedule\n"
+            "`/play_match` - Play matches during windows\n"
+            "`/help` - See all commands"
         ), inline=False)
         
-        embed.set_footer(text="Your journey begins now. Make it legendary! 🏆")
+        embed.set_footer(text="Your journey begins now. Make it legendary!")
         
         await interaction.response.send_message(embed=embed)
     
