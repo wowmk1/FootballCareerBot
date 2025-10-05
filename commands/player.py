@@ -89,13 +89,34 @@ class PlayerCommands(commands.Cog):
         overall = sum(base_stats.values()) // 6
         potential = random.randint(overall + 12, overall + 28)
         
+        # Auto-assign to a team based on potential
+        if potential >= 85:
+            target_league = 'Premier League'
+            wage = random.randint(50000, 100000)
+        elif potential >= 75:
+            target_league = 'Championship'
+            wage = random.randint(15000, 30000)
+        else:
+            target_league = 'League One'
+            wage = random.randint(5000, 10000)
+        
+        # Get random team from that league
+        async with db.pool.acquire() as conn2:
+            result = await conn2.fetchrow(
+                "SELECT team_id FROM teams WHERE league = $1 ORDER BY RANDOM() LIMIT 1",
+                target_league
+            )
+            assigned_team = result['team_id'] if result else 'free_agent'
+        
+        contract_years = random.randint(2, 4)
+        
         async with db.pool.acquire() as conn:
             await conn.execute('''
                 INSERT INTO players (
                     user_id, discord_username, player_name, position,
                     age, overall_rating, pace, shooting, passing, dribbling, defending, physical,
-                    potential, team_id, league, joined_week
-                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+                    potential, team_id, league, joined_week, contract_wage, contract_years
+                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
             ''',
                 interaction.user.id,
                 str(interaction.user),
@@ -110,9 +131,11 @@ class PlayerCommands(commands.Cog):
                 base_stats['defending'],
                 base_stats['physical'],
                 potential,
-                'free_agent',
-                None,
-                current_week
+                assigned_team,
+                target_league,
+                current_week,
+                wage,
+                contract_years
             )
             
             await conn.execute('''
@@ -121,11 +144,19 @@ class PlayerCommands(commands.Cog):
                 ON CONFLICT (user_id) DO NOTHING
             ''', interaction.user.id)
         
+        # Record transfer
+        if assigned_team != 'free_agent':
+            async with db.pool.acquire() as conn:
+                await conn.execute('''
+                    INSERT INTO transfers (user_id, from_team, to_team, fee, wage, contract_length, transfer_type)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7)
+                ''', interaction.user.id, 'free_agent', assigned_team, 0, wage, contract_years, 'signing')
+        
         await db.add_news(
             f"New Talent: {player_name}",
-            f"{player_name} ({position}) enters professional football at age {config.STARTING_AGE}. "
+            f"{player_name} ({position}) joins {target_league} at age {config.STARTING_AGE}. "
             f"Scouts rate potential at {potential} OVR.",
-            "player_news",
+            "transfer_news",
             interaction.user.id,
             5,
             current_week
@@ -151,7 +182,21 @@ class PlayerCommands(commands.Cog):
         ), inline=True)
         
         embed.add_field(name="🌟 Potential", value=f"**{potential}** OVR", inline=True)
-        embed.add_field(name="🏠 Status", value="🆓 Free Agent", inline=True)
+        
+        if assigned_team != 'free_agent':
+            assigned_team_obj = await db.get_team(assigned_team)
+            embed.add_field(
+                name="🏠 First Club", 
+                value=f"**{assigned_team_obj['team_name']}**\n{target_league}", 
+                inline=True
+            )
+            embed.add_field(
+                name="💼 Contract",
+                value=f"💰 £{wage:,}/week\n⏳ {contract_years} years",
+                inline=False
+            )
+        else:
+            embed.add_field(name="🏠 Status", value="🆓 Free Agent", inline=True)
         
         if current_week == 1:
             season_info = f"🎉 **You started the season!**\nWeek 1/{config.SEASON_TOTAL_WEEKS}"
@@ -167,8 +212,9 @@ class PlayerCommands(commands.Cog):
         
         embed.add_field(name="💡 Next Steps", value=(
             "• `/train` - Train daily to improve\n"
+            "• `/transfer_market` - Browse transfer opportunities\n"
             "• `/season` - Check current week & schedule\n"
-            "• `/league` - View league tables\n"
+            "• `/play_match` - Play matches during windows\n"
             "• `/help` - See all commands"
         ), inline=False)
         
