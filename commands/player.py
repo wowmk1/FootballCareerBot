@@ -32,11 +32,11 @@ class PlayerCommands(commands.Cog):
         
         if existing:
             if existing['retired']:
-                await db.db.execute(
-                    "DELETE FROM players WHERE user_id = ?",
-                    (interaction.user.id,)
-                )
-                await db.db.commit()
+                async with db.pool.acquire() as conn:
+                    await conn.execute(
+                        "DELETE FROM players WHERE user_id = $1",
+                        interaction.user.id
+                    )
             else:
                 await interaction.response.send_message(
                     f"❌ You already have an active player: **{existing['player_name']}** ({existing['age']} years old)!\n\n"
@@ -89,36 +89,37 @@ class PlayerCommands(commands.Cog):
         overall = sum(base_stats.values()) // 6
         potential = random.randint(overall + 12, overall + 28)
         
-        await db.db.execute('''
-            INSERT INTO players (
-                user_id, discord_username, player_name, position,
-                age, overall_rating, pace, shooting, passing, dribbling, defending, physical,
-                potential, team_id, league, joined_week
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ''', (
-            interaction.user.id,
-            str(interaction.user),
-            player_name,
-            position,
-            config.STARTING_AGE,
-            overall,
-            base_stats['pace'],
-            base_stats['shooting'],
-            base_stats['passing'],
-            base_stats['dribbling'],
-            base_stats['defending'],
-            base_stats['physical'],
-            potential,
-            'free_agent',
-            None,
-            current_week
-        ))
-        
-        await db.db.execute('''
-            INSERT OR REPLACE INTO user_settings (user_id) VALUES (?)
-        ''', (interaction.user.id,))
-        
-        await db.db.commit()
+        async with db.pool.acquire() as conn:
+            await conn.execute('''
+                INSERT INTO players (
+                    user_id, discord_username, player_name, position,
+                    age, overall_rating, pace, shooting, passing, dribbling, defending, physical,
+                    potential, team_id, league, joined_week
+                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+            ''',
+                interaction.user.id,
+                str(interaction.user),
+                player_name,
+                position,
+                config.STARTING_AGE,
+                overall,
+                base_stats['pace'],
+                base_stats['shooting'],
+                base_stats['passing'],
+                base_stats['dribbling'],
+                base_stats['defending'],
+                base_stats['physical'],
+                potential,
+                'free_agent',
+                None,
+                current_week
+            )
+            
+            await conn.execute('''
+                INSERT INTO user_settings (user_id) 
+                VALUES ($1) 
+                ON CONFLICT (user_id) DO NOTHING
+            ''', interaction.user.id)
         
         await db.add_news(
             f"New Talent: {player_name}",
