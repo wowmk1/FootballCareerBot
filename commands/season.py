@@ -9,6 +9,142 @@ class SeasonCommands(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
     
+    @app_commands.command(name="season_review", description="View the season review with champions, awards, and your achievements")
+    async def season_review(self, interaction: discord.Interaction):
+        """View detailed season review"""
+        
+        state = await db.get_game_state()
+        
+        if state['season_started']:
+            await interaction.response.send_message(
+                "The season is still in progress! Use this command after the season ends.",
+                ephemeral=True
+            )
+            return
+        
+        # Get league champions (from last completed season)
+        pl_table = await db.get_league_table('Premier League')
+        champ_table = await db.get_league_table('Championship')
+        l1_table = await db.get_league_table('League One')
+        
+        embed = discord.Embed(
+            title=f"Season {config.CURRENT_SEASON} Review",
+            description="Final standings, awards, and achievements",
+            color=discord.Color.gold()
+        )
+        
+        # Champions
+        champions_text = ""
+        if pl_table and pl_table[0]['points'] > 0:
+            champ = pl_table[0]
+            champions_text += f"**Premier League**: {champ['team_name']} ({champ['points']} pts)\n"
+        if champ_table and champ_table[0]['points'] > 0:
+            champ = champ_table[0]
+            champions_text += f"**Championship**: {champ['team_name']} ({champ['points']} pts)\n"
+        if l1_table and l1_table[0]['points'] > 0:
+            champ = l1_table[0]
+            champions_text += f"**League One**: {champ['team_name']} ({champ['points']} pts)\n"
+        
+        if champions_text:
+            embed.add_field(name="Champions", value=champions_text, inline=False)
+        
+        # Promotion and Relegation
+        if pl_table and len(pl_table) >= 3:
+            relegated = [t['team_name'] for t in pl_table[-3:]]
+            embed.add_field(
+                name="Relegated from Premier League",
+                value="\n".join(relegated),
+                inline=True
+            )
+        
+        if champ_table and len(champ_table) >= 2:
+            promoted = [t['team_name'] for t in champ_table[:2]]
+            embed.add_field(
+                name="Promoted to Premier League",
+                value="\n".join(promoted),
+                inline=True
+            )
+        
+        # Top Scorers
+        async with db.pool.acquire() as conn:
+            # User top scorers
+            user_scorers = await conn.fetch(
+                """SELECT p.player_name, p.season_goals, p.season_apps, t.team_name, p.league
+                   FROM players p
+                   LEFT JOIN teams t ON p.team_id = t.team_id
+                   WHERE p.season_goals > 0
+                   ORDER BY p.season_goals DESC
+                   LIMIT 5"""
+            )
+            
+            # NPC top scorers
+            npc_scorers = await conn.fetch(
+                """SELECT n.player_name, n.season_goals, n.season_apps, t.team_name, t.league
+                   FROM npc_players n
+                   LEFT JOIN teams t ON n.team_id = t.team_id
+                   WHERE n.season_goals > 0
+                   ORDER BY n.season_goals DESC
+                   LIMIT 5"""
+            )
+        
+        all_scorers = list(user_scorers) + list(npc_scorers)
+        all_scorers.sort(key=lambda x: x['season_goals'], reverse=True)
+        
+        if all_scorers:
+            top_5 = all_scorers[:5]
+            scorers_text = ""
+            for i, scorer in enumerate(top_5, 1):
+                emoji = "" if i == 1 else "" if i == 2 else "" if i == 3 else f"{i}."
+                team = scorer['team_name'] if scorer['team_name'] else 'Free Agent'
+                scorers_text += f"{emoji} {scorer['player_name']} - **{scorer['season_goals']}** goals ({team})\n"
+            
+            embed.add_field(name="Top Scorers", value=scorers_text, inline=False)
+        
+        # Your achievements (if user has a player)
+        player = await db.get_player(interaction.user.id)
+        if player:
+            achievements = []
+            
+            if player['season_goals'] > 0:
+                achievements.append(f"Goals: **{player['season_goals']}**")
+            if player['season_assists'] > 0:
+                achievements.append(f"Assists: **{player['season_assists']}**")
+            if player['season_apps'] > 0:
+                achievements.append(f"Appearances: **{player['season_apps']}**")
+                avg_rating = f"{player['season_rating']:.1f}"
+                achievements.append(f"Avg Rating: **{avg_rating}/10**")
+            
+            # Check if player's team got promoted/relegated
+            if player['team_id'] != 'free_agent':
+                team = await db.get_team(player['team_id'])
+                if team:
+                    team_position = next((i+1 for i, t in enumerate(
+                        await db.get_league_table(team['league'])
+                    ) if t['team_id'] == team['team_id']), None)
+                    
+                    if team_position:
+                        achievements.append(f"Team Finish: **{team_position}** in {team['league']}")
+                        
+                        if team['league'] == 'Championship' and team_position <= 2:
+                            achievements.append("**PROMOTED TO PREMIER LEAGUE!**")
+                        elif team['league'] == 'League One' and team_position <= 2:
+                            achievements.append("**PROMOTED TO CHAMPIONSHIP!**")
+                        elif team['league'] == 'Premier League' and team_position >= len(pl_table) - 2:
+                            achievements.append("**Relegated to Championship**")
+                        elif team['league'] == 'Championship' and team_position >= len(champ_table) - 2:
+                            achievements.append("**Relegated to League One**")
+            
+            if achievements:
+                embed.add_field(
+                    name=f"Your Season - {player['player_name']}",
+                    value="\n".join(achievements),
+                    inline=False
+                )
+        
+        embed.set_footer(text="Use /start to begin a new season!")
+        
+        await interaction.response.send_message(embed=embed)
+    
     @app_commands.command(name="season", description="View current season status and schedule")
     async def season(self, interaction: discord.Interaction):
         """View season information"""
