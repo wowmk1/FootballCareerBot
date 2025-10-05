@@ -261,7 +261,7 @@ class MatchEngine:
             title=f"🎯 {member.display_name}'s Key Moment!",
             description=f"**Minute {minute}'** - {situation}\n\n"
                         f"**{player['player_name']}** has the ball!\n"
-                        f"**You have 10 seconds to decide!**",
+                        f"**You have 30 seconds to decide!**",
             color=discord.Color.gold()
         )
         
@@ -299,7 +299,7 @@ class MatchEngine:
             inline=False
         )
         
-        view = ActionView(available_actions, timeout=10)
+        view = ActionView(available_actions, timeout=30)
         
         message = await channel.send(content=member.mention, embed=embed, view=view)
         
