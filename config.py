@@ -7,63 +7,41 @@ BOT_PREFIX = os.getenv('BOT_PREFIX', '/')
 # Database Configuration
 DATABASE_URL = os.getenv('DATABASE_URL')
 
-# Database Configuration
-DATABASE_PATH = os.getenv('DATABASE_PATH', 'football.db')
-
-# Game Configuration
-MATCHES_PER_WEEK = 3  # Monday, Wednesday, Saturday
-TRAINING_COOLDOWN_HOURS = int(os.getenv('TRAINING_COOLDOWN_HOURS', '24'))
-MAX_PLAYERS = int(os.getenv('MAX_PLAYERS', '100'))
+# Season Configuration
 CURRENT_SEASON = "2027/28"
 SEASON_TOTAL_WEEKS = 38
+MATCHES_PER_WEEK = 3  # Mon, Wed, Sat
+
+# Match Configuration
+MATCH_WINDOW_HOURS = 2
+MATCH_START_HOUR = 15  # 3PM EST (was 20:00)
+MATCH_EVENTS_PER_GAME_MIN = 6  # Minimum key moments
+MATCH_EVENTS_PER_GAME_MAX = 10  # Maximum key moments
 
 # Player Configuration
-RETIREMENT_AGE = 40
 STARTING_AGE = 18
-
-# Match Days Configuration
-MATCH_WINDOW_HOURS = 2  # How long players have to play their matches
-MATCH_START_HOUR = 20  # 8 PM (24-hour format)
-MATCH_DAYS = [0, 2, 5]  # Monday=0, Wednesday=2, Saturday=5
-MATCH_DAY_NAMES = {0: "Monday", 2: "Wednesday", 5: "Saturday"}
-
-# DnD Match Configuration
-MATCH_EVENTS_PER_GAME = 8  # Key moments per match
-AUTO_ROLL_TIMEOUT = 10  # Seconds before auto-roll
-MATCH_DURATION_MINUTES = 15  # Average match length
-PLAYER_JOIN_WAIT_MINUTES = 5  # Wait time for opponent to join
-
-# Difficulty Classes (DC) for actions
-DC_EASY = 10
-DC_MEDIUM = 15
-DC_HARD = 20
-DC_VERY_HARD = 25
-
-# Action Types
-ACTION_SHOOT = "shoot"
-ACTION_PASS = "pass"
-ACTION_DRIBBLE = "dribble"
-ACTION_DEFEND = "defend"
-ACTION_SAVE = "save"
+RETIREMENT_AGE = 38  # Changed from 40
+BASE_STAT_GAIN = 2
+STREAK_BONUS_THRESHOLD = 7
+STREAK_BONUS_AMOUNT = 1
 
 # Training Configuration
-BASE_STAT_GAIN = 2
-STREAK_BONUS_THRESHOLD = 3
-STREAK_BONUS_AMOUNT = 1
-DECAY_START_DAYS = 4
-DECAY_RATE = 1
+TRAINING_COOLDOWN_HOURS = 24
 
-# Environment
-ENVIRONMENT = os.getenv('ENVIRONMENT', 'production')
+# Transfer Configuration
+TRANSFER_WINDOW_WEEKS = [4, 5, 6, 20, 21, 22]  # Two transfer windows per season
+TRANSFER_OFFERS_PER_WINDOW = 3  # Number of offers a player receives
 
-# Validation
-if not DISCORD_TOKEN:
-    raise ValueError("❌ DISCORD_TOKEN not found! Set it in Railway variables.")
+# Notification Configuration
+NOTIFY_MATCH_WINDOW = True
+NOTIFY_TRAINING_READY = True
+NOTIFY_TRANSFER_OFFERS = True
 
 print("✅ Config loaded successfully")
-print(f"📊 Environment: {ENVIRONMENT}")
+print(f"📊 Environment: production")
 print(f"⚽ Matches per week: {MATCHES_PER_WEEK}")
-print(f"🎲 Match events per game: {MATCH_EVENTS_PER_GAME}")
+print(f"🎲 Match events per game: {MATCH_EVENTS_PER_GAME_MIN}-{MATCH_EVENTS_PER_GAME_MAX}")
 print(f"⏱️ Match window: {MATCH_WINDOW_HOURS} hours")
 print(f"⏰ Match start time: {MATCH_START_HOUR}:00")
 print(f"🏋️ Training cooldown: {TRAINING_COOLDOWN_HOURS}h")
+print(f"👴 Retirement age: {RETIREMENT_AGE}")
