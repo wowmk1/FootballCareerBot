@@ -19,7 +19,32 @@ class Database:
         # Run transfer window migration
         await self.migrate_transfer_windows()
         
+        # Add performance indexes
+        await self.add_performance_indexes()
+        
         print("✅ Database connected")
+    
+    async def add_performance_indexes(self):
+        """Add performance indexes to database"""
+        try:
+            async with self.pool.acquire() as conn:
+                indexes = [
+                    'CREATE INDEX IF NOT EXISTS idx_players_team_id ON players(team_id)',
+                    'CREATE INDEX IF NOT EXISTS idx_fixtures_week ON fixtures(week_number)',
+                    'CREATE INDEX IF NOT EXISTS idx_fixtures_playable ON fixtures(playable, played)',
+                    'CREATE INDEX IF NOT EXISTS idx_match_participants_user ON match_participants(user_id)',
+                    'CREATE INDEX IF NOT EXISTS idx_news_user_created ON news(user_id, created_at DESC)',
+                    'CREATE INDEX IF NOT EXISTS idx_training_user_date ON training_history(user_id, training_date DESC)',
+                    'CREATE INDEX IF NOT EXISTS idx_players_retired ON players(retired, age)',
+                    'CREATE INDEX IF NOT EXISTS idx_npc_players_team ON npc_players(team_id, retired)'
+                ]
+                
+                for index_sql in indexes:
+                    await conn.execute(index_sql)
+                
+                print("✅ Performance indexes verified")
+        except Exception as e:
+            print(f"⚠️ Index creation warning: {e}")
     
     async def migrate_transfer_windows(self):
         """Migrate database for transfer window system"""
