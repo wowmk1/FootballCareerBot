@@ -22,10 +22,10 @@ async def start_season():
         next_match_day=next_match.isoformat()
     )
     
-    print(f"✅ Season {config.CURRENT_SEASON} started!")
-    print(f"📅 First match day scheduled for {next_match.strftime('%Y-%m-%d %H:%M')}")
+    print(f"Season {config.CURRENT_SEASON} started!")
+    print(f"First match day scheduled for {next_match.strftime('%Y-%m-%d %H:%M')}")
 
-async def open_match_window():
+async def open_match_window(bot=None):
     """Open match window for current week"""
     state = await db.get_game_state()
     
@@ -48,8 +48,8 @@ async def open_match_window():
         match_window_closes=window_closes.isoformat()
     )
     
-    print(f"✅ Match window opened for Week {current_week}")
-    print(f"⏰ Window closes at {window_closes.strftime('%Y-%m-%d %H:%M')}")
+    print(f"Match window opened for Week {current_week}")
+    print(f"Window closes at {window_closes.strftime('%Y-%m-%d %H:%M')}")
     
     # Generate transfer offers if window is open
     from utils.transfer_window_manager import (
@@ -60,36 +60,36 @@ async def open_match_window():
     )
     
     if await is_transfer_window_open(current_week):
-        print(f"📬 Generating weekly transfer offers...")
+        print(f"Generating weekly transfer offers...")
         
-        try:
-            # Import bot instance
-            from bot import bot
-            
-            # Get all active players
-            async with db.pool.acquire() as conn:
-                players = await conn.fetch(
-                    "SELECT user_id FROM players WHERE retired = FALSE AND team_id != 'free_agent'"
-                )
-            
-            for player_row in players:
-                user_id = player_row['user_id']
-                player = await db.get_player(user_id)
+        if bot:
+            try:
+                # Get all active players
+                async with db.pool.acquire() as conn:
+                    players = await conn.fetch(
+                        "SELECT user_id FROM players WHERE retired = FALSE AND team_id != 'free_agent'"
+                    )
                 
-                # Skip if already transferred this window
-                if player.get('last_transfer_window') == get_current_transfer_window(current_week):
-                    continue
+                for player_row in players:
+                    user_id = player_row['user_id']
+                    player = await db.get_player(user_id)
+                    
+                    # Skip if already transferred this window
+                    if player.get('last_transfer_window') == get_current_transfer_window(current_week):
+                        continue
+                    
+                    # Generate 2-4 offers
+                    offers = await generate_offers_for_player(player, current_week, num_offers=3)
+                    
+                    # Send DM notification
+                    if offers:
+                        await send_offer_notification(bot, user_id, len(offers))
                 
-                # Generate 2-4 offers
-                offers = await generate_offers_for_player(player, current_week, num_offers=3)
-                
-                # Send DM notification
-                if offers:
-                    await send_offer_notification(bot, user_id, len(offers))
-            
-            print(f"✅ Transfer offers generated and notifications sent")
-        except Exception as e:
-            print(f"⚠️ Could not send transfer notifications: {e}")
+                print(f"Transfer offers generated and notifications sent")
+            except Exception as e:
+                print(f"Could not send transfer notifications: {e}")
+        else:
+            print("Bot instance not provided, skipping transfer notifications")
 
 async def close_match_window():
     """Close match window and auto-simulate unplayed matches"""
@@ -106,7 +106,7 @@ async def close_match_window():
         unplayed = [dict(row) for row in rows]
     
     if unplayed:
-        print(f"⏰ Auto-simulating {len(unplayed)} unplayed matches...")
+        print(f"Auto-simulating {len(unplayed)} unplayed matches...")
         for fixture in unplayed:
             await simulate_match(fixture)
     
@@ -123,14 +123,14 @@ async def close_match_window():
         last_match_day=datetime.now().isoformat()
     )
     
-    print(f"✅ Match window closed for Week {current_week}")
+    print(f"Match window closed for Week {current_week}")
 
 async def advance_week():
     """Advance to the next week"""
     state = await db.get_game_state()
     
     if not state['season_started']:
-        print("⚠️ Season hasn't started yet")
+        print("Season hasn't started yet")
         return
     
     current_week = state['current_week']
@@ -152,19 +152,19 @@ async def advance_week():
         next_match_day=next_match.isoformat() if new_week <= config.SEASON_TOTAL_WEEKS else None
     )
     
-    print(f"✅ Advanced to Week {new_week}/{config.SEASON_TOTAL_WEEKS}")
+    print(f"Advanced to Week {new_week}/{config.SEASON_TOTAL_WEEKS}")
     
     # Check and update transfer window status
     from utils.transfer_window_manager import check_and_update_transfer_window
     window_active = await check_and_update_transfer_window()
     
     if window_active:
-        print(f"🔓 Transfer window active - Week {new_week}")
+        print(f"Transfer window active - Week {new_week}")
     
     if new_week <= config.SEASON_TOTAL_WEEKS:
-        print(f"📅 Next match day: {next_match.strftime('%Y-%m-%d %H:%M')}")
+        print(f"Next match day: {next_match.strftime('%Y-%m-%d %H:%M')}")
 
-async def check_match_day_trigger():
+async def check_match_day_trigger(bot=None):
     """Check if it's time to open match window"""
     state = await db.get_game_state()
     
@@ -183,7 +183,7 @@ async def check_match_day_trigger():
     if state['next_match_day']:
         next_match = datetime.fromisoformat(state['next_match_day'])
         if datetime.now() >= next_match:
-            await open_match_window()
+            await open_match_window(bot)
             return True
     
     return False
@@ -191,12 +191,28 @@ async def check_match_day_trigger():
 async def end_season():
     """End the current season"""
     
-    print("🏁 Season ending...")
+    print("Season ending...")
     
     await db.age_all_players()
     
     retirements = await db.retire_old_players()
     
+    # Decrease contract years for all players
+    async with db.pool.acquire() as conn:
+        await conn.execute("""
+            UPDATE players 
+            SET contract_years = GREATEST(0, contract_years - 1)
+            WHERE retired = FALSE
+        """)
+        
+        # Make players with 0 contract years free agents
+        await conn.execute("""
+            UPDATE players 
+            SET team_id = 'free_agent', league = NULL
+            WHERE contract_years = 0 AND retired = FALSE
+        """)
+    
+    # Reset season stats
     async with db.pool.acquire() as conn:
         await conn.execute("""
             UPDATE players SET
@@ -218,10 +234,18 @@ async def end_season():
             points = 0,
             form = ''
         """)
+        
+        await conn.execute("""
+            UPDATE npc_players SET
+            season_goals = 0,
+            season_assists = 0,
+            season_apps = 0
+            WHERE retired = FALSE
+        """)
     
     await db.add_news(
         f"Season {config.CURRENT_SEASON} Concludes",
-        f"The season has ended! {retirements} players have retired. New season begins soon.",
+        f"The season has ended! {retirements} players have retired. Contracts have been updated. New season begins soon.",
         "league_news",
         None,
         10,
@@ -236,5 +260,5 @@ async def end_season():
         transfer_window_active=False
     )
     
-    print(f"✅ Season ended. {retirements} retirements processed.")
-    print("⏳ Ready for new season to start")
+    print(f"Season ended. {retirements} retirements processed.")
+    print("Ready for new season to start")
