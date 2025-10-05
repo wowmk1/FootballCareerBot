@@ -50,6 +50,9 @@ class MatchEngine:
             overwrites=overwrites
         )
         
+        # FEATURE: Randomize number of key moments (6-10)
+        num_events = random.randint(config.MATCH_EVENTS_PER_GAME_MIN, config.MATCH_EVENTS_PER_GAME_MAX)
+        
         embed = discord.Embed(
             title="⚽ MATCH STARTING!",
             description=f"**{home_team['team_name']}** vs **{away_team['team_name']}**\n\n"
@@ -59,7 +62,7 @@ class MatchEngine:
         
         embed.add_field(name="🏠 Home", value=home_team['team_name'], inline=True)
         embed.add_field(name="✈️ Away", value=away_team['team_name'], inline=True)
-        embed.add_field(name="📊 Format", value=f"{config.MATCH_EVENTS_PER_GAME} key moments", inline=True)
+        embed.add_field(name="📊 Key Moments", value=f"{num_events} moments this match", inline=True)
         
         player_mentions = []
         for user_id in player_users:
@@ -79,7 +82,7 @@ class MatchEngine:
             value="• Wait for your key moments\n"
                   "• Choose: Shoot, Pass, or Dribble\n"
                   "• Roll d20 + your stats vs DC\n"
-                  "• **10 second timer** - auto-rolls if you don't choose!",
+                  "• **30 second timer** - think carefully!",
             inline=False
         )
         
@@ -87,7 +90,8 @@ class MatchEngine:
         
         await interaction.followup.send(
             f"✅ Match channel created: {match_channel.mention}\n"
-            f"🎮 {home_team['team_name']} vs {away_team['team_name']}",
+            f"🎮 {home_team['team_name']} vs {away_team['team_name']}\n"
+            f"📊 {num_events} key moments this match",
             ephemeral=True
         )
         
@@ -124,9 +128,9 @@ class MatchEngine:
         
         await asyncio.sleep(5)
         
-        await self.run_match(match_id, fixture, match_channel)
+        await self.run_match(match_id, fixture, match_channel, num_events)
     
-    async def run_match(self, match_id: int, fixture: dict, channel: discord.TextChannel):
+    async def run_match(self, match_id: int, fixture: dict, channel: discord.TextChannel, num_events: int):
         """Run the full match simulation"""
         
         home_team = await db.get_team(fixture['home_team_id'])
@@ -145,13 +149,15 @@ class MatchEngine:
         home_participants = [p for p in participants if p['team_id'] == fixture['home_team_id']]
         away_participants = [p for p in participants if p['team_id'] == fixture['away_team_id']]
         
-        minutes = [10, 20, 30, 40, 55, 65, 75, 85][:config.MATCH_EVENTS_PER_GAME]
+        # Generate random minutes for events
+        possible_minutes = list(range(5, 91, 5))
+        minutes = sorted(random.sample(possible_minutes, min(num_events, len(possible_minutes))))
         
         for i, minute in enumerate(minutes):
             event_num = i + 1
             
             embed = discord.Embed(
-                title=f"⚽ Match Event {event_num}/{config.MATCH_EVENTS_PER_GAME}",
+                title=f"⚽ Match Event {event_num}/{num_events}",
                 description=f"**Minute {minute}'**\n\n"
                            f"**{home_team['team_name']} {home_score} - {away_score} {away_team['team_name']}**",
                 color=discord.Color.blue()
@@ -175,8 +181,6 @@ class MatchEngine:
                         
                         if result == 'goal':
                             home_score += 1
-                        elif result == 'assist':
-                            pass
                 else:
                     result = await self.handle_npc_moment(
                         channel, fixture['home_team_id'], minute, 
@@ -197,8 +201,6 @@ class MatchEngine:
                         
                         if result == 'goal':
                             away_score += 1
-                        elif result == 'assist':
-                            pass
                 else:
                     result = await self.handle_npc_moment(
                         channel, fixture['away_team_id'], minute,
@@ -219,13 +221,13 @@ class MatchEngine:
         await self.end_match(match_id, fixture, channel, home_score, away_score, participants)
     
     async def handle_player_moment(self, channel, player, participant, minute, attacking_team, defending_team, is_home):
-        """Handle a player's interactive moment"""
+        """Handle a player's interactive moment with full context"""
         
         member = channel.guild.get_member(player['user_id'])
         if not member:
             return await self.auto_resolve_moment(player, minute, attacking_team, defending_team)
         
-        # Get a random defender
+        # FEATURE: Get defender from FULL squad (all positions populated)
         async with db.pool.acquire() as conn:
             result = await conn.fetchrow(
                 "SELECT * FROM npc_players WHERE team_id = $1 AND position IN ('CB', 'FB', 'CDM', 'GK') ORDER BY RANDOM() LIMIT 1",
@@ -246,7 +248,7 @@ class MatchEngine:
         
         available_actions = position_actions.get(player['position'], ['shoot', 'pass', 'dribble'])
         
-        # Create detailed situation description
+        # FEATURE: Detailed situation descriptions
         if defender:
             if defender['position'] == 'GK':
                 situations = [
@@ -260,7 +262,7 @@ class MatchEngine:
                     f"🛡️ **DEFENDER BLOCKING!** **{defender['player_name']}** (DEF {defender['defending']}) is in your way. Beat them with skill or pass it!",
                     f"💥 **PHYSICAL BATTLE!** **{defender['player_name']}** (PHY {defender['physical']}) is challenging you. Use pace or technique!"
                 ]
-            else:  # CDM
+            else:
                 situations = [
                     f"🚧 **MIDFIELD PRESS!** **{defender['player_name']}** ({defender['position']}, DEF {defender['defending']}) is pressing you. Quick decision needed!",
                     f"⚙️ **DEFENSIVE MID CHALLENGE!** **{defender['player_name']}** (DEF {defender['defending']}) is blocking the passing lane. What's your move?"
@@ -274,33 +276,31 @@ class MatchEngine:
         
         situation = random.choice(situations)
         
-        # Calculate recommendations for each action
+        # Calculate success probabilities
         shoot_dc = get_difficulty_class('shoot')
         pass_dc = get_difficulty_class('pass')
         dribble_dc = get_difficulty_class('dribble')
         
-        # Adjust dribble DC based on defender
         if defender and 'dribble' in available_actions:
             defender_modifier = calculate_modifier(defender['defending'])
             dribble_dc = max(10, dribble_dc + (defender_modifier - 5))
         
-        # Calculate success chances
         shoot_chance = min(95, max(5, ((21 - shoot_dc + calculate_modifier(player['shooting'])) / 20) * 100))
         pass_chance = min(95, max(5, ((21 - pass_dc + calculate_modifier(player['passing'])) / 20) * 100))
         dribble_chance = min(95, max(5, ((21 - dribble_dc + calculate_modifier(player['dribbling'])) / 20) * 100))
         
-        # Determine recommendation
+        # Smart recommendation
         if defender:
             if defender['position'] == 'GK':
                 recommended = "🎯 **SHOOT** is your best option - you're 1v1 with the keeper!"
             elif 'dribble' in available_actions and player['dribbling'] > defender['defending'] + 10:
-                recommended = f"🪄 **DRIBBLE** recommended - Your dribbling ({player['dribbling']}) beats their defense ({defender['defending']})!"
+                recommended = f"🪄 **DRIBBLE** recommended - Your skill ({player['dribbling']}) beats their defense ({defender['defending']})!"
             elif defender['defending'] > player['dribbling'] + 10:
-                recommended = f"🎪 **PASS** recommended - Defender is very strong (DEF {defender['defending']}), safer to pass!"
+                recommended = f"🎪 **PASS** recommended - Defender is strong (DEF {defender['defending']}), safer to pass!"
             else:
-                recommended = "⚖️ **Balanced matchup** - Trust your instincts!"
+                recommended = "⚖️ **Balanced matchup** - Any action could work!"
         else:
-            recommended = "🎯 **You have space** - Any action could work!"
+            recommended = "🎯 **You have space** - Choose wisely!"
         
         embed = discord.Embed(
             title=f"🎯 {member.display_name}'s Key Moment!",
@@ -336,7 +336,6 @@ class MatchEngine:
             inline=False
         )
         
-        # Add success chances for available actions
         chances_text = ""
         if 'shoot' in available_actions:
             chances_text += f"🎯 **Shoot**: ~{int(shoot_chance)}% success\n"
@@ -359,12 +358,13 @@ class MatchEngine:
         
         embed.add_field(
             name="ℹ️ Action Info",
-            value="• **Shoot** - Attempt to score (vs GK positioning)\n"
-                  "• **Pass** - Keep possession (vs interception)\n"
-                  "• **Dribble** - Beat the defender (vs tackle)",
+            value="• **Shoot** - Score vs GK\n"
+                  "• **Pass** - Keep possession\n"
+                  "• **Dribble** - Beat defender",
             inline=False
         )
         
+        # FEATURE: 30 second timer (was 10)
         view = ActionView(available_actions, timeout=30)
         
         message = await channel.send(content=member.mention, embed=embed, view=view)
@@ -388,7 +388,6 @@ class MatchEngine:
         
         dc = get_difficulty_class(action)
         
-        # Adjust DC based on defender
         if defender and action == 'dribble':
             defender_modifier = calculate_modifier(defender['defending'])
             dc = max(10, dc + (defender_modifier - 5))
@@ -426,7 +425,7 @@ class MatchEngine:
         else:
             result_embed.add_field(
                 name=f"{'✅ SUCCESS!' if success else '❌ FAILED!'}",
-                value=f"Roll: **{roll}** + {modifier} (stat modifier) = **{total}** vs DC {dc}",
+                value=f"Roll: **{roll}** + {modifier} (stat) = **{total}** vs DC {dc}",
                 inline=False
             )
         
@@ -484,7 +483,7 @@ class MatchEngine:
                 else:
                     result_embed.add_field(
                         name="✅ Good Pass",
-                        value=f"{player['player_name']} finds a teammate!",
+                        value=f"{player['player_name']}finds a teammate!",
                         inline=False
                     )
                     rating_change = 0.1
@@ -685,10 +684,18 @@ class MatchEngine:
                 if player:
                     final_rating = max(0, min(10, p['match_rating']))
                     
+                    # FEATURE: FIX rating calculation
                     async with db.pool.acquire() as conn:
+                        if player['season_apps'] > 0:
+                            old_total = player['season_rating'] * player['season_apps']
+                            new_total = old_total + final_rating
+                            new_avg = new_total / (player['season_apps'] + 1)
+                        else:
+                            new_avg = final_rating
+                        
                         await conn.execute(
-                            "UPDATE players SET season_apps = season_apps + 1, career_apps = career_apps + 1, season_rating = ((season_rating * season_apps) + $1) / (season_apps + 1) WHERE user_id = $2",
-                            final_rating, p['user_id']
+                            "UPDATE players SET season_apps = season_apps + 1, career_apps = career_apps + 1, season_rating = $1 WHERE user_id = $2",
+                            new_avg, p['user_id']
                         )
                     
                     ratings_text += f"**{player['player_name']}**: {final_rating:.1f}/10\n"
@@ -698,8 +705,7 @@ class MatchEngine:
         
         embed.add_field(
             name="📊 Match Stats",
-            value=f"Key Moments: {config.MATCH_EVENTS_PER_GAME}\n"
-                  f"Goals: {home_score + away_score}",
+            value=f"Key Moments: Randomized\nGoals: {home_score + away_score}",
             inline=False
         )
         
@@ -749,7 +755,7 @@ class MatchEngine:
             ''', won, drawn, lost, goals_for, goals_against, points, team_id)
 
 class ActionView(discord.ui.View):
-    def __init__(self, available_actions, timeout=10):
+    def __init__(self, available_actions, timeout=30):
         super().__init__(timeout=timeout)
         self.chosen_action = None
         
