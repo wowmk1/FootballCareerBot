@@ -51,6 +51,47 @@ class FootballBot(commands.Bot):
             self.season_task_started = True
             print("✅ Background tasks started")
     
+        # This ensures ALL teams have complete squads with players in all positions
+
+async def initialize_data(self):
+    """Initialize database with teams and complete squads"""
+    from data.teams import ALL_TEAMS
+    from data.players import PREMIER_LEAGUE_PLAYERS
+    from utils.player_generator import generate_random_player_name
+    
+    # Check if teams exist
+    async with db.pool.acquire() as conn:
+        result = await conn.fetchrow("SELECT COUNT(*) as count FROM teams")
+        team_count = result['count']
+    
+    if team_count == 0:
+        print("📊 Initializing teams...")
+        async with db.pool.acquire() as conn:
+            for team in ALL_TEAMS:
+                if team['league'] == 'Premier League':
+                    budget = 150000000
+                    wage_budget = 200000
+                elif team['league'] == 'Championship':
+                    budget = 50000000
+                    wage_budget = 80000
+                else:
+                    budget = 10000000
+                    wage_budget = 30000
+                
+                await conn.execute('''
+                    INSERT INTO teams (team_id, team_name, league, budget, wage_budget)
+                    VALUES ($1, $2, $3, $4, $5)
+                ''',
+                    team['team_id'],
+                    team['team_name'],
+                    team['league'],
+                    budget,
+                    wage_budget
+                )
+        print(f"✅ Added {len(ALL_TEAMS)} teams")
+    
+    # Check if NPC players exist
+    
     async def load_cogs(self):
         """Load all command modules"""
         cogs = [
@@ -72,113 +113,54 @@ class FootballBot(commands.Bot):
                 print(f"❌ Failed to load {cog}: {e}")
     
     async def initialize_data(self):
-        """Initialize database with teams and players if empty"""
-        from data.teams import ALL_TEAMS
-        from data.players import PREMIER_LEAGUE_PLAYERS
-        
-        # Check if teams exist
+    """Initialize database with teams and complete squads"""
+    from data.teams import ALL_TEAMS
+    from data.players import PREMIER_LEAGUE_PLAYERS
+    from utils.npc_squad_generator import populate_all_teams
+    
+    # Check if teams exist
+    async with db.pool.acquire() as conn:
+        result = await conn.fetchrow("SELECT COUNT(*) as count FROM teams")
+        team_count = result['count']
+    
+    if team_count == 0:
+        print("📊 Initializing teams...")
         async with db.pool.acquire() as conn:
-            result = await conn.fetchrow("SELECT COUNT(*) as count FROM teams")
-            team_count = result['count']
+            for team in ALL_TEAMS:
+                if team['league'] == 'Premier League':
+                    budget = 150000000
+                    wage_budget = 200000
+                elif team['league'] == 'Championship':
+                    budget = 50000000
+                    wage_budget = 80000
+                else:
+                    budget = 10000000
+                    wage_budget = 30000
+                
+                await conn.execute('''
+                    INSERT INTO teams (team_id, team_name, league, budget, wage_budget)
+                    VALUES ($1, $2, $3, $4, $5)
+                ''',
+                    team['team_id'],
+                    team['team_name'],
+                    team['league'],
+                    budget,
+                    wage_budget
+                )
+        print(f"✅ Added {len(ALL_TEAMS)} teams")
+    
+    # Check if NPC players exist
+    async with db.pool.acquire() as conn:
+        result = await conn.fetchrow("SELECT COUNT(*) as count FROM npc_players")
+        npc_count = result['count']
+    
+    # If no NPC players, populate ALL teams with full squads
+    if npc_count == 0:
+        print("⚽ Generating complete squads for all teams...")
+        await populate_all_teams()
+        print("✅ All teams now have complete squads!")
         
-        if team_count == 0:
-            print("📊 Initializing teams...")
-            async with db.pool.acquire() as conn:
-                for team in ALL_TEAMS:
-                    if team['league'] == 'Premier League':
-                        budget = 150000000
-                        wage_budget = 200000
-                    elif team['league'] == 'Championship':
-                        budget = 50000000
-                        wage_budget = 80000
-                    else:
-                        budget = 10000000
-                        wage_budget = 30000
-                    
-                    await conn.execute('''
-                        INSERT INTO teams (team_id, team_name, league, budget, wage_budget)
-                        VALUES ($1, $2, $3, $4, $5)
-                    ''',
-                        team['team_id'],
-                        team['team_name'],
-                        team['league'],
-                        budget,
-                        wage_budget
-                    )
-            print(f"✅ Added {len(ALL_TEAMS)} teams")
-        
-        # Check if NPC players exist
-        async with db.pool.acquire() as conn:
-            result = await conn.fetchrow("SELECT COUNT(*) as count FROM npc_players")
-            npc_count = result['count']
-        
-        if npc_count == 0 and len(PREMIER_LEAGUE_PLAYERS) > 0:
-            print("⚽ Initializing NPC players...")
-            async with db.pool.acquire() as conn:
-                for player in PREMIER_LEAGUE_PLAYERS:
-                    overall = player['overall_rating']
-                    
-                    if player['position'] == 'GK':
-                        pace = max(40, overall - 10)
-                        shooting = max(40, overall - 15)
-                        passing = max(50, overall - 5)
-                        dribbling = max(45, overall - 10)
-                        defending = max(70, overall + 10)
-                        physical = max(60, overall)
-                    elif player['position'] in ['ST', 'W']:
-                        pace = max(60, overall + 5)
-                        shooting = max(65, overall + 5)
-                        passing = max(55, overall - 5)
-                        dribbling = max(60, overall + 5)
-                        defending = max(35, overall - 20)
-                        physical = max(55, overall)
-                    elif player['position'] in ['CAM', 'CM']:
-                        pace = max(55, overall)
-                        shooting = max(60, overall)
-                        passing = max(70, overall + 5)
-                        dribbling = max(65, overall + 5)
-                        defending = max(50, overall - 10)
-                        physical = max(60, overall)
-                    elif player['position'] in ['CDM']:
-                        pace = max(50, overall - 5)
-                        shooting = max(55, overall - 5)
-                        passing = max(70, overall + 5)
-                        dribbling = max(55, overall)
-                        defending = max(70, overall + 5)
-                        physical = max(70, overall + 5)
-                    elif player['position'] in ['CB', 'FB']:
-                        pace = max(55, overall if player['position'] == 'FB' else overall - 5)
-                        shooting = max(40, overall - 20)
-                        passing = max(60, overall)
-                        dribbling = max(50, overall - 10)
-                        defending = max(75, overall + 5)
-                        physical = max(75, overall + 5)
-                    else:
-                        pace = overall
-                        shooting = overall
-                        passing = overall
-                        dribbling = overall
-                        defending = overall
-                        physical = overall
-                    
-                    await conn.execute('''
-                        INSERT INTO npc_players (
-                            player_name, team_id, position, age, overall_rating,
-                            pace, shooting, passing, dribbling, defending, physical, is_regen
-                        )
-                        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, FALSE)
-                    ''',
-                        player['player_name'],
-                        player['team_id'],
-                        player['position'],
-                        player['age'],
-                        player['overall_rating'],
-                        pace, shooting, passing, dribbling, defending, physical
-                    )
-            
-            print(f"✅ Added {len(PREMIER_LEAGUE_PLAYERS)} NPC players")
-            
-            await db.retire_old_players()
+        await db.retire_old_players()
     
     @tasks.loop(minutes=15)
     async def check_match_day(self):
