@@ -106,7 +106,7 @@ class TrainingCommands(commands.Cog):
             actual_gain = capped_value - current
             
             if actual_gain > 0:
-                update_parts.append(f"{stat} = ?")
+                update_parts.append(stat)
                 update_values.append(capped_value)
                 actual_gains[stat] = actual_gain
         
@@ -119,42 +119,35 @@ class TrainingCommands(commands.Cog):
             (player['physical'] + actual_gains.get('physical', 0))
         ) // 6
         
-        update_values.extend([
-            new_overall,
-            new_streak,
-            datetime.now().isoformat(),
-            interaction.user.id
-        ])
-        
-        if update_parts:
-            await db.db.execute(f'''
-                UPDATE players SET
-                {", ".join(update_parts)},
-                overall_rating = ?,
-                training_streak = ?,
-                last_training = ?
-                WHERE user_id = ?
-            ''', update_values)
-        else:
-            await db.db.execute('''
-                UPDATE players SET
-                training_streak = ?,
-                last_training = ?
-                WHERE user_id = ?
-            ''', (new_streak, datetime.now().isoformat(), interaction.user.id))
-        
-        await db.db.execute('''
-            INSERT INTO training_history (user_id, stat_gains, streak_bonus, overall_before, overall_after)
-            VALUES (?, ?, ?, ?, ?)
-        ''', (
-            interaction.user.id,
-            str(actual_gains),
-            streak_bonus > 0,
-            player['overall_rating'],
-            new_overall
-        ))
-        
-        await db.db.commit()
+        async with db.pool.acquire() as conn:
+            if update_parts:
+                set_clause = ", ".join([f"{part} = ${i+1}" for i, part in enumerate(update_parts)])
+                set_clause += f", overall_rating = ${len(update_parts)+1}"
+                set_clause += f", training_streak = ${len(update_parts)+2}"
+                set_clause += f", last_training = ${len(update_parts)+3}"
+                
+                all_values = update_values + [new_overall, new_streak, datetime.now().isoformat(), interaction.user.id]
+                
+                await conn.execute(
+                    f"UPDATE players SET {set_clause} WHERE user_id = ${len(update_parts)+4}",
+                    *all_values
+                )
+            else:
+                await conn.execute(
+                    "UPDATE players SET training_streak = $1, last_training = $2 WHERE user_id = $3",
+                    new_streak, datetime.now().isoformat(), interaction.user.id
+                )
+            
+            await conn.execute('''
+                INSERT INTO training_history (user_id, stat_gains, streak_bonus, overall_before, overall_after)
+                VALUES ($1, $2, $3, $4, $5)
+            ''',
+                interaction.user.id,
+                str(actual_gains),
+                streak_bonus > 0,
+                player['overall_rating'],
+                new_overall
+            )
         
         embed = discord.Embed(
             title="🏃 Training Session Complete!",
