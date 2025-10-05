@@ -15,7 +15,83 @@ class Database:
             max_size=10
         )
         await self.create_tables()
+        
+        # Run transfer window migration
+        await self.migrate_transfer_windows()
+        
         print("✅ Database connected")
+    
+    async def migrate_transfer_windows(self):
+        """Migrate database for transfer window system"""
+        try:
+            async with self.pool.acquire() as conn:
+                # Check if migration already ran
+                result = await conn.fetchrow("""
+                    SELECT EXISTS (
+                        SELECT FROM information_schema.tables 
+                        WHERE table_name = 'transfer_offers'
+                    )
+                """)
+                
+                if result['exists']:
+                    print("✅ Transfer window tables already exist")
+                    return
+                
+                print("🔄 Running transfer window migration...")
+                
+                # Add new columns to players table
+                await conn.execute("""
+                    ALTER TABLE players 
+                    ADD COLUMN IF NOT EXISTS last_transfer_window INTEGER
+                """)
+                print("  ✅ Added last_transfer_window column")
+                
+                await conn.execute("""
+                    ALTER TABLE players 
+                    ADD COLUMN IF NOT EXISTS transfers_this_season INTEGER DEFAULT 0
+                """)
+                print("  ✅ Added transfers_this_season column")
+                
+                # Create transfer_offers table
+                await conn.execute("""
+                    CREATE TABLE IF NOT EXISTS transfer_offers (
+                        offer_id SERIAL PRIMARY KEY,
+                        user_id BIGINT NOT NULL,
+                        team_id TEXT NOT NULL,
+                        wage_offer INTEGER NOT NULL,
+                        contract_length INTEGER NOT NULL,
+                        offer_week INTEGER NOT NULL,
+                        expires_week INTEGER NOT NULL,
+                        offer_type TEXT DEFAULT 'standard',
+                        previous_offer_id INTEGER,
+                        performance_bonus INTEGER DEFAULT 0,
+                        status TEXT DEFAULT 'pending',
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    )
+                """)
+                print("  ✅ Created transfer_offers table")
+                
+                # Create indexes
+                await conn.execute("""
+                    CREATE INDEX IF NOT EXISTS idx_transfer_offers_user_status 
+                    ON transfer_offers(user_id, status)
+                """)
+                await conn.execute("""
+                    CREATE INDEX IF NOT EXISTS idx_transfer_offers_week 
+                    ON transfer_offers(offer_week)
+                """)
+                print("  ✅ Created indexes")
+                
+                # Add column to game_state
+                await conn.execute("""
+                    ALTER TABLE game_state 
+                    ADD COLUMN IF NOT EXISTS transfer_window_active BOOLEAN DEFAULT FALSE
+                """)
+                print("  ✅ Added transfer_window_active column")
+                
+                print("✅ Transfer window migration completed successfully!")
+        except Exception as e:
+            print(f"⚠️ Migration warning: {e}")
     
     async def create_tables(self):
         """Create all necessary tables"""
@@ -473,6 +549,7 @@ class Database:
             await conn.execute("DELETE FROM notifications")
             await conn.execute("DELETE FROM user_settings")
             await conn.execute("DELETE FROM news WHERE user_id IS NOT NULL")
+            await conn.execute("DELETE FROM transfer_offers")
             
             await conn.execute("""
                 UPDATE game_state SET
@@ -482,7 +559,8 @@ class Database:
                 fixtures_generated = FALSE,
                 next_match_day = NULL,
                 last_match_day = NULL,
-                match_window_closes = NULL
+                match_window_closes = NULL,
+                transfer_window_active = FALSE
             """)
             
             await conn.execute("UPDATE fixtures SET played = FALSE, playable = FALSE, home_score = NULL, away_score = NULL")
