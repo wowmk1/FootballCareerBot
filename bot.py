@@ -127,7 +127,8 @@ class FootballBot(commands.Bot):
         try:
             from utils.season_manager import check_match_day_trigger
             
-            triggered = await check_match_day_trigger()
+            # FIXED: Pass bot instance to season manager
+            triggered = await check_match_day_trigger(bot=self)
             
             if triggered:
                 print("⚽ Match window state changed")
@@ -196,7 +197,7 @@ async def help_command(interaction: discord.Interaction):
     
     embed = discord.Embed(
         title="⚽ Football Career Bot - Complete Guide",
-        description="Build your player from age 18 to 40 with **DnD-style interactive matches**!",
+        description="Build your player from age 18 to 38 with **DnD-style interactive matches**!",
         color=discord.Color.blue()
     )
     
@@ -213,9 +214,10 @@ async def help_command(interaction: discord.Interaction):
     embed.add_field(
         name="💼 Transfers & Contracts",
         value=(
-            "`/transfer_market` - Browse clubs interested in you\n"
+            "`/offers` - View transfer offers (during windows)\n"
             "`/my_contract` - View your current deal\n"
-            "`/transfer_history` - See all your moves"
+            "`/transfer_history` - See all your moves\n"
+            "`/market_value` - Check your estimated value"
         ),
         inline=False
     )
@@ -234,10 +236,10 @@ async def help_command(interaction: discord.Interaction):
         name="🎲 INTERACTIVE MATCHES",
         value=(
             "`/play_match` - Play your match!\n"
-            "• **8 key moments** per game\n"
+            "• **6-10 key moments** per game\n"
             "• **Choose: Shoot/Pass/Dribble**\n"
             "• **Roll d20 + stats vs DC**\n"
-            "• **10 sec timer** (auto-rolls if AFK)\n"
+            "• **30 sec timer** (auto-rolls if AFK)\n"
             "• **Affect the score** with decisions!"
         ),
         inline=False
@@ -279,16 +281,27 @@ async def help_command(interaction: discord.Interaction):
     )
     
     embed.add_field(
+        name="🔄 Transfer Windows",
+        value=(
+            "• **Weeks 4-6** - January window\n"
+            "• **Weeks 20-22** - Summer window\n"
+            "• 1 transfer per window maximum\n"
+            "• Contracts decrease each season"
+        ),
+        inline=False
+    )
+    
+    embed.add_field(
         name="⏳ Career",
         value=(
             f"• Age {config.STARTING_AGE}-{config.RETIREMENT_AGE} ({config.RETIREMENT_AGE - config.STARTING_AGE} years)\n"
-            "• Retire at 40, create new player\n"
+            "• Retire at 38, create new player\n"
             "• Build your legacy!"
         ),
         inline=False
     )
     
-    embed.set_footer(text=f"Season: {config.CURRENT_SEASON} | Transfer system enabled!")
+    embed.set_footer(text=f"Season: {config.CURRENT_SEASON} | Transfer windows enabled!")
     
     await interaction.response.send_message(embed=embed)
 
@@ -333,7 +346,7 @@ async def admin_open_window(interaction: discord.Interaction):
     await interaction.response.defer()
     
     from utils.season_manager import open_match_window
-    await open_match_window()
+    await open_match_window(bot=bot)
     
     embed = discord.Embed(
         title="✅ Match Window Opened",
@@ -401,7 +414,7 @@ async def admin_assign_team(interaction: discord.Interaction, user: discord.User
         )
         return
     
-    wage = player['overall_rating'] * 1000
+    wage = (player['overall_rating'] ** 2) * 10
     
     async with db.pool.acquire() as conn:
         await conn.execute(
