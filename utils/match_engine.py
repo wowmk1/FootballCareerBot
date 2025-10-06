@@ -174,7 +174,7 @@ class MatchEngine:
                     if player:
                         result = await self.handle_player_moment(
                             channel, player, participant, minute, 
-                            home_team, away_team, True
+                            home_team, away_team, True, match_id
                         )
                         
                         if result == 'goal':
@@ -194,7 +194,7 @@ class MatchEngine:
                     if player:
                         result = await self.handle_player_moment(
                             channel, player, participant, minute,
-                            away_team, home_team, False
+                            away_team, home_team, False, match_id
                         )
                         
                         if result == 'goal':
@@ -218,7 +218,7 @@ class MatchEngine:
         
         await self.end_match(match_id, fixture, channel, home_score, away_score, participants)
     
-    async def handle_player_moment(self, channel, player, participant, minute, attacking_team, defending_team, is_home):
+    async def handle_player_moment(self, channel, player, participant, minute, attacking_team, defending_team, is_home, match_id):
         """Handle a player's interactive moment with ENHANCED opponent clarity"""
         
         member = channel.guild.get_member(player['user_id'])
@@ -248,12 +248,29 @@ class MatchEngine:
         
         # ENHANCED: Build clear opponent information FIRST
         opponent_header = ""
+        teammate = None
+        
         if defender:
             opponent_header = f"═══════════════════════════\n"
             opponent_header += f"🛡️ **OPPONENT: {defender['player_name']}**\n"
             opponent_header += f"📍 Position: {defender['position']}\n"
             opponent_header += f"📊 DEF: **{defender['defending']}** | PHY: **{defender['physical']}**\n"
             opponent_header += f"═══════════════════════════\n\n"
+        else:
+            # Show teammate when no defender
+            async with db.pool.acquire() as conn:
+                teammate_result = await conn.fetchrow(
+                    "SELECT * FROM npc_players WHERE team_id = $1 AND retired = FALSE ORDER BY RANDOM() LIMIT 1",
+                    attacking_team['team_id']
+                )
+                teammate = dict(teammate_result) if teammate_result else None
+            
+            if teammate:
+                opponent_header = f"═══════════════════════════\n"
+                opponent_header += f"👥 **TEAMMATE: {teammate['player_name']}**\n"
+                opponent_header += f"📍 Position: {teammate['position']}\n"
+                opponent_header += f"📊 Available for pass\n"
+                opponent_header += f"═══════════════════════════\n\n"
         
         # Build situation text
         if defender:
@@ -330,6 +347,14 @@ class MatchEngine:
                       f"Position: **{defender['position']}**\n"
                       f"DEF: **{defender['defending']}** (+{calculate_modifier(defender['defending'])})\n"
                       f"PHY: **{defender['physical']}**",
+                inline=True
+            )
+        elif teammate:
+            embed.add_field(
+                name="👥 TEAMMATE NEARBY",
+                value=f"**{teammate['player_name']}**\n"
+                      f"Position: **{teammate['position']}**\n"
+                      f"Available for pass",
                 inline=True
             )
         
@@ -572,14 +597,29 @@ class MatchEngine:
                 )
                 rating_change = -0.1
         
-        # Update database
+        # CRITICAL FIX: Update rating in database immediately
         async with db.pool.acquire() as conn:
-            await conn.execute('''
-                UPDATE match_participants 
-                SET match_rating = match_rating + $1, actions_taken = actions_taken + 1
-                WHERE participant_id = $2
-            ''', rating_change, participant['participant_id'])
+            # Get current rating first
+            current = await conn.fetchrow(
+                "SELECT match_rating FROM match_participants WHERE match_id = $1 AND user_id = $2",
+                match_id, player['user_id']
+            )
             
+            if current:
+                old_rating = current['match_rating']
+                new_rating = old_rating + rating_change
+                
+                # Update with new rating
+                await conn.execute('''
+                    UPDATE match_participants 
+                    SET match_rating = $1, actions_taken = actions_taken + 1
+                    WHERE match_id = $2 AND user_id = $3
+                ''', new_rating, match_id, player['user_id'])
+                
+                # Debug log (will show in console)
+                print(f"[RATING] {player['player_name']}: {old_rating:.2f} + {rating_change:+.2f} = {new_rating:.2f}")
+            
+            # Log event
             await conn.execute('''
                 INSERT INTO match_events (
                     fixture_id, user_id, event_type, minute, description,
@@ -587,7 +627,7 @@ class MatchEngine:
                     success, rating_impact
                 ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
             ''',
-                participant['match_id'],
+                match_id,
                 player['user_id'],
                 action,
                 minute,
@@ -736,26 +776,39 @@ class MatchEngine:
             for p in participants:
                 player = await db.get_player(p['user_id'])
                 if player:
-                    raw_rating = p['match_rating']
-                    final_rating = max(0.0, min(10.0, raw_rating))
-                    
+                    # FIXED: Get final rating from database (not from participant dict which may be stale)
                     async with db.pool.acquire() as conn:
-                        if player['season_apps'] > 0:
-                            old_total = player['season_rating'] * player['season_apps']
-                            new_total = old_total + final_rating
-                            new_avg = new_total / (player['season_apps'] + 1)
-                        else:
-                            new_avg = final_rating
-                        
-                        await conn.execute("""
-                            UPDATE players 
-                            SET season_apps = season_apps + 1, 
-                                career_apps = career_apps + 1, 
-                                season_rating = $1 
-                            WHERE user_id = $2
-                        """, new_avg, p['user_id'])
+                        result = await conn.fetchrow(
+                            "SELECT match_rating, actions_taken FROM match_participants WHERE match_id = $1 AND user_id = $2",
+                            match_id, p['user_id']
+                        )
                     
-                    ratings_text += f"**{player['player_name']}**: {final_rating:.1f}/10\n"
+                    if result:
+                        raw_rating = result['match_rating']
+                        actions = result['actions_taken']
+                        final_rating = max(0.0, min(10.0, raw_rating))
+                        
+                        # Debug log
+                        print(f"[FINAL] {player['player_name']}: {final_rating:.2f}/10 ({actions} actions)")
+                        
+                        # Update season stats
+                        async with db.pool.acquire() as conn:
+                            if player['season_apps'] > 0:
+                                old_total = player['season_rating'] * player['season_apps']
+                                new_total = old_total + final_rating
+                                new_avg = new_total / (player['season_apps'] + 1)
+                            else:
+                                new_avg = final_rating
+                            
+                            await conn.execute("""
+                                UPDATE players 
+                                SET season_apps = season_apps + 1, 
+                                    career_apps = career_apps + 1, 
+                                    season_rating = $1 
+                                WHERE user_id = $2
+                            """, new_avg, p['user_id'])
+                        
+                        ratings_text += f"**{player['player_name']}**: {final_rating:.1f}/10 ({actions} actions)\n"
             
             if ratings_text:
                 embed.add_field(name="⭐ Player Ratings", value=ratings_text, inline=False)
