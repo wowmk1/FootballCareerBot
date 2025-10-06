@@ -33,12 +33,11 @@ class MatchEngine:
         }
         
         async with db.pool.acquire() as conn:
-            result = await conn.fetchrow(
-                "SELECT * FROM npc_players WHERE team_id = $1 AND retired = FALSE ORDER BY RANDOM() LIMIT 1",
-                defending_team['team_id']
+            rows = await conn.fetch(
+                "SELECT user_id FROM players WHERE (team_id = $1 OR team_id = $2) AND retired = FALSE",
+                fixture['home_team_id'], fixture['away_team_id']
             )
-            defender = dict(result) if result else None
-            player_users = [row['user_id'] for row in rows]
+            player_users = [row['user_id'] for row in rows]]
         
         for user_id in player_users:
             member = guild.get_member(user_id)
