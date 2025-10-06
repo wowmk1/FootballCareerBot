@@ -15,8 +15,8 @@ MATCHES_PER_WEEK = 3  # Mon, Wed, Sat
 # Match Configuration
 MATCH_WINDOW_HOURS = 2
 MATCH_START_HOUR = 15  # 3PM EST (was 20:00)
-MATCH_EVENTS_PER_GAME_MIN = 6  # Minimum key moments
-MATCH_EVENTS_PER_GAME_MAX = 10  # Maximum key moments
+MATCH_EVENTS_PER_GAME_MIN = 18  # Minimum key moments
+MATCH_EVENTS_PER_GAME_MAX = 25  # Maximum key moments
 
 # Player Configuration
 STARTING_AGE = 18
