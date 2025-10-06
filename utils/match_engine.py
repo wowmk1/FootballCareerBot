@@ -37,7 +37,7 @@ class MatchEngine:
                 "SELECT user_id FROM players WHERE (team_id = $1 OR team_id = $2) AND retired = FALSE",
                 fixture['home_team_id'], fixture['away_team_id']
             )
-            player_users = [row['user_id'] for row in rows]]
+            player_users = [row['user_id'] for row in rows]
         
         for user_id in player_users:
             member = guild.get_member(user_id)
