@@ -50,7 +50,6 @@ class MatchEngine:
             overwrites=overwrites
         )
         
-        # FEATURE: Randomize number of key moments (6-10)
         num_events = random.randint(config.MATCH_EVENTS_PER_GAME_MIN, config.MATCH_EVENTS_PER_GAME_MAX)
         
         embed = discord.Embed(
@@ -149,7 +148,6 @@ class MatchEngine:
         home_participants = [p for p in participants if p['team_id'] == fixture['home_team_id']]
         away_participants = [p for p in participants if p['team_id'] == fixture['away_team_id']]
         
-        # Generate random minutes for events
         possible_minutes = list(range(5, 91, 5))
         minutes = sorted(random.sample(possible_minutes, min(num_events, len(possible_minutes))))
         
@@ -221,13 +219,13 @@ class MatchEngine:
         await self.end_match(match_id, fixture, channel, home_score, away_score, participants)
     
     async def handle_player_moment(self, channel, player, participant, minute, attacking_team, defending_team, is_home):
-        """Handle a player's interactive moment with full context"""
+        """Handle a player's interactive moment with ENHANCED opponent clarity"""
         
         member = channel.guild.get_member(player['user_id'])
         if not member:
             return await self.auto_resolve_moment(player, minute, attacking_team, defending_team)
         
-        # FEATURE: Get defender from FULL squad (all positions populated)
+        # Get defender
         async with db.pool.acquire() as conn:
             result = await conn.fetchrow(
                 "SELECT * FROM npc_players WHERE team_id = $1 AND position IN ('CB', 'FB', 'CDM', 'GK') ORDER BY RANDOM() LIMIT 1",
@@ -248,123 +246,168 @@ class MatchEngine:
         
         available_actions = position_actions.get(player['position'], ['shoot', 'pass', 'dribble'])
         
-        # FEATURE: Detailed situation descriptions
+        # ENHANCED: Build clear opponent information FIRST
+        opponent_header = ""
+        if defender:
+            opponent_header = f"═══════════════════════════\n"
+            opponent_header += f"🛡️ **OPPONENT: {defender['player_name']}**\n"
+            opponent_header += f"📍 Position: {defender['position']}\n"
+            opponent_header += f"📊 DEF: **{defender['defending']}** | PHY: **{defender['physical']}**\n"
+            opponent_header += f"═══════════════════════════\n\n"
+        
+        # Build situation text
         if defender:
             if defender['position'] == 'GK':
-                situations = [
-                    f"🎯 **ONE-ON-ONE WITH THE KEEPER!** You're through on goal vs **{defender['player_name']}** (GK). Perfect shooting opportunity!",
-                    f"🥅 **CLEAR SHOT!** The goalkeeper **{defender['player_name']}** is the only obstacle. Time to shoot!",
-                    f"⚡ **BREAKAWAY!** You've beaten the defense! Only **{defender['player_name']}** (GK) stands between you and a goal!"
-                ]
+                situation = "🎯 **ONE-ON-ONE WITH THE KEEPER!**\nYou're through on goal! Perfect time to shoot!"
             elif defender['position'] in ['CB', 'FB']:
-                situations = [
-                    f"⚔️ **1v1 DUEL!** You're facing **{defender['player_name']}** ({defender['position']}, DEF {defender['defending']}). Dribble past or find a pass!",
-                    f"🛡️ **DEFENDER BLOCKING!** **{defender['player_name']}** (DEF {defender['defending']}) is in your way. Beat them with skill or pass it!",
-                    f"💥 **PHYSICAL BATTLE!** **{defender['player_name']}** (PHY {defender['physical']}) is challenging you. Use pace or technique!"
-                ]
+                situation = f"⚔️ **1v1 DUEL!**\nFacing {defender['player_name']} (DEF {defender['defending']})"
             else:
-                situations = [
-                    f"🚧 **MIDFIELD PRESS!** **{defender['player_name']}** ({defender['position']}, DEF {defender['defending']}) is pressing you. Quick decision needed!",
-                    f"⚙️ **DEFENSIVE MID CHALLENGE!** **{defender['player_name']}** (DEF {defender['defending']}) is blocking the passing lane. What's your move?"
-                ]
+                situation = f"🚧 **MIDFIELD PRESS!**\n{defender['player_name']} (DEF {defender['defending']}) is blocking you"
         else:
-            situations = [
-                "🏃 **BREAKING THROUGH!** You have space to attack!",
-                "📦 **IN THE BOX!** Great position to make something happen!",
-                "🎪 **EDGE OF THE BOX!** You have time to decide your next move!"
-            ]
+            situation = "🏃 **SPACE TO ATTACK!**\nNo defender in sight - you have options!"
         
-        situation = random.choice(situations)
+        full_description = opponent_header + situation
         
-        # Calculate success probabilities
+        # Calculate DCs and modifiers
         shoot_dc = get_difficulty_class('shoot')
         pass_dc = get_difficulty_class('pass')
         dribble_dc = get_difficulty_class('dribble')
         
+        # Adjust dribble DC based on defender
         if defender and 'dribble' in available_actions:
             defender_modifier = calculate_modifier(defender['defending'])
             dribble_dc = max(10, dribble_dc + (defender_modifier - 5))
         
-        shoot_chance = min(95, max(5, ((21 - shoot_dc + calculate_modifier(player['shooting'])) / 20) * 100))
-        pass_chance = min(95, max(5, ((21 - pass_dc + calculate_modifier(player['passing'])) / 20) * 100))
-        dribble_chance = min(95, max(5, ((21 - dribble_dc + calculate_modifier(player['dribbling'])) / 20) * 100))
+        shoot_mod = calculate_modifier(player['shooting'])
+        pass_mod = calculate_modifier(player['passing'])
+        dribble_mod = calculate_modifier(player['dribbling'])
+        
+        # Calculate what they need to roll
+        shoot_needed = max(1, shoot_dc - shoot_mod)
+        pass_needed = max(1, pass_dc - pass_mod)
+        dribble_needed = max(1, dribble_dc - dribble_mod)
+        
+        # Calculate success chances
+        shoot_chance = min(95, max(5, ((21 - shoot_dc + shoot_mod) / 20) * 100))
+        pass_chance = min(95, max(5, ((21 - pass_dc + pass_mod) / 20) * 100))
+        dribble_chance = min(95, max(5, ((21 - dribble_dc + dribble_mod) / 20) * 100))
         
         # Smart recommendation
         if defender:
             if defender['position'] == 'GK':
-                recommended = "🎯 **SHOOT** is your best option - you're 1v1 with the keeper!"
+                recommended = "🎯 **SHOOT** - You're 1v1 with keeper!"
             elif 'dribble' in available_actions and player['dribbling'] > defender['defending'] + 10:
-                recommended = f"🪄 **DRIBBLE** recommended - Your skill ({player['dribbling']}) beats their defense ({defender['defending']})!"
+                recommended = f"🪄 **DRIBBLE** - Your skill ({player['dribbling']}) >> Their defense ({defender['defending']})"
             elif defender['defending'] > player['dribbling'] + 10:
-                recommended = f"🎪 **PASS** recommended - Defender is strong (DEF {defender['defending']}), safer to pass!"
+                recommended = f"🎪 **PASS** - Defender too strong (DEF {defender['defending']})"
             else:
-                recommended = "⚖️ **Balanced matchup** - Any action could work!"
+                recommended = "⚖️ **Even matchup** - Trust your instincts!"
         else:
-            recommended = "🎯 **You have space** - Choose wisely!"
+            recommended = "🎯 **Any action works** - You have space!"
         
+        # Create main embed
         embed = discord.Embed(
-            title=f"🎯 {member.display_name}'s Key Moment!",
-            description=f"**Minute {minute}'**\n\n{situation}\n\n"
-                        f"**{player['player_name']}** has the ball!\n"
-                        f"**You have 30 seconds to decide!**",
+            title=f"🎯 {member.display_name}'s KEY MOMENT!",
+            description=f"**Minute {minute}'**\n\n{full_description}\n**{player['player_name']}** has the ball!\n⏱️ **30 seconds to decide!**",
             color=discord.Color.gold()
         )
         
+        # YOUR stats
         embed.add_field(
-            name="📊 Your Stats",
-            value=f"⚡ Pace: {player['pace']}\n"
-                  f"🎯 Shooting: {player['shooting']}\n"
-                  f"🎪 Passing: {player['passing']}\n"
-                  f"🪄 Dribbling: {player['dribbling']}",
+            name="📊 YOUR STATS",
+            value=f"⚡ Pace: **{player['pace']}**\n"
+                  f"🎯 Shooting: **{player['shooting']}** (+{shoot_mod})\n"
+                  f"🎪 Passing: **{player['passing']}** (+{pass_mod})\n"
+                  f"🪄 Dribbling: **{player['dribbling']}** (+{dribble_mod})",
             inline=True
         )
         
+        # OPPONENT stats (if exists)
         if defender:
             embed.add_field(
-                name="🛡️ Defender",
+                name="🛡️ OPPONENT STATS",
                 value=f"**{defender['player_name']}**\n"
-                      f"Position: {defender['position']}\n"
-                      f"DEF: {defender['defending']}\n"
-                      f"PHY: {defender['physical']}",
+                      f"Position: **{defender['position']}**\n"
+                      f"DEF: **{defender['defending']}** (+{calculate_modifier(defender['defending'])})\n"
+                      f"PHY: **{defender['physical']}**",
                 inline=True
             )
         
+        # Match situation
         embed.add_field(
-            name="⚽ Match Situation",
-            value=f"**{attacking_team['team_name']}** attacking\n"
-                  f"vs **{defending_team['team_name']}**",
+            name="⚽ MATCH SITUATION",
+            value=f"**{attacking_team['team_name']}** attacking\nvs **{defending_team['team_name']}**",
+            inline=True
+        )
+        
+        # WHAT YOU NEED TO ROLL - Most important!
+        roll_requirements = ""
+        if 'shoot' in available_actions:
+            roll_requirements += f"🎯 **Shoot**: Roll **{shoot_needed}+** on d20 (DC {shoot_dc})\n"
+        if 'pass' in available_actions:
+            roll_requirements += f"🎪 **Pass**: Roll **{pass_needed}+** on d20 (DC {pass_dc})\n"
+        if 'dribble' in available_actions:
+            if defender:
+                roll_requirements += f"🪄 **Dribble**: Roll **{dribble_needed}+** on d20 (DC {dribble_dc} vs DEF {defender['defending']})\n"
+            else:
+                roll_requirements += f"🪄 **Dribble**: Roll **{dribble_needed}+** on d20 (DC {dribble_dc})\n"
+        
+        embed.add_field(
+            name="🎲 WHAT YOU NEED TO ROLL",
+            value=roll_requirements,
             inline=False
         )
         
+        # Success probabilities
         chances_text = ""
         if 'shoot' in available_actions:
-            chances_text += f"🎯 **Shoot**: ~{int(shoot_chance)}% success\n"
+            chances_text += f"🎯 Shoot: ~**{int(shoot_chance)}%** success\n"
         if 'pass' in available_actions:
-            chances_text += f"🎪 **Pass**: ~{int(pass_chance)}% success\n"
+            chances_text += f"🎪 Pass: ~**{int(pass_chance)}%** success\n"
         if 'dribble' in available_actions:
-            chances_text += f"🪄 **Dribble**: ~{int(dribble_chance)}% success\n"
+            chances_text += f"🪄 Dribble: ~**{int(dribble_chance)}%** success\n"
         
         embed.add_field(
-            name="📈 Success Probability",
+            name="📈 SUCCESS PROBABILITY",
             value=chances_text,
             inline=True
         )
         
+        # Matchup analysis for dribble
+        if defender and 'dribble' in available_actions:
+            matchup_text = f"**YOUR DRI: {player['dribbling']}**\nvs\n**THEIR DEF: {defender['defending']}**\n\n"
+            
+            if player['dribbling'] > defender['defending'] + 10:
+                matchup_text += "✅ **HUGE ADVANTAGE!**"
+            elif player['dribbling'] > defender['defending']:
+                matchup_text += "✅ Advantage"
+            elif defender['defending'] > player['dribbling'] + 10:
+                matchup_text += "❌ **BIG DISADVANTAGE!**"
+            else:
+                matchup_text += "⚖️ Even matchup"
+            
+            embed.add_field(
+                name="⚔️ DRIBBLE MATCHUP",
+                value=matchup_text,
+                inline=True
+            )
+        
+        # Recommendation
         embed.add_field(
-            name="💡 Recommendation",
+            name="💡 RECOMMENDATION",
             value=recommended,
             inline=False
         )
         
+        # Action descriptions
         embed.add_field(
-            name="ℹ️ Action Info",
-            value="• **Shoot** - Score vs GK\n"
+            name="ℹ️ ACTION INFO",
+            value="• **Shoot** - Try to score vs GK\n"
                   "• **Pass** - Keep possession\n"
-                  "• **Dribble** - Beat defender",
+                  "• **Dribble** - Beat the defender",
             inline=False
         )
         
-        # FEATURE: 30 second timer (was 10)
         view = ActionView(available_actions, timeout=30)
         
         message = await channel.send(content=member.mention, embed=embed, view=view)
@@ -377,6 +420,7 @@ class MatchEngine:
             action = random.choice(available_actions)
             await channel.send(f"⏰ {member.mention} didn't choose in time! Auto-selected: **{action.upper()}**")
         
+        # Execute action
         stat_map = {
             'shoot': player['shooting'],
             'pass': player['passing'],
@@ -396,20 +440,28 @@ class MatchEngine:
         total = roll + modifier
         success = total >= dc
         
+        # ENHANCED: Show the battle result
         result_embed = discord.Embed(
             title=f"🎲 {action.upper()} Attempt!",
             description=f"**{player['player_name']}** attempts to {action}...",
             color=discord.Color.green() if success else discord.Color.red()
         )
         
+        # Show opponent's defensive effort
         if defender and action == 'dribble':
+            defender_roll = roll_d20()
+            defender_mod = calculate_modifier(defender['defending'])
+            defender_total = defender_roll + defender_mod
+            
             result_embed.add_field(
-                name="🛡️ Defender Challenge",
-                value=f"vs **{defender['player_name']}** (DEF {defender['defending']})\n"
-                      f"Adjusted DC: {dc}",
+                name="⚔️ THE BATTLE",
+                value=f"**YOU**: {roll} + {modifier} = **{total}** (Dribbling)\n"
+                      f"**{defender['player_name'].upper()}**: {defender_roll} + {defender_mod} = **{defender_total}** (Defending)\n"
+                      f"**DC to beat**: {dc}",
                 inline=False
             )
         
+        # Main result
         if roll == 20:
             result_embed.add_field(
                 name="🌟 NATURAL 20! CRITICAL SUCCESS!",
@@ -432,6 +484,7 @@ class MatchEngine:
         rating_change = 0
         outcome = None
         
+        # Determine outcome
         if action == 'shoot':
             if success:
                 if roll == 20 or total >= dc + 5:
@@ -465,7 +518,7 @@ class MatchEngine:
                     rating_change = -0.3
                 else:
                     result_embed.add_field(
-                        name="📍 Off Target",
+                        name="📐 Off Target",
                         value=f"The shot goes wide!",
                         inline=False
                     )
@@ -483,7 +536,7 @@ class MatchEngine:
                 else:
                     result_embed.add_field(
                         name="✅ Good Pass",
-                        value=f"{player['player_name']}finds a teammate!",
+                        value=f"{player['player_name']} finds a teammate!",
                         inline=False
                     )
                     rating_change = 0.1
@@ -519,6 +572,7 @@ class MatchEngine:
                 )
                 rating_change = -0.1
         
+        # Update database
         async with db.pool.acquire() as conn:
             await conn.execute('''
                 UPDATE match_participants 
@@ -682,19 +736,15 @@ class MatchEngine:
             for p in participants:
                 player = await db.get_player(p['user_id'])
                 if player:
-                    # FIXED: Clamp rating between 0-10 to prevent negative ratings
                     raw_rating = p['match_rating']
                     final_rating = max(0.0, min(10.0, raw_rating))
                     
-                    # FIXED: Proper rating calculation
                     async with db.pool.acquire() as conn:
                         if player['season_apps'] > 0:
-                            # Calculate new average properly
                             old_total = player['season_rating'] * player['season_apps']
                             new_total = old_total + final_rating
                             new_avg = new_total / (player['season_apps'] + 1)
                         else:
-                            # First match of season
                             new_avg = final_rating
                         
                         await conn.execute("""
@@ -708,7 +758,7 @@ class MatchEngine:
                     ratings_text += f"**{player['player_name']}**: {final_rating:.1f}/10\n"
             
             if ratings_text:
-                embed.add_field(name="Player Ratings", value=ratings_text, inline=False)
+                embed.add_field(name="⭐ Player Ratings", value=ratings_text, inline=False)
         
         embed.add_field(
             name="📊 Match Stats",
