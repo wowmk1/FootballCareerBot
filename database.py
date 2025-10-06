@@ -481,87 +481,147 @@ class Database:
             await conn.execute("UPDATE npc_players SET age = age + 1 WHERE retired = FALSE")
         print("✅ All players aged by 1 year")
     
-    async def retire_old_players(self):
-        """Retire players who reach retirement age"""
-        from datetime import datetime
+    # Replace the retire_old_players method in database.py with this enhanced version
+
+async def retire_old_players(self):
+    """Retire players who reach retirement age and create regens"""
+    from datetime import datetime
+    from data.player_names import get_random_player_name
+    
+    async with db.pool.acquire() as conn:
+        # Retire user players
+        old_players = await conn.fetch(
+            "SELECT * FROM players WHERE age >= $1 AND retired = FALSE",
+            config.RETIREMENT_AGE
+        )
         
-        async with self.pool.acquire() as conn:
-            # Retire user players
-            old_players = await conn.fetch(
-                "SELECT * FROM players WHERE age >= $1 AND retired = FALSE",
-                config.RETIREMENT_AGE
+        for player in old_players:
+            await conn.execute(
+                """UPDATE players 
+                   SET retired = TRUE, retirement_date = $1, team_id = 'retired'
+                   WHERE user_id = $2""",
+                datetime.now().isoformat(), player['user_id']
             )
             
-            for player in old_players:
-                await conn.execute(
-                    """UPDATE players 
-                       SET retired = TRUE, retirement_date = $1, team_id = 'retired'
-                       WHERE user_id = $2""",
-                    datetime.now().isoformat(), player['user_id']
-                )
-                
-                await self.add_news(
-                    f"Legend Retires: {player['player_name']}",
-                    f"{player['player_name']} has announced retirement at age {player['age']}. "
-                    f"Career: {player['career_goals']} goals, {player['career_assists']} assists in {player['career_apps']} apps.",
-                    "player_news",
-                    player['user_id'],
-                    10
-                )
-            
-            # Retire NPC players
-            old_npcs = await conn.fetch(
-                "SELECT * FROM npc_players WHERE age >= $1 AND retired = FALSE",
-                config.RETIREMENT_AGE
+            await self.add_news(
+                f"Legend Retires: {player['player_name']}",
+                f"{player['player_name']} has announced retirement at age {player['age']}. "
+                f"Career: {player['career_goals']} goals, {player['career_assists']} assists in {player['career_apps']} apps.",
+                "player_news",
+                player['user_id'],
+                10
+            )
+        
+        # Retire NPC players and create regens
+        old_npcs = await conn.fetch(
+            "SELECT * FROM npc_players WHERE age >= $1 AND retired = FALSE",
+            config.RETIREMENT_AGE
+        )
+        
+        for npc in old_npcs:
+            # Mark as retired
+            await conn.execute(
+                "UPDATE npc_players SET retired = TRUE WHERE npc_id = $1",
+                npc['npc_id']
             )
             
-            for npc in old_npcs:
-                await conn.execute(
-                    "UPDATE npc_players SET retired = TRUE WHERE npc_id = $1",
-                    npc['npc_id']
-                )
-                
-                await self.create_regen_player(npc['team_id'], npc['position'])
-                
+            # Create regen to replace them
+            await self.create_regen_player(npc['team_id'], npc['position'], npc['overall_rating'])
+            
+            # News for notable retirements (80+ rated)
+            if npc['overall_rating'] >= 80:
                 await self.add_news(
-                    f"{npc['player_name']} Retires",
-                    f"Veteran {npc['player_name']} ({npc['age']}) has retired from {npc['team_id']}.",
+                    f"Star Retires: {npc['player_name']}",
+                    f"Legendary {npc['player_name']} ({npc['overall_rating']} OVR) retires at {npc['age']}. "
+                    f"A regen will take his place in {npc['team_id']}.",
                     "league_news",
                     None,
-                    3
+                    7
                 )
-            
-            if old_players or old_npcs:
-                print(f"✅ Retired {len(old_players)} user + {len(old_npcs)} NPC players")
-            
-            return len(old_players) + len(old_npcs)
+        
+        if old_players or old_npcs:
+            print(f"✅ Retired {len(old_players)} user + {len(old_npcs)} NPC players")
+            print(f"✅ Created {len(old_npcs)} regen players")
+        
+        return len(old_players) + len(old_npcs)
+
+async def create_regen_player(self, team_id: str, position: str, original_rating: int = None):
+    """Create regenerated player to replace retired player"""
+    from data.player_names import get_random_player_name
+    from utils.player_generator import calculate_regen_rating
+    import random
     
-    async def create_regen_player(self, team_id: str, position: str):
-        """Create regenerated player"""
-        from utils.player_generator import generate_random_player_name, calculate_regen_rating
-        
-        team = await self.get_team(team_id)
-        if not team:
-            return
-        
-        name = generate_random_player_name()
-        rating = calculate_regen_rating(team['league'], position)
-        age = 18
-        
-        base = rating
-        pace = max(50, min(95, base + (5 if position in ['W', 'FB'] else -5)))
-        shooting = max(50, min(95, base + (5 if position in ['ST', 'W'] else -5)))
-        passing = max(50, min(95, base + (5 if position in ['CM', 'CAM'] else -5)))
-        dribbling = max(50, min(95, base + (5 if position in ['W', 'CAM'] else -5)))
-        defending = max(50, min(95, base + (10 if position in ['CB', 'CDM'] else -10)))
-        physical = max(50, min(95, base + (5 if position in ['CB', 'ST'] else -5)))
-        
-        async with self.pool.acquire() as conn:
-            await conn.execute('''
-                INSERT INTO npc_players 
-                (player_name, team_id, position, age, overall_rating, pace, shooting, passing, dribbling, defending, physical, is_regen)
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, TRUE)
-            ''', name, team_id, position, age, rating, pace, shooting, passing, dribbling, defending, physical)
+    team = await self.get_team(team_id)
+    if not team:
+        return
+    
+    name = get_random_player_name()
+    
+    # Regen rating is based on league and position, with slight randomness
+    if original_rating:
+        # Regen is 60-80% of original player's rating
+        base_rating = int(original_rating * random.uniform(0.6, 0.8))
+    else:
+        base_rating = calculate_regen_rating(team['league'], position)
+    
+    # Young regens (18-21)
+    age = random.randint(18, 21)
+    
+    # Calculate stats based on position and rating
+    if position == 'GK':
+        pace = max(40, base_rating - random.randint(10, 15))
+        shooting = max(40, base_rating - random.randint(15, 20))
+        passing = max(50, base_rating - random.randint(5, 10))
+        dribbling = max(45, base_rating - random.randint(10, 15))
+        defending = min(99, base_rating + random.randint(5, 15))
+        physical = max(60, base_rating + random.randint(-5, 5))
+    elif position in ['ST', 'W']:
+        pace = min(99, base_rating + random.randint(0, 10))
+        shooting = min(99, base_rating + random.randint(5, 10))
+        passing = max(50, base_rating - random.randint(0, 10))
+        dribbling = min(99, base_rating + random.randint(0, 10))
+        defending = max(30, base_rating - random.randint(20, 30))
+        physical = max(50, base_rating - random.randint(0, 10))
+    elif position in ['CAM', 'CM']:
+        pace = max(50, base_rating - random.randint(0, 5))
+        shooting = max(55, base_rating - random.randint(0, 10))
+        passing = min(99, base_rating + random.randint(5, 10))
+        dribbling = min(99, base_rating + random.randint(0, 10))
+        defending = max(45, base_rating - random.randint(10, 20))
+        physical = max(55, base_rating - random.randint(0, 10))
+    elif position == 'CDM':
+        pace = max(50, base_rating - random.randint(5, 10))
+        shooting = max(50, base_rating - random.randint(10, 15))
+        passing = min(99, base_rating + random.randint(0, 10))
+        dribbling = max(55, base_rating - random.randint(5, 10))
+        defending = min(99, base_rating + random.randint(5, 15))
+        physical = min(99, base_rating + random.randint(5, 10))
+    elif position in ['CB', 'FB']:
+        if position == 'FB':
+            pace = min(99, base_rating + random.randint(0, 5))
+        else:
+            pace = max(50, base_rating - random.randint(5, 10))
+        shooting = max(35, base_rating - random.randint(20, 30))
+        passing = max(55, base_rating - random.randint(5, 10))
+        dribbling = max(45, base_rating - random.randint(10, 20))
+        defending = min(99, base_rating + random.randint(5, 15))
+        physical = min(99, base_rating + random.randint(5, 10))
+    else:
+        pace = base_rating
+        shooting = base_rating
+        passing = base_rating
+        dribbling = base_rating
+        defending = base_rating
+        physical = base_rating
+    
+    async with db.pool.acquire() as conn:
+        await conn.execute('''
+            INSERT INTO npc_players 
+            (player_name, team_id, position, age, overall_rating, pace, shooting, passing, dribbling, defending, physical, is_regen)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, TRUE)
+        ''', name, team_id, position, age, base_rating, pace, shooting, passing, dribbling, defending, physical)
+    
+    print(f"  Created regen: {name} ({base_rating} OVR {position}) for {team_id}")
     
     async def wipe_all_user_players(self):
         """ADMIN: Delete all user-created players and reset game state"""
