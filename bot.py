@@ -525,6 +525,53 @@ async def admin_retire(interaction: discord.Interaction):
     
     await interaction.followup.send(embed=embed)
 
+@bot.tree.command(name="admin_check_squads", description="[ADMIN] Check NPC player counts per team")
+async def admin_check_squads(interaction: discord.Interaction):
+    """Admin: Check squad population"""
+    
+    if not interaction.user.guild_permissions.administrator:
+        await interaction.response.send_message(
+            "Administrator permissions required!",
+            ephemeral=True
+        )
+        return
+    
+    await interaction.response.defer()
+    
+    async with db.pool.acquire() as conn:
+        rows = await conn.fetch("""
+            SELECT t.team_name, t.league, COUNT(n.npc_id) as players
+            FROM teams t
+            LEFT JOIN npc_players n ON t.team_id = n.team_id AND n.retired = FALSE
+            GROUP BY t.team_name, t.league
+            ORDER BY players DESC
+        """)
+    
+    teams = [dict(row) for row in rows]
+    
+    embed = discord.Embed(
+        title="NPC Squad Status",
+        description=f"Total teams: {len(teams)}",
+        color=discord.Color.blue()
+    )
+    
+    pl_teams = [t for t in teams if t['league'] == 'Premier League']
+    champ_teams = [t for t in teams if t['league'] == 'Championship']
+    l1_teams = [t for t in teams if t['league'] == 'League One']
+    
+    if pl_teams:
+        pl_text = "\n".join([f"{t['team_name']}: {t['players']} players" for t in pl_teams[:10]])
+        embed.add_field(name="Premier League (sample)", value=pl_text, inline=False)
+    
+    if champ_teams:
+        champ_text = "\n".join([f"{t['team_name']}: {t['players']} players" for t in champ_teams[:10]])
+        embed.add_field(name="Championship (sample)", value=champ_text, inline=False)
+    
+    total_npcs = sum(t['players'] for t in teams)
+    embed.set_footer(text=f"Total NPC players: {total_npcs}")
+    
+    await interaction.followup.send(embed=embed)
+
 # Run bot
 if __name__ == "__main__":
     try:
