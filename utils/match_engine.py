@@ -1,4 +1,6 @@
-"SELECT * FROM npc_players WHERE team_id = $1 AND retired = FALSE ORDER BY RANDOM() LIMIT 1",
+conn:
+            result = await conn.fetchrow(
+                "SELECT * FROM npc_players WHERE team_id = $1 AND retired = FALSE ORDER BY RANDOM() LIMIT 1",
                 team_id
             )
             npc = dict(result) if result else None
@@ -241,6 +243,7 @@
         """Auto-resolve when player unavailable"""
         return None
 
+
 class EnhancedActionView(discord.ui.View):
     def __init__(self, available_actions, timeout=30):
         super().__init__(timeout=timeout)
@@ -276,6 +279,7 @@ class EnhancedActionView(discord.ui.View):
         for item in self.children:
             item.disabled = True
 
+
 class ActionButton(discord.ui.Button):
     def __init__(self, action, emoji):
         super().__init__(
@@ -293,5 +297,6 @@ class ActionButton(discord.ui.Button):
         
         await interaction.response.edit_message(view=self.view)
         self.view.stop()
+
 
 match_engine = None
