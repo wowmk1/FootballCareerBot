@@ -90,6 +90,15 @@ async def open_match_window(bot=None):
         # Execute NPC transfers
         from utils.npc_transfer_system import execute_npc_transfers
         await execute_npc_transfers(current_week)
+    
+    # POST WEEKLY NEWS TO CHANNELS
+    if bot:
+        try:
+            for guild in bot.guilds:
+                await bot.post_weekly_news(guild)
+            print(f"✅ Posted weekly news to all servers")
+        except Exception as e:
+            print(f"⚠️ Could not post weekly news: {e}")
 
 async def close_match_window():
     """Close match window and auto-simulate unplayed matches"""
