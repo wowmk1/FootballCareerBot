@@ -14,15 +14,16 @@ class MatchEngine:
         self.pinned_messages = {}
 
     def get_position_events(self, position):
+        """Enhanced position-specific events with defensive actions"""
         position_events = {
-            'ST': ['shoot', 'penalty_area_dribble', 'through_ball_receive'],
-            'W': ['dribble', 'cross', 'cut_inside', 'shoot'],
-            'CAM': ['through_ball', 'shoot', 'key_pass', 'dribble'],
-            'CM': ['pass', 'through_ball', 'long_ball', 'tackle'],
-            'CDM': ['tackle', 'interception', 'pass', 'block'],
-            'FB': ['tackle', 'cross', 'overlap', 'clearance'],
+            'ST': ['shoot', 'hold_up_play', 'run_in_behind', 'press_defender'],
+            'W': ['dribble', 'cross', 'cut_inside', 'track_back', 'shoot'],
+            'CAM': ['through_ball', 'shoot', 'key_pass', 'dribble', 'press'],
+            'CM': ['pass', 'through_ball', 'long_ball', 'tackle', 'interception'],
+            'CDM': ['tackle', 'interception', 'pass', 'block', 'cover'],
+            'FB': ['tackle', 'cross', 'overlap', 'clearance', 'track_runner'],
             'CB': ['tackle', 'clearance', 'block', 'pass'],
-            'GK': ['save', 'claim_cross', 'distribution']
+            'GK': ['save', 'claim_cross', 'distribution', 'sweep']
         }
         return position_events.get(position, ['pass', 'dribble', 'tackle'])
 
@@ -30,13 +31,14 @@ class MatchEngine:
         descriptions = {
             'shoot': "⚡ **SHOOTS!**", 'pass': "🎯 Looks to pass", 'dribble': "💨 Takes on the defender",
             'tackle': "🛡️ Goes for the tackle", 'cross': "📤 Delivers a cross", 'clearance': "🚀 Clears the danger",
-            'save': "🧤 Diving save attempt", 'through_ball': "⚡ Thread through ball",
-            'interception': "👀 Reads the play",
-            'block': "🧱 Throws body on line", 'penalty_area_dribble': "💫 Dribbles in the box",
-            'cut_inside': "↩️ Cuts inside",
-            'key_pass': "🔑 Key pass", 'long_ball': "📡 Long ball forward", 'overlap': "🏃 Overlapping run",
-            'claim_cross': "✊ Claims the cross", 'distribution': "🎯 Quick distribution",
-            'through_ball_receive': "⚡ Runs onto through ball"
+            'save': "🧤 Diving save attempt", 'through_ball': "⚡ Threads through ball",
+            'interception': "👀 Reads the play", 'block': "🧱 Throws body on line", 
+            'cut_inside': "↩️ Cuts inside", 'key_pass': "🔑 Key pass", 'long_ball': "📡 Long ball forward", 
+            'overlap': "🏃 Overlapping run", 'claim_cross': "✊ Claims the cross", 
+            'distribution': "🎯 Quick distribution", 'hold_up_play': "💪 Holds up play",
+            'run_in_behind': "🏃 Runs in behind", 'press_defender': "⚡ Presses high",
+            'track_back': "🔙 Tracks back", 'press': "⚡ Presses", 'cover': "🛡️ Covers space",
+            'track_runner': "🏃 Tracks runner", 'sweep': "🧹 Sweeps up"
         }
         return descriptions.get(action, f"Attempts {action}")
 
@@ -44,9 +46,11 @@ class MatchEngine:
         stat_map = {
             'shoot': 'shooting', 'pass': 'passing', 'dribble': 'dribbling', 'tackle': 'defending',
             'cross': 'passing', 'clearance': 'defending', 'save': 'defending', 'through_ball': 'passing',
-            'interception': 'defending', 'block': 'physical', 'penalty_area_dribble': 'dribbling',
-            'cut_inside': 'dribbling', 'key_pass': 'passing', 'long_ball': 'passing', 'overlap': 'pace',
-            'claim_cross': 'physical', 'distribution': 'passing', 'through_ball_receive': 'pace'
+            'interception': 'defending', 'block': 'physical', 'cut_inside': 'dribbling',
+            'key_pass': 'passing', 'long_ball': 'passing', 'overlap': 'pace',
+            'claim_cross': 'physical', 'distribution': 'passing', 'hold_up_play': 'physical',
+            'run_in_behind': 'pace', 'press_defender': 'physical', 'track_back': 'pace',
+            'press': 'physical', 'cover': 'defending', 'track_runner': 'pace', 'sweep': 'pace'
         }
         return stat_map.get(action, 'pace')
 
@@ -54,8 +58,10 @@ class MatchEngine:
         defender_stat_map = {
             'shoot': 'defending', 'pass': 'pace', 'dribble': 'defending', 'tackle': 'dribbling',
             'cross': 'pace', 'clearance': 'shooting', 'through_ball': 'pace', 'interception': 'passing',
-            'block': 'shooting', 'penalty_area_dribble': 'defending', 'cut_inside': 'defending',
-            'key_pass': 'pace', 'long_ball': 'pace', 'overlap': 'pace', 'through_ball_receive': 'pace'
+            'block': 'shooting', 'cut_inside': 'defending', 'key_pass': 'pace', 
+            'long_ball': 'pace', 'overlap': 'pace', 'hold_up_play': 'defending',
+            'run_in_behind': 'defending', 'press_defender': 'passing', 'track_back': 'pace',
+            'press': 'dribbling', 'cover': 'pace', 'track_runner': 'pace'
         }
         return defender_stat_map.get(action, 'defending')
 
@@ -65,38 +71,57 @@ class MatchEngine:
         return max(5, min(95, int(chance)))
 
     def get_recommendation(self, player, adjusted_stats, available_actions):
+        """Get best action with rating impact shown"""
         action_scores = {}
-        recommendable_actions = [a for a in available_actions if a != 'header']
+        recommendable_actions = [a for a in available_actions if a not in ['sweep']]
         if not recommendable_actions:
-            return available_actions[0], 50
+            return available_actions[0], 50, 0.0
+        
         for action in recommendable_actions:
             stat = self.get_stat_for_action(action)
             stat_value = adjusted_stats.get(stat, 50)
-            action_scores[action] = stat_value
-        best_action = max(action_scores, key=action_scores.get)
+            rating_impact = self.estimate_rating_impact(action, player['position'])
+            action_scores[action] = (stat_value, rating_impact)
+        
+        best_action = max(action_scores, key=lambda k: action_scores[k][0])
         best_stat = adjusted_stats.get(self.get_stat_for_action(best_action), 50)
-        return best_action, best_stat
+        rating_impact = action_scores[best_action][1]
+        
+        return best_action, best_stat, rating_impact
+
+    def estimate_rating_impact(self, action, position):
+        """Estimate how much action affects rating if successful"""
+        position_weights = {
+            'ST': {'shoot': 1.2, 'hold_up_play': 0.4, 'run_in_behind': 0.5, 'press_defender': 0.3},
+            'W': {'dribble': 0.8, 'shoot': 0.9, 'cross': 0.6, 'cut_inside': 0.7, 'track_back': 0.4},
+            'CAM': {'through_ball': 0.8, 'pass': 0.5, 'shoot': 0.8, 'dribble': 0.6, 'press': 0.3},
+            'CM': {'pass': 0.6, 'through_ball': 0.7, 'tackle': 0.5, 'dribble': 0.4, 'interception': 0.5},
+            'CDM': {'tackle': 0.8, 'interception': 0.8, 'pass': 0.5, 'block': 0.7, 'cover': 0.6},
+            'FB': {'tackle': 0.7, 'cross': 0.6, 'overlap': 0.5, 'track_runner': 0.6, 'clearance': 0.5},
+            'CB': {'tackle': 0.8, 'clearance': 0.7, 'block': 0.8, 'pass': 0.4},
+            'GK': {'save': 1.5, 'claim_cross': 0.8, 'distribution': 0.4, 'sweep': 0.7}
+        }
+        
+        weights = position_weights.get(position, {})
+        return weights.get(action, 0.3)
 
     def calculate_rating_change(self, action, success, roll, position):
-        position_weights = {
-            'ST': {'shoot': 2.0, 'dribble': 1.0, 'pass': 0.5},
-            'W': {'dribble': 2.0, 'shoot': 1.5, 'cross': 1.5, 'pass': 0.8},
-            'CAM': {'through_ball': 2.0, 'pass': 1.5, 'shoot': 1.5, 'dribble': 1.2},
-            'CM': {'pass': 2.0, 'through_ball': 1.5, 'tackle': 1.0, 'dribble': 1.0},
-            'CDM': {'tackle': 2.0, 'interception': 2.0, 'pass': 1.2, 'block': 1.5},
-            'FB': {'tackle': 1.5, 'cross': 1.5, 'pass': 1.2, 'overlap': 1.0},
-            'CB': {'tackle': 2.0, 'clearance': 1.8, 'block': 2.0},
-            'GK': {'save': 3.0, 'claim_cross': 2.0, 'distribution': 1.0}
-        }
-        base_change = 0.15 if success else -0.08
-        weight = position_weights.get(position, {}).get(action, 1.0)
-        if roll == 20:
-            base_change *= 2.0
-        elif roll == 1:
-            base_change = -0.3
+        """More realistic rating changes"""
+        base_impact = self.estimate_rating_impact(action, position)
+        
+        if success:
+            rating_change = base_impact * 0.15
+            if roll == 20:
+                rating_change *= 2.0
+        else:
+            rating_change = -base_impact * 0.1
+            if roll == 1:
+                rating_change = -0.3
+        
         if action == 'shoot' and success:
-            base_change = 1.2 * weight
-        return base_change * weight
+            rating_change = 1.2
+        
+        return rating_change
 
     def apply_form_to_stats(self, player):
         from utils.form_morale_system import get_form_modifier
@@ -126,6 +151,12 @@ class MatchEngine:
                 description=f"## {home_team['team_name']} {home_score} - {away_score} {away_team['team_name']}\n\n**{minute}'** - Match in progress",
                 color=discord.Color.green()
             )
+            
+            from utils.football_data_api import get_team_crest_url
+            home_crest = get_team_crest_url(home_team['team_id'])
+            if home_crest:
+                embed.set_thumbnail(url=home_crest)
+            
             if match_id in self.pinned_messages:
                 msg = self.pinned_messages[match_id]
                 try:
@@ -160,8 +191,7 @@ class MatchEngine:
         )
         await channel.send(embed=embed)
 
-    async def post_halftime_summary(self, channel, home_team, away_team, home_score, away_score, participants,
-                                    match_id):
+    async def post_halftime_summary(self, channel, home_team, away_team, home_score, away_score, participants, match_id):
         embed = discord.Embed(
             title="⸻ HALF-TIME",
             description=f"## {home_team['team_name']} {home_score} - {away_score} {away_team['team_name']}",
@@ -185,17 +215,20 @@ class MatchEngine:
         await asyncio.sleep(3)
 
     def get_follow_up_event(self, action, success, position):
+        """Enhanced follow-ups with progression chains"""
         if not success:
             return None
+        
         follow_ups = {
-            'dribble': {'ST': 'shoot', 'W': ['shoot', 'cross'], 'CAM': ['shoot', 'through_ball'], 'CM': 'pass',
-                        'CDM': 'pass', 'FB': 'cross', 'CB': 'pass'},
-            'penalty_area_dribble': {'ST': 'shoot', 'W': 'shoot', 'CAM': 'shoot'},
+            'dribble': {'ST': 'shoot', 'W': ['shoot', 'cross'], 'CAM': ['shoot', 'through_ball'], 
+                       'CM': 'pass', 'CDM': 'pass', 'FB': 'cross', 'CB': 'pass'},
             'cut_inside': {'W': 'shoot', 'CAM': 'shoot'},
-            'tackle': {'CB': 'clearance', 'FB': 'pass', 'CDM': 'pass', 'CM': 'through_ball'},
+            'hold_up_play': {'ST': ['pass', 'shoot']},
+            'run_in_behind': {'ST': 'shoot', 'W': 'shoot'},
+            'tackle': {'CB': 'pass', 'FB': 'pass', 'CDM': 'pass', 'CM': 'through_ball'},
             'interception': {'CDM': 'pass', 'CM': 'pass', 'CB': 'pass'},
-            'through_ball_receive': {'ST': 'shoot', 'W': 'shoot'}
         }
+        
         follow_up = follow_ups.get(action, {}).get(position)
         if isinstance(follow_up, list):
             return random.choice(follow_up)
@@ -242,17 +275,11 @@ class MatchEngine:
 
         from utils.football_data_api import get_team_crest_url
         home_crest = get_team_crest_url(fixture['home_team_id'])
-        away_crest = get_team_crest_url(fixture['away_team_id'])
-
         if home_crest:
             embed.set_thumbnail(url=home_crest)
 
-        team_display = f"**{home_team['team_name']}**\n{home_team['league']}"
-        embed.add_field(name="🏠 Home", value=team_display, inline=True)
-
-        team_display_away = f"**{away_team['team_name']}**\n{away_team['league']}"
-        embed.add_field(name="✈️ Away", value=team_display_away, inline=True)
-
+        embed.add_field(name="🏠 Home", value=f"**{home_team['team_name']}**\n{home_team['league']}", inline=True)
+        embed.add_field(name="✈️ Away", value=f"**{away_team['team_name']}**\n{away_team['league']}", inline=True)
         embed.add_field(
             name="📊 Match Info",
             value=f"🎯 {num_events} key moments\n⏱️ 30s decision time\n🎲 Stat + D20 battle system",
@@ -267,12 +294,6 @@ class MatchEngine:
 
         if player_mentions:
             embed.add_field(name="👥 Players Involved", value=" ".join(player_mentions), inline=False)
-
-        embed.add_field(
-            name="🎮 How It Works",
-            value="• See your stats vs defender stats\n• Success percentages shown\n• Choose wisely!",
-            inline=False
-        )
 
         embed.set_footer(text="⚡ Match begins in 5 seconds...")
 
@@ -339,8 +360,7 @@ class MatchEngine:
             await asyncio.sleep(2)
 
             if minute == 45:
-                await self.post_halftime_summary(channel, home_team, away_team, home_score, away_score, participants,
-                                                 match_id)
+                await self.post_halftime_summary(channel, home_team, away_team, home_score, away_score, participants, match_id)
 
             attacking_team = random.choice(['home', 'away'])
             if attacking_team == 'home':
@@ -361,8 +381,7 @@ class MatchEngine:
                                                           away_team, True)
                     if result == 'goal':
                         home_score += 1
-                        await self.update_pinned_score(channel, match_id, home_team, away_team, home_score, away_score,
-                                                       minute)
+                        await self.update_pinned_score(channel, match_id, home_team, away_team, home_score, away_score, minute)
             else:
                 if away_participants:
                     participant = random.choice(away_participants)
@@ -381,8 +400,7 @@ class MatchEngine:
                                                           home_team, False)
                     if result == 'goal':
                         away_score += 1
-                        await self.update_pinned_score(channel, match_id, home_team, away_team, home_score, away_score,
-                                                       minute)
+                        await self.update_pinned_score(channel, match_id, home_team, away_team, home_score, away_score, minute)
 
             async with db.pool.acquire() as conn:
                 await conn.execute(
@@ -409,7 +427,7 @@ class MatchEngine:
             )
             defender = dict(result) if result else None
 
-        recommended_action, best_stat = self.get_recommendation(player, adjusted_stats, available_actions)
+        recommended_action, best_stat, rec_rating_impact = self.get_recommendation(player, adjusted_stats, available_actions)
 
         from utils.form_morale_system import get_form_description
         form_desc = get_form_description(player['form'])
@@ -441,6 +459,7 @@ class MatchEngine:
             defender_stat_name = self.get_defender_stat(action)
             defender_stat_value = defender[defender_stat_name] if defender else 70
             chance = self.calculate_success_chance(player_stat_value, defender_stat_value)
+            rating_impact = self.estimate_rating_impact(action, player['position'])
 
             emoji = "🟢" if chance >= 60 else "🟡" if chance >= 45 else "🔴"
             star = "⭐" if action == recommended_action else "  "
@@ -448,11 +467,11 @@ class MatchEngine:
 
             matchup_text += f"{star}{emoji} **{action_display}**\n"
             matchup_text += f"   You: {player_stat_name.upper()} {player_stat_value} vs Them: {defender_stat_name.upper()} {defender_stat_value}\n"
-            matchup_text += f"   Success chance: ~{chance}%\n\n"
+            matchup_text += f"   Success: ~{chance}% | Rating Impact: **+{rating_impact:.1f}** 📈\n\n"
 
-        embed.add_field(name="📈 ACTION MATCHUPS & CHANCES", value=matchup_text, inline=False)
+        embed.add_field(name="📈 ACTION MATCHUPS & RATING IMPACTS", value=matchup_text, inline=False)
         embed.add_field(name="💡 AI RECOMMENDATION",
-                        value=f"**{recommended_action.replace('_', ' ').upper()}** ⭐\nBest matchup!", inline=False)
+                        value=f"**{recommended_action.replace('_', ' ').upper()}** ⭐\nBest stat matchup! (+{rec_rating_impact:.1f} rating)", inline=False)
         embed.add_field(name="⏱️ TIME LIMIT", value="**30 SECONDS** to choose!", inline=False)
 
         from utils.football_data_api import get_team_crest_url
@@ -461,7 +480,7 @@ class MatchEngine:
             embed.set_thumbnail(url=team_crest)
 
         view = EnhancedActionView(available_actions, recommended_action, timeout=30)
-        message = await channel.send(content=f"🔔 {member.mention}", embed=embed, view=view)
+        message = await channel.send(content=f"📢 {member.mention}", embed=embed, view=view)
         await view.wait()
 
         action = view.chosen_action if view.chosen_action else recommended_action
@@ -504,8 +523,7 @@ class MatchEngine:
         defender_total = 0
         defender_stat_value = 0
 
-        if defender and action in ['dribble', 'shoot', 'penalty_area_dribble', 'cut_inside', 'pass',
-                                   'through_ball', 'cross']:
+        if defender and action in ['dribble', 'shoot', 'cut_inside', 'pass', 'through_ball', 'cross', 'run_in_behind', 'hold_up_play']:
             defender_stat_name = self.get_defender_stat(action)
             defender_stat_value = defender[defender_stat_name]
             defender_roll = random.randint(1, 20)
@@ -560,10 +578,14 @@ class MatchEngine:
             success_msgs = {'pass': "Perfect delivery!", 'dribble': "Beats the defender!",
                             'tackle': "Clean tackle!", 'cross': "Dangerous ball in!",
                             'clearance': "Cleared!", 'through_ball': "Perfect pass!",
-                            'interception': "Reads it!", 'penalty_area_dribble': "Glides past!",
-                            'cut_inside': "Cuts inside!", 'key_pass': "Genius!", 'long_ball': "Pinpoint!",
+                            'interception': "Reads it!", 'cut_inside': "Cuts inside!", 
+                            'key_pass': "Genius!", 'long_ball': "Pinpoint!",
                             'overlap': "Beats them for pace!", 'block': "Heroic block!",
-                            'claim_cross': "Commanding!", 'distribution': "Quick thinking!"}
+                            'claim_cross': "Commanding!", 'distribution': "Quick thinking!",
+                            'hold_up_play': "Strong hold!", 'run_in_behind': "Perfect timing!",
+                            'press_defender': "Forces error!", 'track_back': "Great recovery!",
+                            'press': "Wins it back!", 'cover': "Covers perfectly!",
+                            'track_runner': "Stays with them!", 'sweep': "Sweeps up danger!"}
             result_embed.add_field(name="✅ SUCCESS!",
                                    value=success_msgs.get(action, f"Great {action.replace('_', ' ')}!"),
                                    inline=False)
@@ -571,10 +593,13 @@ class MatchEngine:
             fail_msgs = {'shoot': "Wide!", 'pass': "Intercepted!", 'dribble': "Defender stands strong!",
                          'tackle': "Missed!", 'cross': "Overhit!", 'clearance': "Poor clearance!",
                          'through_ball': "Too heavy!", 'interception': "Out of reach!",
-                         'penalty_area_dribble': "Dispossessed!", 'cut_inside': "Closed down!",
-                         'key_pass': "No one there!", 'long_ball': "Out of play!",
-                         'overlap': "Tracked back!", 'block': "Gets through!", 'claim_cross': "Spills it!",
-                         'distribution': "Poor pass!"}
+                         'cut_inside': "Closed down!", 'key_pass': "No one there!", 
+                         'long_ball': "Out of play!", 'overlap': "Tracked back!", 
+                         'block': "Gets through!", 'claim_cross': "Spills it!",
+                         'distribution': "Poor pass!", 'hold_up_play': "Dispossessed!",
+                         'run_in_behind': "Offside!", 'press_defender': "Can't close down!",
+                         'track_back': "Too slow!", 'press': "Can't win it!",
+                         'cover': "Gap exposed!", 'track_runner': "Lost them!", 'sweep': "Misjudged!"}
             result_embed.add_field(name="❌ FAILED!",
                                    value=fail_msgs.get(action, f"{action.replace('_', ' ')} unsuccessful!"),
                                    inline=False)
@@ -595,8 +620,7 @@ class MatchEngine:
 
         return {'success': success, 'goal': is_goal, 'roll': player_roll}
 
-    async def execute_follow_up_action(self, channel, player, adjusted_stats, defender, action, minute,
-                                       match_id, member):
+    async def execute_follow_up_action(self, channel, player, adjusted_stats, defender, action, minute, match_id, member):
         embed = discord.Embed(title=f"⚡ FOLLOW-UP: {action.upper()}!",
                               description=f"**{player['player_name']}** continues the attack!",
                               color=discord.Color.orange())
@@ -657,6 +681,12 @@ class MatchEngine:
         embed = discord.Embed(title="🏁 FULL TIME!",
                               description=f"## {home_team['team_name']} {home_score} - {away_score} {away_team['team_name']}",
                               color=discord.Color.gold())
+        
+        from utils.football_data_api import get_team_crest_url
+        home_crest = get_team_crest_url(fixture['home_team_id'])
+        if home_crest:
+            embed.set_thumbnail(url=home_crest)
+        
         from utils.form_morale_system import update_player_form, update_player_morale
         if participants:
             ratings_text = ""
@@ -695,6 +725,17 @@ class MatchEngine:
         await db.add_news(f"{home_team['team_name']} {home_score}-{away_score} {away_team['team_name']}",
                           f"FT Week {fixture['week_number']}", "match_news", None, 3,
                           fixture['week_number'])
+        
+        # AUTO-POST TO RESULTS CHANNEL
+        try:
+            for guild in self.bot.guilds:
+                results_channel = discord.utils.get(guild.text_channels, name="match-results")
+                if results_channel:
+                    from utils.event_poster import post_match_result_to_channel
+                    await post_match_result_to_channel(self.bot, guild, fixture, home_score, away_score)
+        except Exception as e:
+            print(f"Could not post match result: {e}")
+        
         await asyncio.sleep(60)
         try:
             await channel.delete()
@@ -723,8 +764,10 @@ class EnhancedActionView(discord.ui.View):
         self.chosen_action = None
         emoji_map = {'shoot': '🎯', 'pass': '🎪', 'dribble': '🪄', 'tackle': '🛡️', 'cross': '📤',
                      'clearance': '🚀', 'through_ball': '⚡', 'save': '🧤', 'interception': '👀', 'block': '🧱',
-                     'penalty_area_dribble': '💨', 'cut_inside': '↩️', 'key_pass': '🔑', 'long_ball': '📡',
-                     'overlap': '🏃', 'claim_cross': '✊', 'distribution': '🎯', 'through_ball_receive': '🎯'}
+                     'cut_inside': '↩️', 'key_pass': '🔑', 'long_ball': '📡',
+                     'overlap': '🏃', 'claim_cross': '✊', 'distribution': '🎯', 'hold_up_play': '💪',
+                     'run_in_behind': '🏃', 'press_defender': '⚡', 'track_back': '🔙',
+                     'press': '⚡', 'cover': '🛡️', 'track_runner': '🏃', 'sweep': '🧹'}
         for action in available_actions[:5]:
             button = ActionButton(action, emoji_map.get(action, '⚽'),
                                   highlighted=(action == recommended_action))
