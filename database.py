@@ -370,205 +370,6 @@ class Database:
         
         print("✅ Database tables created")
     
-    async def initialize_data(self):
-        """Initialize database with teams and complete squads"""
-        from data.teams import ALL_TEAMS
-        from data.players import PREMIER_LEAGUE_PLAYERS
-        from data.championship_players import CHAMPIONSHIP_PLAYERS
-        from utils.npc_squad_generator import populate_all_teams
-        
-        # Check if teams exist
-        async with self.pool.acquire() as conn:
-            result = await conn.fetchrow("SELECT COUNT(*) as count FROM teams")
-            team_count = result['count']
-        
-        if team_count == 0:
-            print("📊 Initializing teams...")
-            async with self.pool.acquire() as conn:
-                for team in ALL_TEAMS:
-                    if team['league'] == 'Premier League':
-                        budget = 150000000
-                        wage_budget = 200000
-                    elif team['league'] == 'Championship':
-                        budget = 50000000
-                        wage_budget = 80000
-                    else:
-                        budget = 10000000
-                        wage_budget = 30000
-                    
-                    await conn.execute('''
-                        INSERT INTO teams (team_id, team_name, league, budget, wage_budget)
-                        VALUES ($1, $2, $3, $4, $5)
-                    ''',
-                        team['team_id'],
-                        team['team_name'],
-                        team['league'],
-                        budget,
-                        wage_budget
-                    )
-            print(f"✅ Added {len(ALL_TEAMS)} teams")
-        
-        # Check if real players exist
-        async with self.pool.acquire() as conn:
-            result = await conn.fetchrow("SELECT COUNT(*) as count FROM npc_players WHERE is_regen = FALSE")
-            real_player_count = result['count']
-        
-        # Add real Premier League players
-        if real_player_count == 0:
-            print("⚽ Adding real Premier League players...")
-            async with self.pool.acquire() as conn:
-                for p in PREMIER_LEAGUE_PLAYERS:
-                    # Calculate stats based on overall
-                    base = p['overall_rating']
-                    position = p['position']
-                    
-                    if position == 'GK':
-                        pace = max(40, base - random.randint(10, 15))
-                        shooting = max(40, base - random.randint(15, 20))
-                        passing = max(50, base - random.randint(5, 10))
-                        dribbling = max(45, base - random.randint(10, 15))
-                        defending = min(99, base + random.randint(5, 15))
-                        physical = max(60, base + random.randint(-5, 5))
-                    elif position in ['ST', 'W']:
-                        pace = min(99, base + random.randint(0, 10))
-                        shooting = min(99, base + random.randint(5, 10))
-                        passing = max(50, base - random.randint(0, 10))
-                        dribbling = min(99, base + random.randint(0, 10))
-                        defending = max(30, base - random.randint(20, 30))
-                        physical = max(50, base - random.randint(0, 10))
-                    elif position in ['CAM', 'CM']:
-                        pace = max(50, base - random.randint(0, 5))
-                        shooting = max(55, base - random.randint(0, 10))
-                        passing = min(99, base + random.randint(5, 10))
-                        dribbling = min(99, base + random.randint(0, 10))
-                        defending = max(45, base - random.randint(10, 20))
-                        physical = max(55, base - random.randint(0, 10))
-                    elif position == 'CDM':
-                        pace = max(50, base - random.randint(5, 10))
-                        shooting = max(50, base - random.randint(10, 15))
-                        passing = min(99, base + random.randint(0, 10))
-                        dribbling = max(55, base - random.randint(5, 10))
-                        defending = min(99, base + random.randint(5, 15))
-                        physical = min(99, base + random.randint(5, 10))
-                    elif position in ['CB', 'FB']:
-                        if position == 'FB':
-                            pace = min(99, base + random.randint(0, 5))
-                        else:
-                            pace = max(50, base - random.randint(5, 10))
-                        shooting = max(35, base - random.randint(20, 30))
-                        passing = max(55, base - random.randint(5, 10))
-                        dribbling = max(45, base - random.randint(10, 20))
-                        defending = min(99, base + random.randint(5, 15))
-                        physical = min(99, base + random.randint(5, 10))
-                    else:
-                        pace = base
-                        shooting = base
-                        passing = base
-                        dribbling = base
-                        defending = base
-                        physical = base
-                    
-                    await conn.execute('''
-                        INSERT INTO npc_players (
-                            player_name, team_id, position, age, overall_rating,
-                            pace, shooting, passing, dribbling, defending, physical, is_regen
-                        )
-                        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, FALSE)
-                    ''',
-                        p['player_name'],
-                        p['team_id'],
-                        p['position'],
-                        p['age'],
-                        p['overall_rating'],
-                        pace, shooting, passing, dribbling, defending, physical
-                    )
-            
-            print(f"✅ Added {len(PREMIER_LEAGUE_PLAYERS)} Premier League players")
-            
-            # Add real Championship players
-            print("⚽ Adding real Championship players...")
-            async with self.pool.acquire() as conn:
-                for p in CHAMPIONSHIP_PLAYERS:
-                    base = p['overall_rating']
-                    position = p['position']
-                    
-                    # Same stat calculation as above
-                    if position == 'GK':
-                        pace = max(40, base - random.randint(10, 15))
-                        shooting = max(40, base - random.randint(15, 20))
-                        passing = max(50, base - random.randint(5, 10))
-                        dribbling = max(45, base - random.randint(10, 15))
-                        defending = min(99, base + random.randint(5, 15))
-                        physical = max(60, base + random.randint(-5, 5))
-                    elif position in ['ST', 'W']:
-                        pace = min(99, base + random.randint(0, 10))
-                        shooting = min(99, base + random.randint(5, 10))
-                        passing = max(50, base - random.randint(0, 10))
-                        dribbling = min(99, base + random.randint(0, 10))
-                        defending = max(30, base - random.randint(20, 30))
-                        physical = max(50, base - random.randint(0, 10))
-                    elif position in ['CAM', 'CM']:
-                        pace = max(50, base - random.randint(0, 5))
-                        shooting = max(55, base - random.randint(0, 10))
-                        passing = min(99, base + random.randint(5, 10))
-                        dribbling = min(99, base + random.randint(0, 10))
-                        defending = max(45, base - random.randint(10, 20))
-                        physical = max(55, base - random.randint(0, 10))
-                    elif position == 'CDM':
-                        pace = max(50, base - random.randint(5, 10))
-                        shooting = max(50, base - random.randint(10, 15))
-                        passing = min(99, base + random.randint(0, 10))
-                        dribbling = max(55, base - random.randint(5, 10))
-                        defending = min(99, base + random.randint(5, 15))
-                        physical = min(99, base + random.randint(5, 10))
-                    elif position in ['CB', 'FB']:
-                        if position == 'FB':
-                            pace = min(99, base + random.randint(0, 5))
-                        else:
-                            pace = max(50, base - random.randint(5, 10))
-                        shooting = max(35, base - random.randint(20, 30))
-                        passing = max(55, base - random.randint(5, 10))
-                        dribbling = max(45, base - random.randint(10, 20))
-                        defending = min(99, base + random.randint(5, 15))
-                        physical = min(99, base + random.randint(5, 10))
-                    else:
-                        pace = base
-                        shooting = base
-                        passing = base
-                        dribbling = base
-                        defending = base
-                        physical = base
-                    
-                    await conn.execute('''
-                        INSERT INTO npc_players (
-                            player_name, team_id, position, age, overall_rating,
-                            pace, shooting, passing, dribbling, defending, physical, is_regen
-                        )
-                        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, FALSE)
-                    ''',
-                        p['player_name'],
-                        p['team_id'],
-                        p['position'],
-                        p['age'],
-                        p['overall_rating'],
-                        pace, shooting, passing, dribbling, defending, physical
-                    )
-            
-            print(f"✅ Added {len(CHAMPIONSHIP_PLAYERS)} Championship players")
-        
-        # Check if NPC players exist for teams without real players
-        async with self.pool.acquire() as conn:
-            result = await conn.fetchrow("SELECT COUNT(*) as count FROM npc_players")
-            npc_count = result['count']
-        
-        # Populate remaining teams (League One + fill gaps)
-        if npc_count < 1000:
-            print("⚽ Generating squads for remaining teams...")
-            await populate_all_teams()
-            print("✅ All teams now have complete squads!")
-        
-        await self.retire_old_players()
-    
     async def get_game_state(self):
         """Get current game state"""
         async with self.pool.acquire() as conn:
@@ -818,3 +619,52 @@ class Database:
             ''', name, team_id, position, age, base_rating, pace, shooting, passing, dribbling, defending, physical)
         
         print(f"  Created regen: {name} ({base_rating} OVR {position}) for {team_id}")
+    
+    async def wipe_all_user_players(self):
+        """ADMIN: Delete all user-created players and reset game state"""
+        async with self.pool.acquire() as conn:
+            await conn.execute("DELETE FROM players")
+            await conn.execute("DELETE FROM training_history")
+            await conn.execute("DELETE FROM match_events WHERE user_id IS NOT NULL")
+            await conn.execute("DELETE FROM active_matches")
+            await conn.execute("DELETE FROM match_participants")
+            await conn.execute("DELETE FROM notifications")
+            await conn.execute("DELETE FROM user_settings")
+            await conn.execute("DELETE FROM news WHERE user_id IS NOT NULL")
+            await conn.execute("DELETE FROM transfer_offers")
+            
+            await conn.execute("""
+                UPDATE game_state SET
+                season_started = FALSE,
+                current_week = 0,
+                match_window_open = FALSE,
+                fixtures_generated = FALSE,
+                next_match_day = NULL,
+                last_match_day = NULL,
+                match_window_closes = NULL,
+                transfer_window_active = FALSE
+            """)
+            
+            await conn.execute("UPDATE fixtures SET played = FALSE, playable = FALSE, home_score = NULL, away_score = NULL")
+            
+            await conn.execute("""
+                UPDATE teams SET
+                played = 0, won = 0, drawn = 0, lost = 0,
+                goals_for = 0, goals_against = 0, points = 0, form = ''
+            """)
+            
+            await conn.execute("""
+                UPDATE npc_players SET
+                season_goals = 0, season_assists = 0, season_apps = 0
+            """)
+        
+        print("✅ All user players wiped and game reset to Day 1")
+    
+    async def close(self):
+        """Close database connection"""
+        if self.pool:
+            await self.pool.close()
+            print("✅ Database closed")
+
+# Global database instance
+db = Database()
