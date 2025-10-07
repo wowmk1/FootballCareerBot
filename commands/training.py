@@ -581,26 +581,19 @@ class TrainingCommands(commands.Cog):
 
             await interaction.response.send_message(embed=embed)
 
-    async def send_training_reminder(bot, user_id):
-        """Send training reminder after cooldown"""
-        await asyncio.sleep(config.TRAINING_COOLDOWN_HOURS * 3600)
-        try:
-            user = await bot.fetch_user(user_id)
-            embed = discord.Embed(
-                title="💪 Training Available!",
-                description="Your cooldown is over. Time to train!\n\nUse `/train` to improve.",
-                color=discord.Color.blue()
-            )
-            await user.send(embed=embed)
-        except:
-            pass
-
-    # Add after successful training:
-    if config.NOTIFY_TRAINING_READY:
-        asyncio.create_task(send_training_reminder(self.bot, interaction.user.id))
-
-    async def setup(bot):
-        await bot.add_cog(TrainingCommands(bot))
+async def send_training_reminder(bot, user_id):
+    """Send training reminder after cooldown"""
+    await asyncio.sleep(config.TRAINING_COOLDOWN_HOURS * 3600)
+    try:
+        user = await bot.fetch_user(user_id)
+        embed = discord.Embed(
+            title="💪 Training Available!",
+            description="Your cooldown is over. Time to train!\n\nUse `/train` to improve.",
+            color=discord.Color.blue()
+        )
+        await user.send(embed=embed)
+    except:
+        pass
 
 
 async def setup(bot):
