@@ -379,7 +379,6 @@ class MatchEngine:
             return await self.auto_resolve_moment(player, minute, attacking_team, defending_team)
         
         adjusted_stats = self.apply_form_to_stats(player)
-        
         available_actions = self.get_position_events(player['position'])
         
         async with db.pool.acquire() as conn:
@@ -479,9 +478,7 @@ class MatchEngine:
         embed.set_footer(text="🎲 Roll the dice! Beat the DC to succeed!")
         
         view = EnhancedActionView(available_actions, timeout=30)
-        
         message = await channel.send(content=member.mention, embed=embed, view=view)
-        
         await view.wait()
         
         action = view.chosen_action if view.chosen_action else random.choice(available_actions)
@@ -593,24 +590,14 @@ class MatchEngine:
                     inline=False
                 )
         elif success:
-            criticals = [
-                "💫 Perfect execution!",
-                "⭐ Brilliant!",
-                "🌟 Excellent technique!",
-                "✨ Superb!"
-            ]
+            criticals = ["💫 Perfect execution!", "⭐ Brilliant!", "🌟 Excellent technique!", "✨ Superb!"]
             result_embed.add_field(
                 name="✅ Success!",
                 value=random.choice(criticals) if player_roll >= 18 else f"Great {action}!",
                 inline=False
             )
         else:
-            failures = [
-                "❌ Blocked!",
-                "🛡️ Defended well!",
-                "❌ Intercepted!",
-                "🚫 Poor execution!"
-            ]
+            failures = ["❌ Blocked!", "🛡️ Defended well!", "❌ Intercepted!", "🚫 Poor execution!"]
             result_embed.add_field(
                 name="❌ Failed!",
                 value=random.choice(failures),
@@ -668,19 +655,14 @@ class MatchEngine:
         
         action = random.choice(['shoot', 'pass', 'dribble'])
         
-        stat_map = {
-            'shoot': npc['shooting'],
-            'pass': npc['passing'],
-            'dribble': npc['dribbling']
-        }
+        stat_map = {'shoot': npc['shooting'], 'pass': npc['passing'], 'dribble': npc['dribbling']}
         
         stat_value = stat_map[action]
         modifier = calculate_modifier(stat_value)
         dc = get_difficulty_class(action)
         
         roll = roll_d20()
-        total = roll +
-                modifier
+        total = roll + modifier
         success = total >= dc
         
         outcome = None
@@ -691,8 +673,7 @@ class MatchEngine:
         if action == 'shoot' and success and (roll == 20 or total >= dc + 5):
             embed = discord.Embed(
                 title=f"⚽ NPC GOAL - Minute {minute}'",
-                description=f"**{npc['player_name']}** SCORES for {attacking_team['team_name']}!\n\n"
-                           f"*The stadium erupts!*",
+                description=f"**{npc['player_name']}** SCORES for {attacking_team['team_name']}!\n\n*The stadium erupts!*",
                 color=discord.Color.blue()
             )
             
@@ -701,18 +682,14 @@ class MatchEngine:
             
             embed.add_field(
                 name="🎲 The Strike",
-                value=f"Roll: {roll} + {modifier} = **{total}** (DC {dc})\n"
-                      f"**{npc['player_name']}** ({npc['overall_rating']} OVR) finds the net!",
+                value=f"Roll: {roll} + {modifier} = **{total}** (DC {dc})\n**{npc['player_name']}** ({npc['overall_rating']} OVR) finds the net!",
                 inline=False
             )
             
             outcome = 'goal'
             
             async with db.pool.acquire() as conn:
-                await conn.execute(
-                    "UPDATE npc_players SET season_goals = season_goals + 1 WHERE npc_id = $1",
-                    npc['npc_id']
-                )
+                await conn.execute("UPDATE npc_players SET season_goals = season_goals + 1 WHERE npc_id = $1", npc['npc_id'])
         else:
             narrative = self.get_action_narrative(action, npc['player_name'])
             
@@ -729,9 +706,7 @@ class MatchEngine:
             
             embed.add_field(
                 name="🎲 Roll Result",
-                value=f"{result_text}\n"
-                      f"**{npc['player_name']}** ({npc['overall_rating']} OVR)\n"
-                      f"Roll: {roll} + {modifier} = **{total}** (DC {dc})",
+                value=f"{result_text}\n**{npc['player_name']}** ({npc['overall_rating']} OVR)\nRoll: {roll} + {modifier} = **{total}** (DC {dc})",
                 inline=False
             )
         
@@ -745,17 +720,8 @@ class MatchEngine:
         away_team = await db.get_team(fixture['away_team_id'])
         
         async with db.pool.acquire() as conn:
-            await conn.execute('''
-                UPDATE fixtures 
-                SET home_score = $1, away_score = $2, played = TRUE, playable = FALSE
-                WHERE fixture_id = $3
-            ''', home_score, away_score, fixture['fixture_id'])
-            
-            await conn.execute('''
-                UPDATE active_matches 
-                SET match_state = $1, home_score = $2, away_score = $3
-                WHERE match_id = $4
-            ''', 'completed', home_score, away_score, match_id)
+            await conn.execute('UPDATE fixtures SET home_score = $1, away_score = $2, played = TRUE, playable = FALSE WHERE fixture_id = $3', home_score, away_score, fixture['fixture_id'])
+            await conn.execute('UPDATE active_matches SET match_state = $1, home_score = $2, away_score = $3 WHERE match_id = $4', 'completed', home_score, away_score, match_id)
         
         await self.update_team_stats(fixture['home_team_id'], home_score, away_score)
         await self.update_team_stats(fixture['away_team_id'], away_score, home_score)
@@ -765,8 +731,7 @@ class MatchEngine:
         
         embed = discord.Embed(
             title="🏁 FULL TIME!",
-            description=f"**{home_team['team_name']} {home_score} - {away_score} {away_team['team_name']}**\n\n"
-                       f"*The final whistle blows! What a match!*",
+            description=f"**{home_team['team_name']} {home_score} - {away_score} {away_team['team_name']}**\n\n*The final whistle blows! What a match!*",
             color=discord.Color.gold()
         )
         
@@ -781,10 +746,7 @@ class MatchEngine:
                 player = await db.get_player(p['user_id'])
                 if player:
                     async with db.pool.acquire() as conn:
-                        result = await conn.fetchrow(
-                            "SELECT match_rating, actions_taken, goals_scored FROM match_participants WHERE match_id = $1 AND user_id = $2",
-                            match_id, p['user_id']
-                        )
+                        result = await conn.fetchrow("SELECT match_rating, actions_taken, goals_scored FROM match_participants WHERE match_id = $1 AND user_id = $2", match_id, p['user_id'])
                     
                     if result:
                         raw_rating = result['match_rating']
@@ -826,13 +788,7 @@ class MatchEngine:
                             else:
                                 new_avg = final_rating
                             
-                            await conn.execute("""
-                                UPDATE players 
-                                SET season_apps = season_apps + 1, 
-                                    career_apps = career_apps + 1, 
-                                    season_rating = $1 
-                                WHERE user_id = $2
-                            """, new_avg, p['user_id'])
+                            await conn.execute("UPDATE players SET season_apps = season_apps + 1, career_apps = career_apps + 1, season_rating = $1 WHERE user_id = $2", new_avg, p['user_id'])
                         
                         goal_text = f" ⚽×{goals}" if goals > 0 else ""
                         ratings_text += f"{rating_emoji} **{player['player_name']}**: {final_rating:.1f}/10{goal_text} ({actions} actions)\n"
@@ -842,8 +798,7 @@ class MatchEngine:
         
         embed.add_field(
             name="📊 Match Stats",
-            value=f"**{home_team['team_name']}**: {home_score} goals\n"
-                  f"**{away_team['team_name']}**: {away_score} goals",
+            value=f"**{home_team['team_name']}**: {home_score} goals\n**{away_team['team_name']}**: {away_score} goals",
             inline=False
         )
         
@@ -851,14 +806,7 @@ class MatchEngine:
         
         await channel.send(embed=embed)
         
-        await db.add_news(
-            f"{home_team['team_name']} {home_score}-{away_score} {away_team['team_name']}",
-            f"FT Week {fixture['week_number']}",
-            "match_news",
-            None,
-            3,
-            fixture['week_number']
-        )
+        await db.add_news(f"{home_team['team_name']} {home_score}-{away_score} {away_team['team_name']}", f"FT Week {fixture['week_number']}", "match_news", None, 3, fixture['week_number'])
         
         await asyncio.sleep(60)
         
@@ -878,17 +826,7 @@ class MatchEngine:
             won, drawn, lost, points = 0, 0, 1, 0
         
         async with db.pool.acquire() as conn:
-            await conn.execute('''
-                UPDATE teams SET
-                played = played + 1,
-                won = won + $1,
-                drawn = drawn + $2,
-                lost = lost + $3,
-                goals_for = goals_for + $4,
-                goals_against = goals_against + $5,
-                points = points + $6
-                WHERE team_id = $7
-            ''', won, drawn, lost, goals_for, goals_against, points, team_id)
+            await conn.execute('UPDATE teams SET played = played + 1, won = won + $1, drawn = drawn + $2, lost = lost + $3, goals_for = goals_for + $4, goals_against = goals_against + $5, points = points + $6 WHERE team_id = $7', won, drawn, lost, goals_for, goals_against, points, team_id)
     
     async def auto_resolve_moment(self, player, minute, attacking_team, defending_team):
         """Auto-resolve when player unavailable"""
@@ -901,25 +839,11 @@ class EnhancedActionView(discord.ui.View):
         self.chosen_action = None
         
         emoji_map = {
-            'shoot': '🎯',
-            'pass': '🎪',
-            'dribble': '🪄',
-            'tackle': '🛡️',
-            'header': '🗣️',
-            'cross': '📦',
-            'clearance': '🚀',
-            'through_ball': '⚡',
-            'save': '🧤',
-            'through_ball_receive': '💨',
-            'penalty_area_dribble': '🔥',
-            'cut_inside': '↪️',
-            'key_pass': '🔑',
-            'long_ball': '🌙',
-            'interception': '✋',
-            'block': '🧱',
-            'overlap': '🏃',
-            'claim_cross': '✊',
-            'distribution': '🎯'
+            'shoot': '🎯', 'pass': '🎪', 'dribble': '🪄', 'tackle': '🛡️', 'header': '🗣️',
+            'cross': '📦', 'clearance': '🚀', 'through_ball': '⚡', 'save': '🧤',
+            'through_ball_receive': '💨', 'penalty_area_dribble': '🔥', 'cut_inside': '↪️',
+            'key_pass': '🔑', 'long_ball': '🌙', 'interception': '✋', 'block': '🧱',
+            'overlap': '🏃', 'claim_cross': '✊', 'distribution': '🎯'
         }
         
         for action in available_actions[:5]:
@@ -933,11 +857,7 @@ class EnhancedActionView(discord.ui.View):
 
 class ActionButton(discord.ui.Button):
     def __init__(self, action, emoji):
-        super().__init__(
-            label=action.replace('_', ' ').title(),
-            emoji=emoji,
-            style=discord.ButtonStyle.primary
-        )
+        super().__init__(label=action.replace('_', ' ').title(), emoji=emoji, style=discord.ButtonStyle.primary)
         self.action = action
     
     async def callback(self, interaction: discord.Interaction):
