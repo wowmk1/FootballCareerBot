@@ -26,6 +26,75 @@ class MatchEngine:
         }
         return position_events.get(position, ['pass', 'dribble', 'tackle'])
     
+    def get_action_description(self, action):
+        """Get exciting description for actions"""
+        descriptions = {
+            'shoot': "⚡ **SHOOTS!**",
+            'pass': "🎯 Looks to pass",
+            'dribble': "💨 Takes on the defender",
+            'tackle': "🛡️ Goes for the tackle",
+            'header': "🗣️ Rises for the header",
+            'cross': "📤 Delivers a cross",
+            'clearance': "🚀 Clears the danger",
+            'save': "🧤 Diving save attempt",
+            'through_ball': "⚡ Thread through ball",
+            'interception': "👀 Reads the play",
+            'block': "🧱 Throws body on line"
+        }
+        return descriptions.get(action, f"Attempts {action}")
+    
+    def get_stat_for_action(self, action):
+        """Map action to relevant stat"""
+        stat_map = {
+            'shoot': 'shooting',
+            'pass': 'passing',
+            'dribble': 'dribbling',
+            'tackle': 'defending',
+            'header': 'physical',
+            'cross': 'passing',
+            'clearance': 'defending',
+            'save': 'defending',
+            'through_ball': 'passing',
+            'interception': 'defending',
+            'block': 'physical',
+            'penalty_area_dribble': 'dribbling',
+            'cut_inside': 'dribbling',
+            'key_pass': 'passing',
+            'long_ball': 'passing',
+            'overlap': 'pace',
+            'claim_cross': 'physical',
+            'distribution': 'passing',
+            'through_ball_receive': 'pace'
+        }
+        return stat_map.get(action, 'pace')
+    
+    def get_defender_stat(self, action):
+        """Get defender's relevant stat for opposition"""
+        if action in ['shoot', 'header']:
+            return 'defending'  # GK saves
+        elif action in ['dribble', 'cut_inside', 'penalty_area_dribble']:
+            return 'defending'
+        elif action in ['pass', 'through_ball', 'cross']:
+            return 'defending'  # Interception ability
+        else:
+            return 'defending'
+    
+    def predict_success_chance(self, player_total, dc):
+        """Calculate percentage chance of success"""
+        chance = ((21 - dc + player_total - 10) / 21) * 100
+        return max(0, min(100, int(chance)))
+    
+    def get_recommendation(self, player, adjusted_stats, available_actions):
+        """Recommend best action based on stats"""
+        action_scores = {}
+        
+        for action in available_actions:
+            stat = self.get_stat_for_action(action)
+            action_scores[action] = adjusted_stats[stat]
+        
+        best_action = max(action_scores, key=action_scores.get)
+        return best_action, action_scores[best_action]
+    
     def get_follow_up_event(self, action, success, position):
         """Determine follow-up event after an action"""
         if not success:
@@ -106,16 +175,16 @@ class MatchEngine:
         }
     
     async def start_match(self, fixture: dict, interaction: discord.Interaction):
-        """Start an interactive match"""
+        """Start an interactive match with enhanced presentation"""
         
         home_team = await db.get_team(fixture['home_team_id'])
         away_team = await db.get_team(fixture['away_team_id'])
         
         guild = interaction.guild
         
-        category = discord.utils.get(guild.categories, name="ACTIVE MATCHES")
+        category = discord.utils.get(guild.categories, name="⚽ ACTIVE MATCHES")
         if not category:
-            category = await guild.create_category("ACTIVE MATCHES")
+            category = await guild.create_category("⚽ ACTIVE MATCHES")
         
         channel_name = f"week{fixture['week_number']}-{fixture['home_team_id']}-{fixture['away_team_id']}"
         channel_name = channel_name[:100].lower().replace(' ', '-')
@@ -145,22 +214,37 @@ class MatchEngine:
         
         num_events = random.randint(config.MATCH_EVENTS_PER_GAME_MIN, config.MATCH_EVENTS_PER_GAME_MAX)
         
+        # ENHANCED MATCH START EMBED
         embed = discord.Embed(
-            title="⚽ MATCH STARTING!",
-            description=f"**{home_team['team_name']}** vs **{away_team['team_name']}**\n\n"
-                       f"Week {fixture['week_number']} - {fixture['competition']}",
+            title="🏟️ MATCH STARTING!",
+            description=f"## {home_team['team_name']} 🆚 {away_team['team_name']}\n\n"
+                       f"**{fixture['competition']}** • Week {fixture['week_number']}",
             color=discord.Color.green()
         )
         
-        embed.add_field(name="🏠 Home", value=home_team['team_name'], inline=True)
-        embed.add_field(name="✈️ Away", value=away_team['team_name'], inline=True)
-        embed.add_field(name="📊 Events", value=f"{num_events} key moments", inline=True)
-        
-        # Show team crests if available
+        # Try to add team crests
         from utils.football_data_api import get_team_crest_url
         home_crest = get_team_crest_url(fixture['home_team_id'])
         if home_crest:
             embed.set_thumbnail(url=home_crest)
+        
+        embed.add_field(
+            name="🏠 Home",
+            value=f"**{home_team['team_name']}**\n{home_team['league']}",
+            inline=True
+        )
+        
+        embed.add_field(
+            name="✈️ Away",
+            value=f"**{away_team['team_name']}**\n{away_team['league']}",
+            inline=True
+        )
+        
+        embed.add_field(
+            name="📊 Match Info",
+            value=f"🎯 {num_events} key moments\n⏱️ 30s decision time\n🎲 D20 battle system",
+            inline=True
+        )
         
         player_mentions = []
         for user_id in player_users:
@@ -170,21 +254,21 @@ class MatchEngine:
         
         if player_mentions:
             embed.add_field(
-                name="👥 Players",
+                name="👥 Players Involved",
                 value=" ".join(player_mentions),
                 inline=False
             )
         
         embed.add_field(
-            name="🎲 Match System",
-            value="• Position-specific events\n• Sequential actions\n• D20 duels vs opponents\n• Form affects performance",
+            name="🎮 How It Works",
+            value="• Position-specific actions\n• Stats vs opponent stats\n• Choose wisely for best results\n• Critical moments every 5 minutes",
             inline=False
         )
         
-        embed.set_footer(text="Match begins in 5 seconds...")
+        embed.set_footer(text="⚡ Match begins in 5 seconds... Get ready!")
         
         await interaction.followup.send(
-            f"✅ Match channel: {match_channel.mention}\n"
+            f"✅ Match channel created: {match_channel.mention}\n"
             f"🎮 {home_team['team_name']} vs {away_team['team_name']}",
             ephemeral=True
         )
@@ -249,9 +333,10 @@ class MatchEngine:
         for i, minute in enumerate(minutes):
             event_num = i + 1
             
+            # ENHANCED MOMENT HEADER
             embed = discord.Embed(
-                title=f"⚽ Event {event_num}/{num_events} - Minute {minute}'",
-                description=f"**{home_team['team_name']} {home_score} - {away_score} {away_team['team_name']}**",
+                title=f"⚡ KEY MOMENT #{event_num}/{num_events} — {minute}'",
+                description=f"## {home_team['team_name']} {home_score} - {away_score} {away_team['team_name']}",
                 color=discord.Color.blue()
             )
             
@@ -313,7 +398,7 @@ class MatchEngine:
         await self.end_match(match_id, fixture, channel, home_score, away_score, participants)
     
     async def handle_player_moment(self, channel, player, participant, minute, attacking_team, defending_team, is_home, match_id):
-        """Handle player's interactive moment with form-adjusted stats"""
+        """ENHANCED: Handle player's interactive moment with predictions and recommendations"""
         
         member = channel.guild.get_member(player['user_id'])
         if not member:
@@ -333,54 +418,98 @@ class MatchEngine:
             )
             defender = dict(result) if result else None
         
-        # Build embed
+        # Get recommendation
+        recommended_action, best_stat = self.get_recommendation(player, adjusted_stats, available_actions)
+        
+        # Build ENHANCED embed
         from utils.form_morale_system import get_form_description
         form_desc = get_form_description(player['form'])
         
         embed = discord.Embed(
-            title=f"🎯 {member.display_name}'s Moment!",
-            description=f"**Minute {minute}'** | **{player['player_name']}** ({player['position']})\nForm: {form_desc}",
+            title=f"🎯 {member.display_name}'S BIG MOMENT!",
+            description=f"## {player['player_name']} ({player['position']})\n"
+                       f"**Minute {minute}'** | Form: {form_desc}",
             color=discord.Color.gold()
         )
         
+        # Show opponent
         if defender:
             embed.add_field(
-                name="🛡️ Opponent",
+                name="🛡️ Defending",
                 value=f"**{defender['player_name']}** ({defender['position']})\n"
                       f"DEF: {defender['defending']} | PHY: {defender['physical']}",
                 inline=True
             )
         
+        # Show your stats
         embed.add_field(
             name="📊 Your Stats (Form-Adjusted)",
-            value=f"⚡ Pace: {adjusted_stats['pace']}\n"
-                  f"🎯 Shooting: {adjusted_stats['shooting']}\n"
-                  f"🎪 Passing: {adjusted_stats['passing']}\n"
-                  f"🪄 Dribbling: {adjusted_stats['dribbling']}\n"
-                  f"🛡️ Defending: {adjusted_stats['defending']}",
+            value=f"⚡ PAC: {adjusted_stats['pace']}\n"
+                  f"🎯 SHO: {adjusted_stats['shooting']}\n"
+                  f"🎪 PAS: {adjusted_stats['passing']}\n"
+                  f"🪄 DRI: {adjusted_stats['dribbling']}\n"
+                  f"🛡️ DEF: {adjusted_stats['defending']}\n"
+                  f"💪 PHY: {adjusted_stats['physical']}",
             inline=True
         )
         
+        # Show AI recommendation
         embed.add_field(
-            name="⏱️ Time",
-            value="**30 seconds** to choose!",
+            name="💡 AI RECOMMENDATION",
+            value=f"**{recommended_action.upper()}**\n"
+                  f"Your {self.get_stat_for_action(recommended_action).upper()}: **{best_stat}**\n"
+                  f"✨ This matches your strengths!",
             inline=False
         )
         
-        view = EnhancedActionView(available_actions, timeout=30)
+        # Show predictions for each action
+        predictions_text = ""
+        for action in available_actions:
+            stat_name = self.get_stat_for_action(action)
+            player_stat = adjusted_stats[stat_name]
+            player_mod = calculate_modifier(player_stat)
+            dc = get_difficulty_class(action)
+            
+            # Adjust DC based on defender
+            if defender:
+                defender_stat = self.get_defender_stat(action)
+                defender_mod = calculate_modifier(defender[defender_stat])
+                dc = max(10, dc + (defender_mod - 5))
+            
+            player_total = 10 + player_mod  # Average roll
+            chance = self.predict_success_chance(player_total, dc)
+            
+            emoji = "🟢" if chance >= 60 else "🟡" if chance >= 40 else "🔴"
+            star = "⭐" if action == recommended_action else ""
+            
+            predictions_text += f"{star}{emoji} **{action.upper()}**: ~{chance}% {emoji}\n"
         
-        message = await channel.send(content=member.mention, embed=embed, view=view)
+        embed.add_field(
+            name="📈 SUCCESS PREDICTIONS",
+            value=predictions_text,
+            inline=False
+        )
+        
+        embed.add_field(
+            name="⏱️ TIME LIMIT",
+            value="**30 SECONDS** to choose your action!",
+            inline=False
+        )
+        
+        view = EnhancedActionView(available_actions, recommended_action, timeout=30)
+        
+        message = await channel.send(content=f"🔔 {member.mention}", embed=embed, view=view)
         
         await view.wait()
         
-        action = view.chosen_action if view.chosen_action else random.choice(available_actions)
+        action = view.chosen_action if view.chosen_action else recommended_action
         
         if not view.chosen_action:
-            await channel.send(f"⏰ {member.mention} auto: **{action.upper()}**")
+            await channel.send(f"⏰ {member.mention} **AUTO-SELECTED**: {action.upper()} (AI recommendation)")
         
-        # Execute action with form-adjusted stats
+        # Execute action with enhanced feedback
         result = await self.execute_action_with_duel(
-            channel, player, adjusted_stats, defender, action, minute, match_id
+            channel, player, adjusted_stats, defender, action, minute, match_id, member
         )
         
         # Check for follow-up
@@ -397,20 +526,11 @@ class MatchEngine:
         
         return 'goal' if result.get('goal') else None
     
-    async def execute_action_with_duel(self, channel, player, adjusted_stats, defender, action, minute, match_id):
-        """Execute action with NPC opponent rolling dice"""
+    async def execute_action_with_duel(self, channel, player, adjusted_stats, defender, action, minute, match_id, member=None):
+        """ENHANCED: Execute action with dramatic presentation"""
         
-        stat_map = {
-            'shoot': adjusted_stats['shooting'],
-            'pass': adjusted_stats['passing'],
-            'dribble': adjusted_stats['dribbling'],
-            'tackle': adjusted_stats['defending'],
-            'header': adjusted_stats['physical'],
-            'cross': adjusted_stats['passing'],
-            'clearance': adjusted_stats['defending']
-        }
-        
-        player_stat = stat_map.get(action, adjusted_stats['pace'])
+        stat_name = self.get_stat_for_action(action)
+        player_stat = adjusted_stats[stat_name]
         player_mod = calculate_modifier(player_stat)
         player_roll = roll_d20()
         player_total = player_roll + player_mod
@@ -420,32 +540,52 @@ class MatchEngine:
         defender_total = 0
         dc = get_difficulty_class(action)
         
-        if defender and action in ['dribble', 'shoot', 'header']:
+        if defender and action in ['dribble', 'shoot', 'header', 'cut_inside', 'penalty_area_dribble']:
+            defender_stat_name = self.get_defender_stat(action)
             defender_roll = roll_d20()
-            defender_mod = calculate_modifier(defender['defending'])
+            defender_mod = calculate_modifier(defender[defender_stat_name])
             defender_total = defender_roll + defender_mod
             dc = max(10, dc + (defender_mod - 5))
         
         success = player_total >= dc
         
-        # Build result embed
+        # DRAMATIC BUILD-UP
+        action_desc = self.get_action_description(action)
+        
+        suspense_embed = discord.Embed(
+            title=f"{action_desc}",
+            description=f"**{player['player_name']}** {action_desc.lower()}...",
+            color=discord.Color.orange()
+        )
+        
+        if member:
+            suspense_embed.set_footer(text=f"{member.display_name} is in action!")
+        
+        suspense_msg = await channel.send(embed=suspense_embed)
+        await asyncio.sleep(1.5)
+        
+        # ENHANCED RESULT EMBED
         result_embed = discord.Embed(
-            title=f"🎲 {action.upper()} - The Duel!",
+            title=f"🎲 {action.upper()} — THE SHOWDOWN!",
             color=discord.Color.green() if success else discord.Color.red()
         )
         
         if defender and defender_total > 0:
             result_embed.add_field(
-                name="⚔️ Dice Battle",
-                value=f"**YOU**: {player_roll} + {player_mod} = **{player_total}**\n"
-                      f"**{defender['player_name']}**: {defender_roll} + {calculate_modifier(defender['defending'])} = **{defender_total}**\n"
-                      f"DC: {dc}",
+                name="⚔️ Battle of Stats",
+                value=f"**YOU ({stat_name.upper()}: {player_stat})**\n"
+                      f"🎲 Roll: {player_roll} + {player_mod} = **{player_total}**\n\n"
+                      f"**{defender['player_name']} ({self.get_defender_stat(action).upper()}: {defender[self.get_defender_stat(action)]})**\n"
+                      f"🎲 Roll: {defender_roll} + {calculate_modifier(defender[self.get_defender_stat(action)])} = **{defender_total}**\n\n"
+                      f"🎯 Target: **{dc}**",
                 inline=False
             )
         else:
             result_embed.add_field(
                 name="🎲 Your Roll",
-                value=f"{player_roll} + {player_mod} = **{player_total}** vs DC {dc}",
+                value=f"**{stat_name.upper()}: {player_stat}**\n"
+                      f"🎲 {player_roll} + {player_mod} = **{player_total}**\n"
+                      f"🎯 Target: **{dc}**",
                 inline=False
             )
         
@@ -453,7 +593,11 @@ class MatchEngine:
         is_goal = False
         if action == 'shoot' and success:
             if player_roll == 20 or player_total >= dc + 5:
-                result_embed.add_field(name="⚽ GOAL!", value=f"**{player['player_name']}** scores!", inline=False)
+                result_embed.add_field(
+                    name="⚽ GOOOOAAAL!",
+                    value=f"**{player['player_name']}** SCORES! What a finish!",
+                    inline=False
+                )
                 is_goal = True
                 
                 async with db.pool.acquire() as conn:
@@ -462,16 +606,56 @@ class MatchEngine:
                         player['user_id']
                     )
                 
-                # Morale boost for goal
                 from utils.form_morale_system import update_player_morale
                 await update_player_morale(player['user_id'], 'goal')
             else:
-                result_embed.add_field(name="🧤 Saved!", value="Keeper denies it!", inline=False)
+                save_types = ["palms it away", "tips over the bar", "smothers the shot", "makes a brilliant save"]
+                result_embed.add_field(
+                    name="🧤 SAVED!",
+                    value=f"Goalkeeper {random.choice(save_types)}!",
+                    inline=False
+                )
         elif success:
-            result_embed.add_field(name="✅ Success!", value=f"Great {action}!", inline=False)
+            success_msgs = {
+                'pass': "Perfect delivery!",
+                'dribble': "Beats the defender with skill!",
+                'tackle': "Clean tackle! Ball won!",
+                'header': "Commanding header!",
+                'cross': "Dangerous ball in!",
+                'clearance': "Cleared to safety!",
+                'through_ball': "Perfectly weighted pass!",
+                'interception': "Reads it perfectly!"
+            }
+            result_embed.add_field(
+                name="✅ SUCCESS!",
+                value=success_msgs.get(action, f"Great {action}!"),
+                inline=False
+            )
         else:
-            result_embed.add_field(name="❌ Failed!", value=f"{action} unsuccessful", inline=False)
+            fail_msgs = {
+                'shoot': "Wide of the target!",
+                'pass': "Intercepted!",
+                'dribble': "Defender stands strong!",
+                'tackle': "Missed the ball!",
+                'header': "Can't get on the end of it!",
+                'cross': "Overhit! Out for a goal kick.",
+                'clearance': "Poor clearance! Still dangerous!",
+                'through_ball': "Too heavy, keeper collects.",
+                'interception': "Just out of reach!"
+            }
+            result_embed.add_field(
+                name="❌ FAILED!",
+                value=fail_msgs.get(action, f"{action} unsuccessful!"),
+                inline=False
+            )
         
+        # Critical moments
+        if player_roll == 20:
+            result_embed.add_field(name="🌟 CRITICAL SUCCESS!", value="Perfect execution!", inline=False)
+        elif player_roll == 1:
+            result_embed.add_field(name="💥 CRITICAL FAILURE!", value="Disaster!", inline=False)
+        
+        await suspense_msg.delete()
         await channel.send(embed=result_embed)
         
         # Update rating
@@ -487,11 +671,11 @@ class MatchEngine:
         return {'success': success, 'goal': is_goal, 'roll': player_roll}
     
     async def execute_follow_up_action(self, channel, player, adjusted_stats, defender, action, minute, match_id, member):
-        """Execute automatic follow-up action"""
+        """Execute automatic follow-up action with excitement"""
         
         embed = discord.Embed(
             title=f"⚡ FOLLOW-UP: {action.upper()}!",
-            description=f"**{player['player_name']}** continues!",
+            description=f"**{player['player_name']}** continues the attack!",
             color=discord.Color.orange()
         )
         
@@ -499,13 +683,13 @@ class MatchEngine:
         await asyncio.sleep(1)
         
         result = await self.execute_action_with_duel(
-            channel, player, adjusted_stats, defender, action, minute, match_id
+            channel, player, adjusted_stats, defender, action, minute, match_id, member
         )
         
         return 'goal' if result.get('goal') else None
     
     async def handle_npc_moment(self, channel, team_id, minute, attacking_team, defending_team, is_home):
-        """Handle NPC moment"""
+        """Handle NPC moment with better presentation"""
         
         async with db.pool.acquire() as conn:
             result = await conn.fetchrow(
@@ -537,9 +721,14 @@ class MatchEngine:
         
         if action == 'shoot' and success and (roll == 20 or total >= dc + 5):
             embed = discord.Embed(
-                title=f"⚽ NPC GOAL - Minute {minute}'",
-                description=f"**{npc['player_name']}** scores for {attacking_team['team_name']}!",
+                title=f"⚽ NPC GOAL — Minute {minute}'",
+                description=f"## **{npc['player_name']}** scores for {attacking_team['team_name']}!",
                 color=discord.Color.blue()
+            )
+            embed.add_field(
+                name="🎲 The Shot",
+                value=f"{roll} + {modifier} = **{total}** vs DC {dc}",
+                inline=False
             )
             outcome = 'goal'
             
@@ -550,9 +739,14 @@ class MatchEngine:
                 )
         else:
             embed = discord.Embed(
-                title=f"🤖 NPC Action - Minute {minute}'",
-                description=f"**{npc['player_name']}** attempts {action}\nRoll: {roll} + {modifier} = {total}",
+                title=f"🤖 NPC Action — Minute {minute}'",
+                description=f"**{npc['player_name']}** attempts {action}",
                 color=discord.Color.blue()
+            )
+            embed.add_field(
+                name="🎲 Roll",
+                value=f"{roll} + {modifier} = **{total}** vs DC {dc}\n{'✅ Success' if success else '❌ Failed'}",
+                inline=False
             )
         
         await channel.send(embed=embed)
@@ -582,7 +776,7 @@ class MatchEngine:
         
         embed = discord.Embed(
             title="🏁 FULL TIME!",
-            description=f"**{home_team['team_name']} {home_score} - {away_score} {away_team['team_name']}**",
+            description=f"## {home_team['team_name']} {home_score} - {away_score} {away_team['team_name']}",
             color=discord.Color.gold()
         )
         
@@ -641,12 +835,13 @@ class MatchEngine:
                                 WHERE user_id = $2
                             """, new_avg, p['user_id'])
                         
-                        ratings_text += f"**{player['player_name']}**: {final_rating:.1f}/10 ({actions} actions)\n"
+                        rating_emoji = "🌟" if final_rating >= 8 else "⭐" if final_rating >= 7 else "✅" if final_rating >= 6 else "📉"
+                        ratings_text += f"{rating_emoji} **{player['player_name']}**: {final_rating:.1f}/10 ({actions} actions)\n"
             
             if ratings_text:
                 embed.add_field(name="⭐ Player Ratings", value=ratings_text, inline=False)
         
-        embed.set_footer(text="Channel deletes in 60s")
+        embed.set_footer(text="Channel deletes in 60 seconds")
         
         await channel.send(embed=embed)
         
@@ -694,7 +889,7 @@ class MatchEngine:
         return None
 
 class EnhancedActionView(discord.ui.View):
-    def __init__(self, available_actions, timeout=30):
+    def __init__(self, available_actions, recommended_action, timeout=30):
         super().__init__(timeout=timeout)
         self.chosen_action = None
         
@@ -704,14 +899,28 @@ class EnhancedActionView(discord.ui.View):
             'dribble': '🪄',
             'tackle': '🛡️',
             'header': '🗣️',
-            'cross': '📐',
+            'cross': '📤',
             'clearance': '🚀',
             'through_ball': '⚡',
-            'save': '🧤'
+            'save': '🧤',
+            'interception': '👀',
+            'block': '🧱',
+            'penalty_area_dribble': '💨',
+            'cut_inside': '↩️',
+            'key_pass': '🔑',
+            'long_ball': '📡',
+            'overlap': '🏃',
+            'claim_cross': '✊',
+            'distribution': '🎯',
+            'through_ball_receive': '🎯'
         }
         
         for action in available_actions[:5]:
-            button = ActionButton(action, emoji_map.get(action, '⚽'))
+            # Highlight recommended action
+            if action == recommended_action:
+                button = ActionButton(action, emoji_map.get(action, '⚽'), highlighted=True)
+            else:
+                button = ActionButton(action, emoji_map.get(action, '⚽'), highlighted=False)
             self.add_item(button)
     
     async def on_timeout(self):
@@ -719,16 +928,16 @@ class EnhancedActionView(discord.ui.View):
             item.disabled = True
 
 class ActionButton(discord.ui.Button):
-    def __init__(self, action, emoji):
+    def __init__(self, action, emoji, highlighted=False):
         super().__init__(
             label=action.replace('_', ' ').title(),
             emoji=emoji,
-            style=discord.ButtonStyle.primary
+            style=discord.ButtonStyle.success if highlighted else discord.ButtonStyle.primary
         )
         self.action = action
     
     async def callback(self, interaction: discord.Interaction):
-        self.chosen_action = self.action
+        self.view.chosen_action = self.action
         
         for item in self.view.children:
             item.disabled = True
