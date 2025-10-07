@@ -25,13 +25,8 @@ class FootballBot(commands.Bot):
         """Called when bot is starting up"""
         print("📄 Setting up bot...")
         
-        # Connect to database
         await db.connect()
-        
-        # Initialize teams and players if database is empty
         await self.initialize_data()
-        
-        # Load all command cogs
         await self.load_cogs()
         
         # Initialize match engine
@@ -40,11 +35,14 @@ class FootballBot(commands.Bot):
         me_module.match_engine = MatchEngine(self)
         print("✅ Match engine initialized")
         
-        # Sync slash commands
+        # Cache team crests
+        from utils.football_data_api import cache_all_crests
+        await cache_all_crests()
+        print("✅ Team crests cached")
+        
         await self.tree.sync()
         print(f"✅ Synced {len(self.tree.get_commands())} slash commands")
         
-        # Start background tasks
         if not self.season_task_started:
             self.check_match_day.start()
             self.check_retirements.start()
@@ -75,9 +73,9 @@ class FootballBot(commands.Bot):
         """Initialize database with teams and complete squads"""
         from data.teams import ALL_TEAMS
         from data.players import PREMIER_LEAGUE_PLAYERS
+        from data.championship_players import CHAMPIONSHIP_PLAYERS
         from utils.npc_squad_generator import populate_all_teams
         
-        # Check if teams exist
         async with db.pool.acquire() as conn:
             result = await conn.fetchrow("SELECT COUNT(*) as count FROM teams")
             team_count = result['count']
@@ -99,37 +97,122 @@ class FootballBot(commands.Bot):
                     await conn.execute('''
                         INSERT INTO teams (team_id, team_name, league, budget, wage_budget)
                         VALUES ($1, $2, $3, $4, $5)
-                    ''',
-                        team['team_id'],
-                        team['team_name'],
-                        team['league'],
-                        budget,
-                        wage_budget
-                    )
+                    ''', team['team_id'], team['team_name'], team['league'], budget, wage_budget)
             print(f"✅ Added {len(ALL_TEAMS)} teams")
         
-        # Check if NPC players exist
+        async with db.pool.acquire() as conn:
+            result = await conn.fetchrow("SELECT COUNT(*) as count FROM npc_players WHERE is_regen = FALSE")
+            real_player_count = result['count']
+        
+        if real_player_count == 0:
+            await self.populate_real_players(PREMIER_LEAGUE_PLAYERS, CHAMPIONSHIP_PLAYERS)
+        
         async with db.pool.acquire() as conn:
             result = await conn.fetchrow("SELECT COUNT(*) as count FROM npc_players")
             npc_count = result['count']
         
-        # If no NPC players, populate ALL teams with full squads
-        if npc_count == 0:
-            print("⚽ Generating complete squads for all teams...")
+        if npc_count < 1000:
+            print("⚽ Generating squads for remaining teams...")
             await populate_all_teams()
             print("✅ All teams now have complete squads!")
-            
+        
         await db.retire_old_players()
+    
+    async def populate_real_players(self, pl_players, champ_players):
+        """Populate real players with proper stats"""
+        import random
+        
+        print("⚽ Adding real Premier League players...")
+        async with db.pool.acquire() as conn:
+            for p in pl_players:
+                stats = self.calculate_player_stats(p['overall_rating'], p['position'])
+                await conn.execute('''
+                    INSERT INTO npc_players (
+                        player_name, team_id, position, age, overall_rating,
+                        pace, shooting, passing, dribbling, defending, physical, is_regen
+                    )
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, FALSE)
+                ''', p['player_name'], p['team_id'], p['position'], p['age'], p['overall_rating'],
+                    stats['pace'], stats['shooting'], stats['passing'], stats['dribbling'], 
+                    stats['defending'], stats['physical'])
+        
+        print(f"✅ Added {len(pl_players)} Premier League players")
+        
+        print("⚽ Adding real Championship players...")
+        async with db.pool.acquire() as conn:
+            for p in champ_players:
+                stats = self.calculate_player_stats(p['overall_rating'], p['position'])
+                await conn.execute('''
+                    INSERT INTO npc_players (
+                        player_name, team_id, position, age, overall_rating,
+                        pace, shooting, passing, dribbling, defending, physical, is_regen
+                    )
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, FALSE)
+                ''', p['player_name'], p['team_id'], p['position'], p['age'], p['overall_rating'],
+                    stats['pace'], stats['shooting'], stats['passing'], stats['dribbling'], 
+                    stats['defending'], stats['physical'])
+        
+        print(f"✅ Added {len(champ_players)} Championship players")
+    
+    def calculate_player_stats(self, base, position):
+        """Calculate individual stats based on position"""
+        import random
+        
+        if position == 'GK':
+            return {
+                'pace': max(40, base - random.randint(10, 15)),
+                'shooting': max(40, base - random.randint(15, 20)),
+                'passing': max(50, base - random.randint(5, 10)),
+                'dribbling': max(45, base - random.randint(10, 15)),
+                'defending': min(99, base + random.randint(5, 15)),
+                'physical': max(60, base + random.randint(-5, 5))
+            }
+        elif position in ['ST', 'W']:
+            return {
+                'pace': min(99, base + random.randint(0, 10)),
+                'shooting': min(99, base + random.randint(5, 10)),
+                'passing': max(50, base - random.randint(0, 10)),
+                'dribbling': min(99, base + random.randint(0, 10)),
+                'defending': max(30, base - random.randint(20, 30)),
+                'physical': max(50, base - random.randint(0, 10))
+            }
+        elif position in ['CAM', 'CM']:
+            return {
+                'pace': max(50, base - random.randint(0, 5)),
+                'shooting': max(55, base - random.randint(0, 10)),
+                'passing': min(99, base + random.randint(5, 10)),
+                'dribbling': min(99, base + random.randint(0, 10)),
+                'defending': max(45, base - random.randint(10, 20)),
+                'physical': max(55, base - random.randint(0, 10))
+            }
+        elif position == 'CDM':
+            return {
+                'pace': max(50, base - random.randint(5, 10)),
+                'shooting': max(50, base - random.randint(10, 15)),
+                'passing': min(99, base + random.randint(0, 10)),
+                'dribbling': max(55, base - random.randint(5, 10)),
+                'defending': min(99, base + random.randint(5, 15)),
+                'physical': min(99, base + random.randint(5, 10))
+            }
+        elif position in ['CB', 'FB']:
+            return {
+                'pace': min(99, base + random.randint(0, 5)) if position == 'FB' else max(50, base - random.randint(5, 10)),
+                'shooting': max(35, base - random.randint(20, 30)),
+                'passing': max(55, base - random.randint(5, 10)),
+                'dribbling': max(45, base - random.randint(10, 20)),
+                'defending': min(99, base + random.randint(5, 15)),
+                'physical': min(99, base + random.randint(5, 10))
+            }
+        else:
+            return {'pace': base, 'shooting': base, 'passing': base, 
+                   'dribbling': base, 'defending': base, 'physical': base}
     
     @tasks.loop(minutes=15)
     async def check_match_day(self):
         """Check if it's time to open/close match windows"""
         try:
             from utils.season_manager import check_match_day_trigger
-            
-            # FIXED: Pass bot instance to season manager
             triggered = await check_match_day_trigger(bot=self)
-            
             if triggered:
                 print("⚽ Match window state changed")
         except Exception as e:
@@ -145,12 +228,10 @@ class FootballBot(commands.Bot):
     
     @check_match_day.before_loop
     async def before_check_match_day(self):
-        """Wait until bot is ready"""
         await self.wait_until_ready()
     
     @check_retirements.before_loop
     async def before_check_retirements(self):
-        """Wait until bot is ready"""
         await self.wait_until_ready()
     
     async def on_ready(self):
@@ -159,352 +240,157 @@ class FootballBot(commands.Bot):
         
         print("\n" + "="*50)
         print(f'✅ Bot logged in as {self.user.name}')
-        print(f'✅ Bot ID: {self.user.id}')
         print(f'✅ Connected to {len(self.guilds)} server(s)')
-        print(f'✅ Latency: {round(self.latency * 1000)}ms')
         
         if state['season_started']:
             print(f'📅 Season: {state["current_season"]} - Week {state["current_week"]}/{config.SEASON_TOTAL_WEEKS}')
-            if state['match_window_open']:
-                print(f'🎮 Match window: OPEN')
-            else:
-                print(f'⏰ Match window: CLOSED')
         else:
-            print(f'⏳ Season not started - waiting for first player')
+            print(f'⏳ Season not started')
         
         print("="*50 + "\n")
         
-        # Set bot status
         await self.change_presence(
             activity=discord.Game(name="⚽ /start to begin | /help for commands"),
             status=discord.Status.online
         )
     
-    async def on_command_error(self, ctx, error):
-        """Handle command errors"""
-        if isinstance(error, commands.CommandNotFound):
+    async def setup_server_channels(self, guild):
+        """Setup organized channel structure"""
+        categories_to_create = {
+            "📰 NEWS & INFO": ["news-feed", "match-results", "transfer-news"],
+            "ACTIVE MATCHES": [],
+            "📊 COMMANDS": ["bot-commands"],
+            "💬 DISCUSSION": ["general-chat", "tactics-talk"]
+        }
+        
+        for category_name, channels in categories_to_create.items():
+            category = discord.utils.get(guild.categories, name=category_name)
+            
+            if not category:
+                category = await guild.create_category(category_name)
+                print(f"✅ Created category: {category_name}")
+            
+            for channel_name in channels:
+                existing_channel = discord.utils.get(guild.text_channels, name=channel_name)
+                
+                if not existing_channel:
+                    await guild.create_text_channel(channel_name, category=category)
+                    print(f"✅ Created channel: {channel_name}")
+    
+    async def post_weekly_news(self, guild):
+        """Post weekly news digest"""
+        news_channel = discord.utils.get(guild.text_channels, name="news-feed")
+        if not news_channel:
             return
         
-        print(f"❌ Error: {error}")
+        state = await db.get_game_state()
+        current_week = state['current_week']
+        
+        async with db.pool.acquire() as conn:
+            rows = await conn.fetch(
+                """SELECT * FROM news 
+                   WHERE week_number = $1 
+                   ORDER BY importance DESC, created_at DESC 
+                   LIMIT 10""",
+                current_week
+            )
+            news_items = [dict(row) for row in rows]
+        
+        if not news_items:
+            return
+        
+        embed = discord.Embed(
+            title=f"📰 Week {current_week} News Digest",
+            description=f"Season {state['current_season']}",
+            color=discord.Color.blue()
+        )
+        
+        for news in news_items[:8]:
+            emoji = {'player_news': '⭐', 'league_news': '🏆', 'match_news': '⚽', 
+                    'transfer_news': '💼'}.get(news['category'], '📌')
+            
+            embed.add_field(
+                name=f"{emoji} {news['headline']}",
+                value=news['content'][:200],
+                inline=False
+            )
+        
+        await news_channel.send(embed=embed)
 
 # Create bot instance
 bot = FootballBot()
 
 # Help command
-@bot.tree.command(name="help", description="View all available commands and how to play")
+@bot.tree.command(name="help", description="View all available commands")
 async def help_command(interaction: discord.Interaction):
     """Show help information"""
     
     embed = discord.Embed(
-        title="⚽ Football Career Bot - Complete Guide",
-        description="Build your player from age 18 to 38 with **DnD-style interactive matches**!",
+        title="⚽ Football Career Bot - Guide",
+        description="Build your player from 18 to 38 with interactive matches!",
         color=discord.Color.blue()
     )
     
     embed.add_field(
         name="🎮 Getting Started",
-        value=(
-            "`/start` - Create your player (auto-assigned to team!)\n"
-            "`/profile [@user]` - View stats\n"
-            "`/compare @user` - Compare players"
-        ),
+        value="`/start` - Create player\n`/profile` - View stats\n`/compare @user` - Compare players",
         inline=False
     )
     
     embed.add_field(
-        name="💼 Transfers & Contracts",
-        value=(
-            "`/offers` - View transfer offers (during windows)\n"
-            "`/my_contract` - View your current deal\n"
-            "`/transfer_history` - See all your moves\n"
-            "`/market_value` - Check your estimated value"
-        ),
+        name="💼 Transfers",
+        value="`/offers` - View offers (transfer windows)\n`/my_contract` - Current deal\n`/transfer_history` - Past moves",
         inline=False
     )
     
     embed.add_field(
-        name="📈 Daily Training",
-        value=(
-            "`/train` - Train once every 24h\n"
-            "• Build streaks for bonuses\n"
-            "• Veterans improve slower"
-        ),
+        name="📈 Training",
+        value="`/train` - Train daily (6+ points per session!)\n30-day streak = +5 permanent potential!",
         inline=False
     )
     
     embed.add_field(
-        name="🎲 INTERACTIVE MATCHES",
-        value=(
-            "`/play_match` - Play your match!\n"
-            "• **6-10 key moments** per game\n"
-            "• **Choose: Shoot/Pass/Dribble**\n"
-            "• **Roll d20 + stats vs DC**\n"
-            "• **30 sec timer** (auto-rolls if AFK)\n"
-            "• **Affect the score** with decisions!"
-        ),
+        name="🎲 Matches",
+        value="`/play_match` - Play your match!\nPosition-specific events\nD20 duels vs opponents",
         inline=False
     )
     
     embed.add_field(
-        name="📅 Match Windows",
-        value=(
-            f"• **Match days at {config.MATCH_START_HOUR}:00**\n"
-            f"• **{config.MATCH_WINDOW_HOURS}h window** to play\n"
-            "• Use `/play_match` during windows\n"
-            "• Auto-sim if you miss it"
-        ),
+        name="📅 Season",
+        value="`/season` - Current week\n`/fixtures` - Your schedule\n`/league` - League tables",
         inline=False
     )
-    
-    embed.add_field(
-        name="⚽ Other Commands",
-        value=(
-            "`/season` - Check current week\n"
-            "`/fixtures` - See your schedule\n"
-            "`/results` - Recent matches\n"
-            "`/league` - League tables\n"
-            "`/news` - Your news feed"
-        ),
-        inline=False
-    )
-    
-    embed.add_field(
-        name="🎲 DnD Mechanics",
-        value=(
-            "**Roll d20 + stat modifier vs DC**\n"
-            "• Shooting 82 = +8 modifier\n"
-            "• DC 10 = Easy | 15 = Medium | 20 = Hard\n"
-            "• Natural 20 = Critical success!\n"
-            "• Natural 1 = Critical failure!"
-        ),
-        inline=False
-    )
-    
-    embed.add_field(
-        name="🔄 Transfer Windows",
-        value=(
-            "• **Weeks 4-6** - January window\n"
-            "• **Weeks 20-22** - Summer window\n"
-            "• 1 transfer per window maximum\n"
-            "• Contracts decrease each season"
-        ),
-        inline=False
-    )
-    
-    embed.add_field(
-        name="⏳ Career",
-        value=(
-            f"• Age {config.STARTING_AGE}-{config.RETIREMENT_AGE} ({config.RETIREMENT_AGE - config.STARTING_AGE} years)\n"
-            "• Retire at 38, create new player\n"
-            "• Build your legacy!"
-        ),
-        inline=False
-    )
-    
-    embed.set_footer(text=f"Season: {config.CURRENT_SEASON} | Transfer windows enabled!")
     
     await interaction.response.send_message(embed=embed)
 
-# Admin commands
-@bot.tree.command(name="admin_advance_week", description="[ADMIN] Manually advance to next week")
-async def admin_advance_week(interaction: discord.Interaction):
-    """Admin: Force advance week"""
-    
-    if not interaction.user.guild_permissions.administrator:
-        await interaction.response.send_message(
-            "❌ Administrator permissions required!",
-            ephemeral=True
-        )
-        return
-    
-    await interaction.response.defer()
-    
-    from utils.season_manager import advance_week
-    await advance_week()
-    
-    state = await db.get_game_state()
-    
-    embed = discord.Embed(
-        title="✅ Week Advanced",
-        description=f"Now on Week {state['current_week']}/{config.SEASON_TOTAL_WEEKS}",
-        color=discord.Color.green()
-    )
-    
-    await interaction.followup.send(embed=embed)
-
-@bot.tree.command(name="admin_open_window", description="[ADMIN] Manually open match window")
-async def admin_open_window(interaction: discord.Interaction):
-    """Admin: Force open match window"""
-    
-    if not interaction.user.guild_permissions.administrator:
-        await interaction.response.send_message(
-            "❌ Administrator permissions required!",
-            ephemeral=True
-        )
-        return
-    
-    await interaction.response.defer()
-    
-    from utils.season_manager import open_match_window
-    await open_match_window(bot=bot)
-    
-    embed = discord.Embed(
-        title="✅ Match Window Opened",
-        description=f"Window open for {config.MATCH_WINDOW_HOURS} hours",
-        color=discord.Color.green()
-    )
-    
-    await interaction.followup.send(embed=embed)
-
-@bot.tree.command(name="admin_close_window", description="[ADMIN] Manually close match window")
-async def admin_close_window(interaction: discord.Interaction):
-    """Admin: Force close match window"""
-    
-    if not interaction.user.guild_permissions.administrator:
-        await interaction.response.send_message(
-            "❌ Administrator permissions required!",
-            ephemeral=True
-        )
-        return
-    
-    await interaction.response.defer()
-    
-    from utils.season_manager import close_match_window
-    await close_match_window()
-    
-    embed = discord.Embed(
-        title="✅ Match Window Closed",
-        description="Unplayed matches auto-simulated",
-        color=discord.Color.green()
-    )
-    
-    await interaction.followup.send(embed=embed)
-
-@bot.tree.command(name="admin_assign_team", description="[ADMIN] Manually assign a player to a team")
+# Admin command group
+@bot.tree.command(name="admin", description="[ADMIN] Admin control panel")
 @app_commands.describe(
-    user="Player to assign",
-    team_id="Team ID (e.g., 'man_city', 'arsenal', 'leeds')"
+    action="Choose admin action",
+    user="User (for assign_team/transfer_test)",
+    team_id="Team ID (for assign_team)",
+    weeks="Weeks to advance (for advance_weeks)"
 )
-async def admin_assign_team(interaction: discord.Interaction, user: discord.User, team_id: str):
-    """Admin: Assign player to team"""
-    
-    if not interaction.user.guild_permissions.administrator:
-        await interaction.response.send_message(
-            "❌ Administrator permissions required!",
-            ephemeral=True
-        )
-        return
-    
-    player = await db.get_player(user.id)
-    
-    if not player:
-        await interaction.response.send_message(
-            f"❌ {user.mention} hasn't created a player yet!",
-            ephemeral=True
-        )
-        return
-    
-    team = await db.get_team(team_id)
-    
-    if not team:
-        await interaction.response.send_message(
-            f"❌ Team '{team_id}' not found!\n\n"
-            f"💡 **Examples:** `man_city`, `arsenal`, `liverpool`, `chelsea`, `leeds`, `burnley`, `barnsley`",
-            ephemeral=True
-        )
-        return
-    
-    wage = (player['overall_rating'] ** 2) * 10
-    
-    async with db.pool.acquire() as conn:
-        await conn.execute(
-            "UPDATE players SET team_id = $1, league = $2, contract_wage = $3, contract_years = $4 WHERE user_id = $5",
-            team_id, team['league'], wage, 3, user.id
-        )
-        
-        await conn.execute('''
-            INSERT INTO transfers (user_id, from_team, to_team, fee, wage, contract_length, transfer_type)
-            VALUES ($1, $2, $3, $4, $5, $6, $7)
-        ''', user.id, player['team_id'], team_id, 0, wage, 3, 'admin_assignment')
-    
-    embed = discord.Embed(
-        title="✅ Player Assigned",
-        description=f"{user.mention} → **{team['team_name']}**",
-        color=discord.Color.green()
-    )
-    
-    embed.add_field(name="🏆 League", value=team['league'], inline=True)
-    embed.add_field(name="💰 Wage", value=f"£{wage:,}/week", inline=True)
-    embed.add_field(name="⏳ Contract", value="3 years", inline=True)
-    
-    await interaction.response.send_message(embed=embed)
-
-@bot.tree.command(name="admin_wipe_players", description="[ADMIN] ⚠️ DELETE ALL USER PLAYERS AND RESET TO DAY 1")
-async def admin_wipe_players(interaction: discord.Interaction):
-    """Admin: Wipe all user players and reset game"""
-    
-    if not interaction.user.guild_permissions.administrator:
-        await interaction.response.send_message(
-            "❌ Administrator permissions required!",
-            ephemeral=True
-        )
-        return
-    
-    # Confirmation view
-    class ConfirmView(discord.ui.View):
-        def __init__(self):
-            super().__init__(timeout=30)
-            self.confirmed = False
-        
-        @discord.ui.button(label="⚠️ YES, WIPE EVERYTHING", style=discord.ButtonStyle.danger)
-        async def confirm_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-            self.confirmed = True
-            self.stop()
-            await interaction.response.defer()
-        
-        @discord.ui.button(label="❌ Cancel", style=discord.ButtonStyle.secondary)
-        async def cancel_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-            self.confirmed = False
-            self.stop()
-            await interaction.response.defer()
-    
-    view = ConfirmView()
-    
-    await interaction.response.send_message(
-        "⚠️ **WARNING: THIS WILL DELETE ALL USER PLAYERS AND RESET THE GAME TO DAY 1**\n\n"
-        "This action will:\n"
-        "• Delete all user-created players\n"
-        "• Reset season to Week 0\n"
-        "• Clear all fixtures and match history\n"
-        "• Reset all team stats\n"
-        "• Keep NPC players intact\n\n"
-        "**ARE YOU ABSOLUTELY SURE?**",
-        view=view,
-        ephemeral=True
-    )
-    
-    await view.wait()
-    
-    if view.confirmed:
-        await db.wipe_all_user_players()
-        
-        await interaction.followup.send(
-            "✅ **WIPE COMPLETE**\n\n"
-            "• All user players deleted\n"
-            "• Game reset to Day 1\n"
-            "• Season will start when first player uses `/start`\n"
-            "• Bot is ready for fresh start!",
-            ephemeral=True
-        )
-    else:
-        await interaction.followup.send(
-            "❌ Wipe cancelled. No changes made.",
-            ephemeral=True
-        )
-
-@bot.tree.command(name="admin_retire_check", description="[ADMIN] Check for retirements")
-async def admin_retire(interaction: discord.Interaction):
-    """Admin: Trigger retirement check"""
+@app_commands.choices(action=[
+    app_commands.Choice(name="⏩ Advance Week", value="advance_week"),
+    app_commands.Choice(name="⏩ Advance Multiple Weeks", value="advance_weeks"),
+    app_commands.Choice(name="🟢 Open Match Window", value="open_window"),
+    app_commands.Choice(name="🔴 Close Match Window", value="close_window"),
+    app_commands.Choice(name="👤 Assign Player to Team", value="assign_team"),
+    app_commands.Choice(name="🗑️ Wipe All Players", value="wipe_players"),
+    app_commands.Choice(name="👴 Check Retirements", value="check_retirements"),
+    app_commands.Choice(name="📊 Check Squad Counts", value="check_squads"),
+    app_commands.Choice(name="💼 Test Transfer System", value="transfer_test"),
+    app_commands.Choice(name="🏗️ Setup Channels", value="setup_channels"),
+])
+async def admin_command(
+    interaction: discord.Interaction, 
+    action: str, 
+    user: discord.User = None,
+    team_id: str = None,
+    weeks: int = 1
+):
+    """Unified admin command"""
     
     if not interaction.user.guild_permissions.administrator:
         await interaction.response.send_message(
@@ -515,62 +401,209 @@ async def admin_retire(interaction: discord.Interaction):
     
     await interaction.response.defer()
     
-    retirements = await db.retire_old_players()
+    if action == "advance_week":
+        from utils.season_manager import advance_week
+        await advance_week()
+        state = await db.get_game_state()
+        
+        embed = discord.Embed(
+            title="✅ Week Advanced",
+            description=f"Now on Week {state['current_week']}/{config.SEASON_TOTAL_WEEKS}",
+            color=discord.Color.green()
+        )
+        await interaction.followup.send(embed=embed)
     
-    embed = discord.Embed(
-        title="✅ Retirement Check Complete",
-        description=f"Processed {retirements} retirements",
-        color=discord.Color.green()
-    )
+    elif action == "advance_weeks":
+        from utils.season_manager import advance_week
+        for _ in range(weeks):
+            await advance_week()
+            await asyncio.sleep(1)
+        
+        state = await db.get_game_state()
+        embed = discord.Embed(
+            title=f"✅ Advanced {weeks} Weeks",
+            description=f"Now on Week {state['current_week']}/{config.SEASON_TOTAL_WEEKS}",
+            color=discord.Color.green()
+        )
+        await interaction.followup.send(embed=embed)
     
-    await interaction.followup.send(embed=embed)
-
-@bot.tree.command(name="admin_check_squads", description="[ADMIN] Check NPC player counts per team")
-async def admin_check_squads(interaction: discord.Interaction):
-    """Admin: Check squad population"""
+    elif action == "open_window":
+        from utils.season_manager import open_match_window
+        await open_match_window(bot=bot)
+        
+        embed = discord.Embed(
+            title="✅ Match Window Opened",
+            description=f"Window open for {config.MATCH_WINDOW_HOURS} hours",
+            color=discord.Color.green()
+        )
+        await interaction.followup.send(embed=embed)
     
-    if not interaction.user.guild_permissions.administrator:
-        await interaction.response.send_message(
-            "Administrator permissions required!",
+    elif action == "close_window":
+        from utils.season_manager import close_match_window
+        await close_match_window()
+        
+        embed = discord.Embed(
+            title="✅ Match Window Closed",
+            description="Unplayed matches auto-simulated",
+            color=discord.Color.green()
+        )
+        await interaction.followup.send(embed=embed)
+    
+    elif action == "assign_team":
+        if not user or not team_id:
+            await interaction.followup.send("❌ Need both user and team_id!", ephemeral=True)
+            return
+        
+        player = await db.get_player(user.id)
+        if not player:
+            await interaction.followup.send(f"❌ {user.mention} hasn't created a player!", ephemeral=True)
+            return
+        
+        team = await db.get_team(team_id)
+        if not team:
+            await interaction.followup.send(f"❌ Team '{team_id}' not found!", ephemeral=True)
+            return
+        
+        wage = (player['overall_rating'] ** 2) * 10
+        
+        async with db.pool.acquire() as conn:
+            await conn.execute(
+                "UPDATE players SET team_id = $1, league = $2, contract_wage = $3, contract_years = $4 WHERE user_id = $5",
+                team_id, team['league'], wage, 3, user.id
+            )
+        
+        embed = discord.Embed(
+            title="✅ Player Assigned",
+            description=f"{user.mention} → **{team['team_name']}**",
+            color=discord.Color.green()
+        )
+        await interaction.followup.send(embed=embed)
+    
+    elif action == "wipe_players":
+        view = ConfirmWipeView()
+        await interaction.followup.send(
+            "⚠️ **WARNING: DELETE ALL PLAYERS?**\nThis cannot be undone!",
+            view=view,
             ephemeral=True
         )
-        return
+        
+        await view.wait()
+        
+        if view.confirmed:
+            await db.wipe_all_user_players()
+            await interaction.followup.send("✅ All players wiped!", ephemeral=True)
     
-    await interaction.response.defer()
+    elif action == "check_retirements":
+        retirements = await db.retire_old_players()
+        
+        embed = discord.Embed(
+            title="✅ Retirement Check Complete",
+            description=f"Processed {retirements} retirements",
+            color=discord.Color.green()
+        )
+        await interaction.followup.send(embed=embed)
     
-    async with db.pool.acquire() as conn:
-        rows = await conn.fetch("""
-            SELECT t.team_name, t.league, COUNT(n.npc_id) as players
-            FROM teams t
-            LEFT JOIN npc_players n ON t.team_id = n.team_id AND n.retired = FALSE
-            GROUP BY t.team_name, t.league
-            ORDER BY players DESC
-        """)
+    elif action == "check_squads":
+        async with db.pool.acquire() as conn:
+            rows = await conn.fetch("""
+                SELECT t.team_name, t.league, COUNT(n.npc_id) as players
+                FROM teams t
+                LEFT JOIN npc_players n ON t.team_id = n.team_id AND n.retired = FALSE
+                GROUP BY t.team_name, t.league
+                ORDER BY players DESC
+            """)
+        
+        teams = [dict(row) for row in rows]
+        
+        embed = discord.Embed(
+            title="NPC Squad Status",
+            description=f"Total teams: {len(teams)}",
+            color=discord.Color.blue()
+        )
+        
+        pl_teams = [t for t in teams if t['league'] == 'Premier League']
+        champ_teams = [t for t in teams if t['league'] == 'Championship']
+        
+        if pl_teams:
+            pl_text = "\n".join([f"{t['team_name']}: {t['players']} players" for t in pl_teams[:10]])
+            embed.add_field(name="Premier League (sample)", value=pl_text, inline=False)
+        
+        if champ_teams:
+            champ_text = "\n".join([f"{t['team_name']}: {t['players']} players" for t in champ_teams[:10]])
+            embed.add_field(name="Championship (sample)", value=champ_text, inline=False)
+        
+        total_npcs = sum(t['players'] for t in teams)
+        embed.set_footer(text=f"Total NPC players: {total_npcs}")
+        
+        await interaction.followup.send(embed=embed)
     
-    teams = [dict(row) for row in rows]
+    elif action == "transfer_test":
+        if not user:
+            await interaction.followup.send("❌ Need to specify a user!", ephemeral=True)
+            return
+        
+        player = await db.get_player(user.id)
+        if not player:
+            await interaction.followup.send(f"❌ {user.mention} hasn't created a player!", ephemeral=True)
+            return
+        
+        from utils.transfer_window_manager import generate_offers_for_player
+        state = await db.get_game_state()
+        
+        offers = await generate_offers_for_player(player, state['current_week'], num_offers=5)
+        
+        embed = discord.Embed(
+            title="✅ Test Offers Generated",
+            description=f"Created {len(offers)} offers for {player['player_name']}",
+            color=discord.Color.green()
+        )
+        
+        for i, offer in enumerate(offers[:5], 1):
+            embed.add_field(
+                name=f"Offer #{i}",
+                value=f"{offer['team_name']}\n£{offer['wage_offer']:,}/wk | {offer['contract_length']}y",
+                inline=True
+            )
+        
+        await interaction.followup.send(embed=embed)
+        
+        # Send DM to user
+        try:
+            dm_embed = discord.Embed(
+                title="📬 TEST: Transfer Offers",
+                description=f"Admin generated test offers for you!\nUse `/offers` to view.",
+                color=discord.Color.gold()
+            )
+            await user.send(embed=dm_embed)
+        except:
+            pass
     
-    embed = discord.Embed(
-        title="NPC Squad Status",
-        description=f"Total teams: {len(teams)}",
-        color=discord.Color.blue()
-    )
+    elif action == "setup_channels":
+        await bot.setup_server_channels(interaction.guild)
+        
+        embed = discord.Embed(
+            title="✅ Channels Setup Complete",
+            description="Created organized channel structure",
+            color=discord.Color.green()
+        )
+        await interaction.followup.send(embed=embed)
+
+class ConfirmWipeView(discord.ui.View):
+    def __init__(self):
+        super().__init__(timeout=30)
+        self.confirmed = False
     
-    pl_teams = [t for t in teams if t['league'] == 'Premier League']
-    champ_teams = [t for t in teams if t['league'] == 'Championship']
-    l1_teams = [t for t in teams if t['league'] == 'League One']
+    @discord.ui.button(label="⚠️ YES, WIPE EVERYTHING", style=discord.ButtonStyle.danger)
+    async def confirm_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        self.confirmed = True
+        self.stop()
+        await interaction.response.defer()
     
-    if pl_teams:
-        pl_text = "\n".join([f"{t['team_name']}: {t['players']} players" for t in pl_teams[:10]])
-        embed.add_field(name="Premier League (sample)", value=pl_text, inline=False)
-    
-    if champ_teams:
-        champ_text = "\n".join([f"{t['team_name']}: {t['players']} players" for t in champ_teams[:10]])
-        embed.add_field(name="Championship (sample)", value=champ_text, inline=False)
-    
-    total_npcs = sum(t['players'] for t in teams)
-    embed.set_footer(text=f"Total NPC players: {total_npcs}")
-    
-    await interaction.followup.send(embed=embed)
+    @discord.ui.button(label="❌ Cancel", style=discord.ButtonStyle.secondary)
+    async def cancel_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        self.confirmed = False
+        self.stop()
+        await interaction.response.defer()
 
 # Run bot
 if __name__ == "__main__":
