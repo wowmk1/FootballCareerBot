@@ -31,33 +31,12 @@ async def on_ready():
     await cache_all_crests()
     print("✅ Team crests cached")
     
-    # Load cogs
-    await load_cogs()
-    
     # Sync slash commands
     try:
         synced = await bot.tree.sync()
         print(f"✅ Synced {len(synced)} slash commands")
     except Exception as e:
         print(f"❌ Error syncing commands: {e}")
-
-async def load_cogs():
-    """Load all cog files"""
-    cogs = [
-        'cogs.player_commands',
-        'cogs.admin_commands',
-        'cogs.match_commands',
-        'cogs.training_commands',
-        'cogs.info_commands',
-        'cogs.transfer_commands'
-    ]
-    
-    for cog in cogs:
-        try:
-            await bot.load_extension(cog)
-            print(f"✅ Loaded {cog}")
-        except Exception as e:
-            print(f"❌ Failed to load {cog}: {e}")
 
 # ============================================================================
 # ADMIN COMMANDS - Grouped Together
