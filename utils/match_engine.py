@@ -110,6 +110,15 @@ class MatchEngine:
                 'FB': 'cross',
                 'CB': 'pass'
             },
+            'penalty_area_dribble': {  # ADD THIS
+                'ST': 'shoot',
+                'W': 'shoot',
+                'CAM': 'shoot'
+            },
+            'cut_inside': {  # ADD THIS
+                'W': 'shoot',
+                'CAM': 'shoot'
+            },
             'tackle': {
                 'CB': 'clearance',
                 'FB': 'pass',
