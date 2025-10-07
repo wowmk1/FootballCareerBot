@@ -747,3 +747,7 @@ class ActionButton(discord.ui.Button):
             item.disabled = True
         await interaction.response.edit_message(view=self.view)
         self.view.stop()
+
+
+# Global instance to be initialized by the main bot
+match_engine = None
