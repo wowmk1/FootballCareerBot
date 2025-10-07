@@ -7,6 +7,7 @@ from database import db
 import random
 import config
 from datetime import datetime
+from utils.event_poster import post_transfer_news_to_channel
 
 async def is_transfer_window_open(current_week: int) -> bool:
     """Check if we're in a transfer window"""
@@ -186,7 +187,7 @@ async def get_pending_offers(user_id: int):
         )
         return [dict(row) for row in rows]
 
-async def accept_transfer_offer(user_id: int, offer_id: int):
+async def accept_transfer_offer(user_id: int, offer_id: int, bot=None):
     """Accept a transfer offer and update player"""
     async with db.pool.acquire() as conn:
         offer_row = await conn.fetchrow(
@@ -266,14 +267,33 @@ async def accept_transfer_offer(user_id: int, offer_id: int):
             state['current_week']
         )
         
-        return {
+        result = {
             'player_name': player['player_name'],
             'old_team': old_team_name,
             'new_team': new_team['team_name'],
             'fee': transfer_fee,
             'wage': offer['wage_offer'],
             'contract_length': offer['contract_length']
-        }, None
+        }
+        
+        # Post transfer news to all guilds
+        if bot:
+            transfer_info = {
+                'player_name': player['player_name'],
+                'from_team': old_team_name,
+                'to_team': new_team['team_name'],
+                'fee': transfer_fee,
+                'wage': offer['wage_offer'],
+                'contract_length': offer['contract_length']
+            }
+            
+            for guild in bot.guilds:
+                try:
+                    await post_transfer_news_to_channel(bot, guild, transfer_info)
+                except Exception as e:
+                    print(f"Could not post transfer to {guild.name}: {e}")
+        
+        return result, None
 
 async def reject_transfer_offer(user_id: int, offer_id: int):
     """Reject a single transfer offer"""
