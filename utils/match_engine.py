@@ -70,14 +70,8 @@ class MatchEngine:
     
     def get_defender_stat(self, action):
         """Get defender's relevant stat for opposition"""
-        if action in ['shoot', 'header']:
-            return 'defending'
-        elif action in ['dribble', 'cut_inside', 'penalty_area_dribble']:
-            return 'defending'
-        elif action in ['pass', 'through_ball', 'cross']:
-            return 'defending'
-        else:
-            return 'defending'
+        # For now all actions default to defending
+        return 'defending'
     
     def predict_success_chance(self, player_total, dc):
         """Calculate percentage chance of success"""
@@ -87,7 +81,6 @@ class MatchEngine:
     def get_recommendation(self, player, adjusted_stats, available_actions):
         """Recommend best action based on stats"""
         action_scores = {}
-        
         for action in available_actions:
             stat = self.get_stat_for_action(action)
             stat_value = adjusted_stats.get(stat, 50)
@@ -141,7 +134,6 @@ class MatchEngine:
                 'W': 'shoot'
             }
         }
-        
         follow_up = follow_ups.get(action, {}).get(position)
         if isinstance(follow_up, list):
             return random.choice(follow_up)
@@ -149,7 +141,6 @@ class MatchEngine:
     
     def calculate_rating_change(self, action, success, roll, position):
         """Calculate rating change based on position-specific weights"""
-        
         position_weights = {
             'ST': {'shoot': 2.0, 'header': 2.0, 'dribble': 1.0, 'pass': 0.5},
             'W': {'dribble': 2.0, 'shoot': 1.5, 'cross': 1.5, 'pass': 0.8},
@@ -160,7 +151,6 @@ class MatchEngine:
             'CB': {'tackle': 2.0, 'header': 2.0, 'clearance': 1.8, 'block': 2.0},
             'GK': {'save': 3.0, 'claim_cross': 2.0, 'distribution': 1.0}
         }
-        
         base_change = 0.2 if success else -0.1
         weight = position_weights.get(position, {}).get(action, 1.0)
         
@@ -177,7 +167,6 @@ class MatchEngine:
     def apply_form_to_stats(self, player):
         """Apply form modifier to player stats"""
         from utils.form_morale_system import get_form_modifier
-        
         form_mod = get_form_modifier(player['form'])
         
         return {
@@ -191,12 +180,10 @@ class MatchEngine:
     
     async def start_match(self, fixture: dict, interaction: discord.Interaction):
         """Start an interactive match with enhanced presentation"""
-        
         home_team = await db.get_team(fixture['home_team_id'])
         away_team = await db.get_team(fixture['away_team_id'])
         
         guild = interaction.guild
-        
         category = discord.utils.get(guild.categories, name="⚽ ACTIVE MATCHES")
         if not category:
             category = await guild.create_category("⚽ ACTIVE MATCHES")
@@ -249,12 +236,7 @@ class MatchEngine:
         else:
             team_display += f"**{home_team['team_name']}**\n"
         team_display += f"{home_team['league']}"
-        
-        embed.add_field(
-            name="🏠 Home",
-            value=team_display,
-            inline=True
-        )
+        embed.add_field(name="🏠 Home", value=team_display, inline=True)
         
         team_display_away = ""
         if away_crest:
@@ -262,12 +244,7 @@ class MatchEngine:
         else:
             team_display_away += f"**{away_team['team_name']}**\n"
         team_display_away += f"{away_team['league']}"
-        
-        embed.add_field(
-            name="✈️ Away",
-            value=team_display_away,
-            inline=True
-        )
+        embed.add_field(name="✈️ Away", value=team_display_away, inline=True)
         
         embed.add_field(
             name="📊 Match Info",
@@ -282,11 +259,7 @@ class MatchEngine:
                 player_mentions.append(member.mention)
         
         if player_mentions:
-            embed.add_field(
-                name="👥 Players Involved",
-                value=" ".join(player_mentions),
-                inline=False
-            )
+            embed.add_field(name="👥 Players Involved", value=" ".join(player_mentions), inline=False)
         
         embed.add_field(
             name="🎮 How It Works",
@@ -296,7 +269,7 @@ class MatchEngine:
         
         if away_crest:
             embed.set_footer(
-                text=f"⚡ Match begins in 5 seconds... | Away: {away_team['team_name']}", 
+                text=f"⚡ Match begins in 5 seconds... | Away: {away_team['team_name']}",
                 icon_url=away_crest
             )
         else:
@@ -313,7 +286,7 @@ class MatchEngine:
         async with db.pool.acquire() as conn:
             result = await conn.fetchrow('''
                 INSERT INTO active_matches (
-                    fixture_id, home_team_id, away_team_id, channel_id, 
+                    fixture_id, home_team_id, away_team_id, channel_id,
                     message_id, match_state, current_minute, last_event_time
                 )
                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
@@ -340,12 +313,10 @@ class MatchEngine:
                     ''', match_id, user_id, player['team_id'], 5.0)
         
         await asyncio.sleep(5)
-        
         await self.run_match(match_id, fixture, match_channel, num_events)
-
-async def run_match(self, match_id: int, fixture: dict, channel: discord.TextChannel, num_events: int):
+    
+    async def run_match(self, match_id: int, fixture: dict, channel: discord.TextChannel, num_events: int):
         """Run the full match simulation"""
-        
         home_team = await db.get_team(fixture['home_team_id'])
         away_team = await db.get_team(fixture['away_team_id'])
         
@@ -367,34 +338,29 @@ async def run_match(self, match_id: int, fixture: dict, channel: discord.TextCha
         
         for i, minute in enumerate(minutes):
             event_num = i + 1
-            
             embed = discord.Embed(
                 title=f"⚡ KEY MOMENT #{event_num}/{num_events} — {minute}'",
                 description=f"## {home_team['team_name']} {home_score} - {away_score} {away_team['team_name']}",
                 color=discord.Color.blue()
             )
-            
             await channel.send(embed=embed)
             await asyncio.sleep(2)
             
             attacking_team = random.choice(['home', 'away'])
-            
             if attacking_team == 'home':
                 if home_participants:
                     participant = random.choice(home_participants)
                     player = await db.get_player(participant['user_id'])
-                    
                     if player:
                         result = await self.handle_player_moment(
-                            channel, player, participant, minute, 
+                            channel, player, participant, minute,
                             home_team, away_team, True, match_id
                         )
-                        
                         if result == 'goal':
                             home_score += 1
                 else:
                     result = await self.handle_npc_moment(
-                        channel, fixture['home_team_id'], minute, 
+                        channel, fixture['home_team_id'], minute,
                         home_team, away_team, True
                     )
                     if result == 'goal':
@@ -403,13 +369,11 @@ async def run_match(self, match_id: int, fixture: dict, channel: discord.TextCha
                 if away_participants:
                     participant = random.choice(away_participants)
                     player = await db.get_player(participant['user_id'])
-                    
                     if player:
                         result = await self.handle_player_moment(
                             channel, player, participant, minute,
                             away_team, home_team, False, match_id
                         )
-                        
                         if result == 'goal':
                             away_score += 1
                 else:
@@ -422,7 +386,7 @@ async def run_match(self, match_id: int, fixture: dict, channel: discord.TextCha
             
             async with db.pool.acquire() as conn:
                 await conn.execute('''
-                    UPDATE active_matches 
+                    UPDATE active_matches
                     SET home_score = $1, away_score = $2, current_minute = $3
                     WHERE match_id = $4
                 ''', home_score, away_score, minute, match_id)
@@ -433,13 +397,11 @@ async def run_match(self, match_id: int, fixture: dict, channel: discord.TextCha
     
     async def handle_player_moment(self, channel, player, participant, minute, attacking_team, defending_team, is_home, match_id):
         """ENHANCED: Handle player's interactive moment with predictions and recommendations"""
-        
         member = channel.guild.get_member(player['user_id'])
         if not member:
             return await self.auto_resolve_moment(player, minute, attacking_team, defending_team)
         
         adjusted_stats = self.apply_form_to_stats(player)
-        
         available_actions = self.get_position_events(player['position'])
         
         async with db.pool.acquire() as conn:
@@ -521,20 +483,16 @@ async def run_match(self, match_id: int, fixture: dict, channel: discord.TextCha
         )
         
         view = EnhancedActionView(available_actions, recommended_action, timeout=30)
-        
         message = await channel.send(content=f"🔔 {member.mention}", embed=embed, view=view)
-        
         await view.wait()
         
         action = view.chosen_action if view.chosen_action else recommended_action
-        
         if not view.chosen_action:
             await channel.send(f"⏰ {member.mention} **AUTO-SELECTED**: {action.upper()} (AI recommendation)")
         
         result = await self.execute_action_with_duel(
             channel, player, adjusted_stats, defender, action, minute, match_id, member
         )
-        
         if result['success']:
             follow_up = self.get_follow_up_event(action, True, player['position'])
             if follow_up:
@@ -542,15 +500,12 @@ async def run_match(self, match_id: int, fixture: dict, channel: discord.TextCha
                 follow_result = await self.execute_follow_up_action(
                     channel, player, adjusted_stats, defender, follow_up, minute, match_id, member
                 )
-                
                 if follow_result == 'goal':
                     return 'goal'
-        
         return 'goal' if result.get('goal') else None
     
     async def execute_action_with_duel(self, channel, player, adjusted_stats, defender, action, minute, match_id, member=None):
         """ENHANCED: Execute action with dramatic presentation"""
-        
         stat_name = self.get_stat_for_action(action)
         player_stat = adjusted_stats[stat_name]
         player_mod = calculate_modifier(player_stat)
@@ -569,7 +524,6 @@ async def run_match(self, match_id: int, fixture: dict, channel: discord.TextCha
             dc = max(10, dc + (defender_mod - 5))
         
         success = player_total >= dc
-        
         action_desc = self.get_action_description(action)
         
         suspense_embed = discord.Embed(
@@ -577,10 +531,8 @@ async def run_match(self, match_id: int, fixture: dict, channel: discord.TextCha
             description=f"**{player['player_name']}** {action_desc.lower()}...",
             color=discord.Color.orange()
         )
-        
         if member:
             suspense_embed.set_footer(text=f"{member.display_name} is in action!")
-        
         suspense_msg = await channel.send(embed=suspense_embed)
         await asyncio.sleep(1.5)
         
@@ -588,7 +540,6 @@ async def run_match(self, match_id: int, fixture: dict, channel: discord.TextCha
             title=f"🎲 {action.upper()} — THE SHOWDOWN!",
             color=discord.Color.green() if success else discord.Color.red()
         )
-        
         if defender and defender_total > 0:
             result_embed.add_field(
                 name="⚔️ Battle of Stats",
@@ -617,13 +568,11 @@ async def run_match(self, match_id: int, fixture: dict, channel: discord.TextCha
                     inline=False
                 )
                 is_goal = True
-                
                 async with db.pool.acquire() as conn:
                     await conn.execute(
                         "UPDATE players SET season_goals = season_goals + 1, career_goals = career_goals + 1 WHERE user_id = $1",
                         player['user_id']
                     )
-                
                 from utils.form_morale_system import update_player_morale
                 await update_player_morale(player['user_id'], 'goal')
             else:
@@ -672,13 +621,10 @@ async def run_match(self, match_id: int, fixture: dict, channel: discord.TextCha
         elif player_roll == 1:
             result_embed.add_field(name="💥 CRITICAL FAILURE!", value="Disaster!", inline=False)
         
-        await suspense_msg
-
-await suspense_msg.delete()
+        await suspense_msg.delete()
         await channel.send(embed=result_embed)
         
         rating_change = self.calculate_rating_change(action, success, player_roll, player['position'])
-        
         async with db.pool.acquire() as conn:
             await conn.execute('''
                 UPDATE match_participants 
@@ -690,25 +636,20 @@ await suspense_msg.delete()
     
     async def execute_follow_up_action(self, channel, player, adjusted_stats, defender, action, minute, match_id, member):
         """Execute automatic follow-up action with excitement"""
-        
         embed = discord.Embed(
             title=f"⚡ FOLLOW-UP: {action.upper()}!",
             description=f"**{player['player_name']}** continues the attack!",
             color=discord.Color.orange()
         )
-        
         await channel.send(embed=embed)
         await asyncio.sleep(1)
-        
         result = await self.execute_action_with_duel(
             channel, player, adjusted_stats, defender, action, minute, match_id, member
         )
-        
         return 'goal' if result.get('goal') else None
-    
+
     async def handle_npc_moment(self, channel, team_id, minute, attacking_team, defending_team, is_home):
         """Handle NPC moment with better presentation"""
-        
         async with db.pool.acquire() as conn:
             result = await conn.fetchrow(
                 "SELECT * FROM npc_players WHERE team_id = $1 AND retired = FALSE ORDER BY RANDOM() LIMIT 1",
@@ -720,13 +661,11 @@ await suspense_msg.delete()
             return None
         
         action = random.choice(['shoot', 'pass', 'dribble'])
-        
         stat_map = {
             'shoot': npc['shooting'],
             'pass': npc['passing'],
             'dribble': npc['dribbling']
         }
-        
         stat_value = stat_map[action]
         modifier = calculate_modifier(stat_value)
         dc = get_difficulty_class(action)
@@ -736,7 +675,6 @@ await suspense_msg.delete()
         success = total >= dc
         
         outcome = None
-        
         if action == 'shoot' and success and (roll == 20 or total >= dc + 5):
             embed = discord.Embed(
                 title=f"⚽ NPC GOAL — Minute {minute}'",
@@ -749,7 +687,6 @@ await suspense_msg.delete()
                 inline=False
             )
             outcome = 'goal'
-            
             async with db.pool.acquire() as conn:
                 await conn.execute(
                     "UPDATE npc_players SET season_goals = season_goals + 1 WHERE npc_id = $1",
@@ -772,7 +709,6 @@ await suspense_msg.delete()
     
     async def end_match(self, match_id, fixture, channel, home_score, away_score, participants):
         """End match and update stats including form"""
-        
         home_team = await db.get_team(fixture['home_team_id'])
         away_team = await db.get_team(fixture['away_team_id'])
         
@@ -782,7 +718,6 @@ await suspense_msg.delete()
                 SET home_score = $1, away_score = $2, played = TRUE, playable = FALSE
                 WHERE fixture_id = $3
             ''', home_score, away_score, fixture['fixture_id'])
-            
             await conn.execute('''
                 UPDATE active_matches 
                 SET match_state = $1, home_score = $2, away_score = $3
@@ -856,7 +791,6 @@ await suspense_msg.delete()
                 embed.add_field(name="⭐ Player Ratings", value=ratings_text, inline=False)
         
         embed.set_footer(text="Channel deletes in 60 seconds")
-        
         await channel.send(embed=embed)
         
         await db.add_news(
@@ -869,7 +803,6 @@ await suspense_msg.delete()
         )
         
         await asyncio.sleep(60)
-        
         try:
             await channel.delete()
         except:
@@ -877,7 +810,6 @@ await suspense_msg.delete()
     
     async def update_team_stats(self, team_id, goals_for, goals_against):
         """Update team stats"""
-        
         if goals_for > goals_against:
             won, drawn, lost, points = 1, 0, 0, 3
         elif goals_for == goals_against:
@@ -951,10 +883,8 @@ class ActionButton(discord.ui.Button):
     
     async def callback(self, interaction: discord.Interaction):
         self.view.chosen_action = self.action
-        
         for item in self.view.children:
             item.disabled = True
-        
         await interaction.response.edit_message(view=self.view)
         self.view.stop()
 
