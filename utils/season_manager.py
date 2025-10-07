@@ -64,7 +64,6 @@ async def open_match_window(bot=None):
         
         if bot:
             try:
-                # Get all active players
                 async with db.pool.acquire() as conn:
                     players = await conn.fetch(
                         "SELECT user_id FROM players WHERE retired = FALSE AND team_id != 'free_agent'"
@@ -74,14 +73,11 @@ async def open_match_window(bot=None):
                     user_id = player_row['user_id']
                     player = await db.get_player(user_id)
                     
-                    # Skip if already transferred this window
                     if player.get('last_transfer_window') == get_current_transfer_window(current_week):
                         continue
                     
-                    # Generate 2-4 offers
                     offers = await generate_offers_for_player(player, current_week, num_offers=3)
                     
-                    # Send DM notification
                     if offers:
                         await send_offer_notification(bot, user_id, len(offers))
                 
@@ -90,10 +86,10 @@ async def open_match_window(bot=None):
                 print(f"Could not send transfer notifications: {e}")
         else:
             print("Bot instance not provided, skipping transfer notifications")
-
-        # Simulate NPC transfers
-        from utils.transfer_window_manager import simulate_npc_transfers
-        await simulate_npc_transfers()
+        
+        # Execute NPC transfers
+        from utils.npc_transfer_system import execute_npc_transfers
+        await execute_npc_transfers(current_week)
 
 async def close_match_window():
     """Close match window and auto-simulate unplayed matches"""
@@ -158,7 +154,6 @@ async def advance_week():
     
     print(f"Advanced to Week {new_week}/{config.SEASON_TOTAL_WEEKS}")
     
-    # Check and update transfer window status
     from utils.transfer_window_manager import check_and_update_transfer_window
     window_active = await check_and_update_transfer_window()
     
@@ -198,37 +193,29 @@ async def end_season():
     print("Season ending...")
     
     await db.age_all_players()
-    
     retirements = await db.retire_old_players()
     
-    # RELEGATION AND PROMOTION SYSTEM
+    # Balance squads after retirements
+    from utils.npc_transfer_system import balance_team_squads
+    await balance_team_squads()
+    
     print("Processing relegation and promotion...")
     
-    # Get final league tables
     pl_table = await db.get_league_table('Premier League')
     champ_table = await db.get_league_table('Championship')
     l1_table = await db.get_league_table('League One')
     
-    # Relegation from Premier League (bottom 3)
     relegated_from_pl = pl_table[-3:] if len(pl_table) >= 3 else []
-    
-    # Promotion to Premier League (top 2 from Championship)
     promoted_to_pl = champ_table[:2] if len(champ_table) >= 2 else []
-    
-    # Relegation from Championship (bottom 3)
     relegated_from_champ = champ_table[-3:] if len(champ_table) >= 3 else []
-    
-    # Promotion to Championship (top 2 from League One)
     promoted_to_champ = l1_table[:2] if len(l1_table) >= 2 else []
     
-    # Apply Premier League changes
     async with db.pool.acquire() as conn:
         for team in relegated_from_pl:
             await conn.execute(
                 "UPDATE teams SET league = 'Championship' WHERE team_id = $1",
                 team['team_id']
             )
-            # Update players in that team
             await conn.execute(
                 "UPDATE players SET league = 'Championship' WHERE team_id = $1 AND retired = FALSE",
                 team['team_id']
@@ -240,7 +227,7 @@ async def end_season():
             
             await db.add_news(
                 f"RELEGATION: {team['team_name']} Relegated",
-                f"{team['team_name']} have been relegated to the Championship after finishing in the relegation zone.",
+                f"{team['team_name']} have been relegated to the Championship.",
                 "league_news",
                 None,
                 10
@@ -270,7 +257,6 @@ async def end_season():
             )
             print(f"  ⬆️ {team['team_name']} promoted to Premier League")
         
-        # Apply Championship changes
         for team in relegated_from_champ:
             await conn.execute(
                 "UPDATE teams SET league = 'League One' WHERE team_id = $1",
@@ -287,7 +273,7 @@ async def end_season():
             
             await db.add_news(
                 f"{team['team_name']} Relegated to League One",
-                f"{team['team_name']} drop down to League One after a difficult season.",
+                f"{team['team_name']} drop down to League One.",
                 "league_news",
                 None,
                 7
@@ -310,7 +296,7 @@ async def end_season():
             
             await db.add_news(
                 f"{team['team_name']} Promoted to Championship!",
-                f"{team['team_name']} celebrate promotion to the Championship!",
+                f"{team['team_name']} celebrate promotion!",
                 "league_news",
                 None,
                 8
@@ -333,7 +319,7 @@ async def end_season():
         champion = champ_table[0]
         await db.add_news(
             f"{champion['team_name']} Win Championship Title!",
-            f"{champion['team_name']} are Championship champions with {champion['points']} points!",
+            f"{champion['team_name']} are Championship champions!",
             "league_news",
             None,
             9
@@ -344,14 +330,14 @@ async def end_season():
         champion = l1_table[0]
         await db.add_news(
             f"{champion['team_name']} Win League One!",
-            f"{champion['team_name']} are League One champions with {champion['points']} points!",
+            f"{champion['team_name']} are League One champions!",
             "league_news",
             None,
             8
         )
         print(f"  🏆 League One Champions: {champion['team_name']}")
     
-    # Decrease contract years for all players
+    # Decrease contract years
     async with db.pool.acquire() as conn:
         await conn.execute("""
             UPDATE players 
@@ -359,7 +345,6 @@ async def end_season():
             WHERE retired = FALSE
         """)
         
-        # Make players with 0 contract years free agents
         await conn.execute("""
             UPDATE players 
             SET team_id = 'free_agent', league = NULL
@@ -399,7 +384,7 @@ async def end_season():
     
     await db.add_news(
         f"Season {config.CURRENT_SEASON} Concludes",
-        f"The season has ended! Promotions and relegations complete. {retirements} players have retired. Contracts updated. New season begins soon.",
+        f"The season has ended! Promotions and relegations complete. {retirements} players retired.",
         "league_news",
         None,
         10,
@@ -414,5 +399,4 @@ async def end_season():
         transfer_window_active=False
     )
     
-    print(f"Season ended. {retirements} retirements. Promotion/Relegation complete.")
-    print("Ready for new season to start")
+    print(f"Season ended. {retirements} retirements. Ready for new season.")
