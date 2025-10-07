@@ -370,15 +370,6 @@ class Database:
         
         print("✅ Database tables created")
     
-    async def wipe_all_user_players(self):
-        """Admin function to wipe all user players"""
-        async with self.pool.acquire() as conn:
-            await conn.execute("DELETE FROM players")
-            await conn.execute("DELETE FROM training_history")
-            await conn.execute("DELETE FROM transfers WHERE user_id IS NOT NULL")
-            await conn.execute("DELETE FROM match_participants")
-        print("✅ All user players wiped")
-    
     async def get_game_state(self):
         """Get current game state"""
         async with self.pool.acquire() as conn:
@@ -628,6 +619,52 @@ class Database:
             ''', name, team_id, position, age, base_rating, pace, shooting, passing, dribbling, defending, physical)
         
         print(f"  Created regen: {name} ({base_rating} OVR {position}) for {team_id}")
+    
+    async def wipe_all_user_players(self):
+        """ADMIN: Delete all user-created players and reset game state"""
+        async with self.pool.acquire() as conn:
+            await conn.execute("DELETE FROM players")
+            await conn.execute("DELETE FROM training_history")
+            await conn.execute("DELETE FROM match_events WHERE user_id IS NOT NULL")
+            await conn.execute("DELETE FROM active_matches")
+            await conn.execute("DELETE FROM match_participants")
+            await conn.execute("DELETE FROM notifications")
+            await conn.execute("DELETE FROM user_settings")
+            await conn.execute("DELETE FROM news WHERE user_id IS NOT NULL")
+            await conn.execute("DELETE FROM transfer_offers")
+            
+            await conn.execute("""
+                UPDATE game_state SET
+                season_started = FALSE,
+                current_week = 0,
+                match_window_open = FALSE,
+                fixtures_generated = FALSE,
+                next_match_day = NULL,
+                last_match_day = NULL,
+                match_window_closes = NULL,
+                transfer_window_active = FALSE
+            """)
+            
+            await conn.execute("UPDATE fixtures SET played = FALSE, playable = FALSE, home_score = NULL, away_score = NULL")
+            
+            await conn.execute("""
+                UPDATE teams SET
+                played = 0, won = 0, drawn = 0, lost = 0,
+                goals_for = 0, goals_against = 0, points = 0, form = ''
+            """)
+            
+            await conn.execute("""
+                UPDATE npc_players SET
+                season_goals = 0, season_assists = 0, season_apps = 0
+            """)
+        
+        print("✅ All user players wiped and game reset to Day 1")
+    
+    async def close(self):
+        """Close database connection"""
+        if self.pool:
+            await self.pool.close()
+            print("✅ Database closed")
 
-# Create singleton instance
+# Global database instance
 db = Database()
