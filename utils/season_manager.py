@@ -96,7 +96,7 @@ async def open_match_window(bot=None):
     if bot:
         try:
             for guild in bot.guilds:
-                await bot.post_weekly_news(guild)
+                await post_weekly_news_digest(bot, guild)
             print(f"✅ Posted weekly news to all servers")
         except Exception as e:
             print(f"⚠️ Could not post weekly news: {e}")
