@@ -5,7 +5,7 @@ from database import db
 import random
 from datetime import datetime, timedelta
 import config
-
+import asyncio
 
 class TrainingCommands(commands.Cog):
     def __init__(self, bot):
