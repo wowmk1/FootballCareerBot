@@ -1,6 +1,7 @@
 from database import db
 from datetime import datetime, timedelta
 import config
+from utils.event_poster import post_weekly_news_digest
 
 async def start_season():
     """Initialize and start the season"""
