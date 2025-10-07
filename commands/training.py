@@ -12,7 +12,7 @@ class TrainingCommands(commands.Cog):
     
     @app_commands.command(name="train", description="Train to improve your stats (once per day)")
     async def train(self, interaction: discord.Interaction):
-        """Daily training"""
+        """Enhanced daily training with 3x gains and streak bonuses"""
         
         player = await db.get_player(interaction.user.id)
         
@@ -37,7 +37,7 @@ class TrainingCommands(commands.Cog):
             )
             return
         
-        # IMPROVED: Check streak with grace period
+        # Check cooldown with 48h grace period for streaks
         streak_broken = False
         if player['last_training']:
             last_train = datetime.fromisoformat(player['last_training'])
@@ -49,43 +49,59 @@ class TrainingCommands(commands.Cog):
                 
                 if hours_left > 0:
                     await interaction.response.send_message(
-                        f"You can train again in **{hours_left}h {minutes_left % 60}m**!\n\n"
-                        f"Training is available every {config.TRAINING_COOLDOWN_HOURS} hours.",
+                        f"⏰ Train again in **{hours_left}h {minutes_left % 60}m**!\n"
+                        f"Training available every {config.TRAINING_COOLDOWN_HOURS}h.",
                         ephemeral=True
                     )
                 else:
                     await interaction.response.send_message(
-                        f"You can train again in **{minutes_left}m**!",
+                        f"⏰ Train again in **{minutes_left}m**!",
                         ephemeral=True
                     )
                 return
             
-            # IMPROVED: Grace period for streaks (48 hours = 1 day grace)
+            # 48h grace period for streaks
             if time_diff > timedelta(hours=48):
                 streak_broken = True
         
+        # ENHANCED: 3x gains for 3-week compression + age modifiers
         age_multiplier = 1.0
         if player['age'] >= 30:
-            age_multiplier = 0.8
+            age_multiplier = 0.9  # Less penalty for veterans
         elif player['age'] >= 35:
-            age_multiplier = 0.5
+            age_multiplier = 0.7
         
-        base_gain = int(config.BASE_STAT_GAIN * age_multiplier)
+        # Base gain is 6 (3x original 2) to account for compressed time
+        base_gain = int(6 * age_multiplier)
         
         # Handle streak
         if streak_broken:
             new_streak = 1
-            streak_lost_message = f"\n**Streak broken!** You missed a day. Starting fresh at 1 day."
+            streak_lost_message = f"\n⚠️ **Streak broken!** Missed a day. Starting fresh."
         else:
             new_streak = player['training_streak'] + 1
             streak_lost_message = ""
         
+        # Streak bonuses
         streak_bonus = 0
-        if new_streak >= config.STREAK_BONUS_THRESHOLD:
-            streak_bonus = config.STREAK_BONUS_AMOUNT
+        if new_streak >= 7:
+            streak_bonus = 2  # +2 for weekly streak
+        if new_streak >= 30:
+            streak_bonus = 5  # +5 for monthly dedication
+        
+        # MAJOR BONUS: 30+ day streak gives +5 max potential permanently
+        potential_boost = 0
+        if new_streak == 30:
+            potential_boost = 5
+            async with db.pool.acquire() as conn:
+                await conn.execute(
+                    "UPDATE players SET potential = potential + 5 WHERE user_id = $1",
+                    interaction.user.id
+                )
         
         total_points = base_gain + streak_bonus
         
+        # Position-focused training
         position_focus = {
             'ST': ['shooting', 'physical', 'pace'],
             'W': ['pace', 'dribbling', 'shooting'],
@@ -102,34 +118,35 @@ class TrainingCommands(commands.Cog):
         
         stat_gains = {}
         for _ in range(total_points):
-            if random.random() < 0.7:
+            if random.random() < 0.75:  # 75% chance for primary stats
                 stat = random.choice(primary_stats)
             else:
                 stat = random.choice(all_stats)
             
             stat_gains[stat] = stat_gains.get(stat, 0) + 1
         
+        # Apply stat gains with improved potential system
         update_parts = []
         update_values = []
         actual_gains = {}
         
-        # IMPROVED: Allow growth past potential with diminishing returns
+        current_potential = player['potential'] + potential_boost
+        
         for stat, gain in stat_gains.items():
             current = player[stat]
-            potential = player['potential']
             
-            # If at or above potential, harder to improve
-            if current >= potential:
-                # 33% chance to gain 1 point even past potential (max +2 above potential)
-                if current < potential + 2 and random.random() < 0.33:
+            # Growth past potential (easier now)
+            if current >= current_potential:
+                # 50% chance to gain 1 point even past potential (max +5 above)
+                if current < current_potential + 5 and random.random() < 0.5:
                     capped_value = current + 1
                     actual_gain = 1
                 else:
                     capped_value = current
                     actual_gain = 0
             else:
-                # Normal growth below potential
-                capped_value = min(current + gain, min(99, potential))
+                # Normal growth
+                capped_value = min(current + gain, min(99, current_potential))
                 actual_gain = capped_value - current
             
             if actual_gain > 0:
@@ -137,6 +154,7 @@ class TrainingCommands(commands.Cog):
                 update_values.append(capped_value)
                 actual_gains[stat] = actual_gain
         
+        # Calculate new overall
         new_overall = (
             (player['pace'] + actual_gains.get('pace', 0)) +
             (player['shooting'] + actual_gains.get('shooting', 0)) +
@@ -146,6 +164,7 @@ class TrainingCommands(commands.Cog):
             (player['physical'] + actual_gains.get('physical', 0))
         ) // 6
         
+        # Update database
         async with db.pool.acquire() as conn:
             if update_parts:
                 set_clause = ", ".join([f"{part} = ${i+1}" for i, part in enumerate(update_parts)])
@@ -176,9 +195,10 @@ class TrainingCommands(commands.Cog):
                 new_overall
             )
         
+        # Build response embed
         embed = discord.Embed(
-            title="Training Session Complete!",
-            description="Great work today! Your dedication is paying off." + streak_lost_message,
+            title="💪 Training Complete!",
+            description="Dedication pays off!" + streak_lost_message,
             color=discord.Color.gold()
         )
         
@@ -188,94 +208,90 @@ class TrainingCommands(commands.Cog):
                 for stat, gain in actual_gains.items()
             ])
             
-            # Check if any gains were past potential
             past_potential = any(player[stat] >= player['potential'] for stat in actual_gains.keys())
             if past_potential:
-                gains_text += "\n\n**Exceeding expectations!** (Past potential)"
+                gains_text += "\n\n✨ **Exceeding potential!**"
         else:
-            # Check if at absolute cap
-            if new_overall >= player['potential'] + 2:
-                gains_text = "**Maximum reached!** You've exceeded your potential limit."
-            else:
-                gains_text = "Hard training, but no gains today. Keep pushing!"
+            gains_text = "Hard session, no visible gains. Keep pushing!"
         
-        embed.add_field(name="Stat Gains", value=gains_text, inline=False)
+        embed.add_field(name="📈 Stat Gains", value=gains_text, inline=False)
         
         if new_overall > player['overall_rating']:
             embed.add_field(
-                name="Overall Rating",
+                name="⭐ Overall Rating",
                 value=f"{player['overall_rating']} → **{new_overall}** (+{new_overall - player['overall_rating']})",
                 inline=True
             )
-        else:
-            embed.add_field(name="Overall Rating", value=f"**{new_overall}**", inline=True)
         
-        embed.add_field(name="Training Streak", value=f"**{new_streak}** days", inline=True)
+        embed.add_field(
+            name="🔥 Streak",
+            value=f"**{new_streak} days**",
+            inline=True
+        )
         
-        if streak_bonus:
+        if streak_bonus > 0:
             embed.add_field(
-                name="Streak Bonus",
-                value=f"+{streak_bonus} extra stat point!",
+                name="🎁 Streak Bonus",
+                value=f"+{streak_bonus} extra points!",
                 inline=True
             )
         
-        if player['age'] >= 30:
+        if potential_boost > 0:
             embed.add_field(
-                name="Age Factor",
-                value=f"Training gains reduced due to age ({player['age']}). Veterans improve slower!",
+                name="🌟 30-DAY MILESTONE!",
+                value=f"**+5 POTENTIAL!** New max: {current_potential}",
                 inline=False
             )
         
-        # Show progress to potential
-        if new_overall < player['potential']:
-            gap = player['potential'] - new_overall
+        # Show progression
+        if new_overall < current_potential:
+            gap = current_potential - new_overall
             embed.add_field(
-                name="Potential Progress",
-                value=f"**{gap} OVR** away from potential ({player['potential']})",
+                name="🎯 Potential Progress",
+                value=f"**{gap} OVR** from potential ({current_potential})",
                 inline=False
             )
-        elif new_overall == player['potential']:
+        elif new_overall == current_potential:
             embed.add_field(
-                name="Potential Reached!",
-                value=f"You've reached your potential! You can still grow **+2 OVR** with hard work.",
+                name="✅ Potential Reached!",
+                value=f"Can still grow **+5 OVR** with consistency!",
                 inline=False
             )
         else:
             embed.add_field(
-                name="Beyond Potential!",
-                value=f"**{new_overall - player['potential']} OVR** above potential! Exceptional dedication!",
+                name="🚀 Beyond Potential!",
+                value=f"**{new_overall - player['potential']} OVR** above base potential!",
                 inline=False
             )
         
         years_left = config.RETIREMENT_AGE - player['age']
-        if years_left <= 5:
-            embed.add_field(
-                name="Career Time Left",
-                value=f"**{years_left} years** until retirement (age {config.RETIREMENT_AGE})",
-                inline=False
-            )
-        
         embed.add_field(
-            name="Next Training",
-            value=f"Available in **{config.TRAINING_COOLDOWN_HOURS}h**",
-            inline=False
+            name="⏳ Career Time",
+            value=f"**{years_left} years** until retirement",
+            inline=True
         )
         
-        messages = [
-            "Consistency is key!",
-            "Keep pushing your limits!",
-            "Hard work beats talent!",
+        embed.add_field(
+            name="⏰ Next Session",
+            value=f"**{config.TRAINING_COOLDOWN_HOURS}h**",
+            inline=True
+        )
+        
+        motivational_messages = [
+            "Consistency builds champions!",
+            "Every session counts!",
             "You're getting stronger!",
-            "Focus and determination!",
+            "Keep the momentum!",
+            "Hard work never lies!",
             "Champions are made in training!",
         ]
         
         if new_streak >= 7:
-            messages.append("A WEEK STREAK! Incredible dedication!")
+            motivational_messages.append("🔥 WEEK STREAK! Unstoppable!")
         if new_streak >= 30:
-            messages.append("30 DAYS! You're a training machine!")
+            motivational_messages.append("⚡ MONTH STREAK! Legendary dedication!")
         
-        embed.set_footer(text=random.choice(messages))
+        embed.set_footer(text=random.choice(motivational_messages))
         
         await interaction.response.send_message(embed=embed)
 
