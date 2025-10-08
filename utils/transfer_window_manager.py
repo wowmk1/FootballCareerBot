@@ -1,6 +1,6 @@
 """
 Transfer Window Manager - Handles transfer window logic and offer generation
-COMPLETE VERSION with NPC transfers
+IMPROVED VERSION with continuous weekly offer generation
 """
 
 from database import db
@@ -32,6 +32,120 @@ async def check_and_update_transfer_window():
     
     return is_open
 
+async def process_weekly_transfer_offers(bot=None):
+    """
+    MAIN FUNCTION: Called every week during transfer windows
+    Generates new offers for all active players who don't have pending offers
+    """
+    state = await db.get_game_state()
+    current_week = state['current_week']
+    
+    # Only run during transfer windows
+    if not await is_transfer_window_open(current_week):
+        print(f"Week {current_week}: Transfer window closed, skipping offer generation")
+        return
+    
+    print(f"\n=== Week {current_week}: Generating Transfer Offers ===")
+    
+    # Get all active players
+    async with db.pool.acquire() as conn:
+        players = await conn.fetch("""
+            SELECT user_id, player_name, overall_rating, potential, 
+                   team_id, contract_wage, contract_years, age,
+                   season_rating, season_goals
+            FROM players
+            WHERE retired = FALSE
+        """)
+    
+    offers_generated = 0
+    players_with_offers = 0
+    
+    for player_row in players:
+        player = dict(player_row)
+        user_id = player['user_id']
+        
+        # Check if player already has pending offers
+        pending_offers = await get_pending_offers(user_id)
+        
+        if pending_offers:
+            print(f"  {player['player_name']}: Already has {len(pending_offers)} pending offers, skipping")
+            continue
+        
+        # Check if player already transferred this window
+        current_window = get_current_transfer_window(current_week)
+        if player.get('last_transfer_window') == current_window:
+            print(f"  {player['player_name']}: Already transferred this window, skipping")
+            continue
+        
+        # Generate 1-3 offers based on player quality
+        num_offers = calculate_num_offers(player)
+        
+        if num_offers == 0:
+            print(f"  {player['player_name']}: Not generating offers (rating too low or other factors)")
+            continue
+        
+        # Generate offers
+        created_offers = await generate_offers_for_player(player, current_week, num_offers)
+        
+        if created_offers:
+            offers_generated += len(created_offers)
+            players_with_offers += 1
+            print(f"  {player['player_name']}: Generated {len(created_offers)} offers")
+            
+            # Send notification to player
+            if bot:
+                await send_offer_notification(bot, user_id, len(created_offers))
+        else:
+            print(f"  {player['player_name']}: Failed to generate offers")
+    
+    print(f"\n=== Transfer Offers Complete ===")
+    print(f"Generated {offers_generated} offers for {players_with_offers} players")
+    
+    return offers_generated
+
+def calculate_num_offers(player: dict) -> int:
+    """
+    Calculate how many offers a player should receive based on their attributes
+    Returns 0-3
+    """
+    rating = player['overall_rating']
+    potential = player['potential']
+    age = player['age']
+    season_rating = player.get('season_rating', 6.5)
+    
+    # Base number of offers
+    if rating >= 80:
+        base_offers = 3
+    elif rating >= 75:
+        base_offers = 3
+    elif rating >= 70:
+        base_offers = 2
+    elif rating >= 65:
+        base_offers = 2
+    elif rating >= 60:
+        base_offers = 1
+    else:
+        base_offers = 1
+    
+    # Bonus for high potential young players
+    if potential >= 80 and age <= 23:
+        base_offers = min(3, base_offers + 1)
+    
+    # Bonus for good form
+    if season_rating >= 7.5:
+        base_offers = min(3, base_offers + 1)
+    
+    # Penalty for poor form
+    if season_rating < 6.0:
+        base_offers = max(0, base_offers - 1)
+    
+    # Penalty for very old players
+    if age >= 33:
+        base_offers = max(0, base_offers - 1)
+    
+    # Add some randomness
+    return max(0, base_offers + random.randint(-1, 0))
+
 async def generate_offers_for_player(player: dict, current_week: int, num_offers: int = 3):
     """Generate transfer offers for a specific player"""
     
@@ -39,7 +153,7 @@ async def generate_offers_for_player(player: dict, current_week: int, num_offers
     potential = player['potential']
     user_id = player['user_id']
     
-    # Check for previous offers this window
+    # Check for previous offers this window (for improved offers)
     async with db.pool.acquire() as conn:
         previous_offers = await conn.fetch(
             """SELECT * FROM transfer_offers 
@@ -52,11 +166,11 @@ async def generate_offers_for_player(player: dict, current_week: int, num_offers
     
     interested_teams = []
     
-    # Get teams from appropriate leagues
+    # Get teams from appropriate leagues based on player rating
     if rating >= 75 or potential >= 82:
         async with db.pool.acquire() as conn:
             rows = await conn.fetch(
-                "SELECT * FROM teams WHERE league = $1 ORDER BY RANDOM() LIMIT 4",
+                "SELECT * FROM teams WHERE league = $1 ORDER BY RANDOM() LIMIT 5",
                 'Premier League'
             )
             interested_teams.extend([dict(row) for row in rows])
@@ -64,7 +178,7 @@ async def generate_offers_for_player(player: dict, current_week: int, num_offers
     if rating >= 65 or potential >= 72:
         async with db.pool.acquire() as conn:
             rows = await conn.fetch(
-                "SELECT * FROM teams WHERE league = $1 ORDER BY RANDOM() LIMIT 4",
+                "SELECT * FROM teams WHERE league = $1 ORDER BY RANDOM() LIMIT 5",
                 'Championship'
             )
             interested_teams.extend([dict(row) for row in rows])
@@ -72,23 +186,35 @@ async def generate_offers_for_player(player: dict, current_week: int, num_offers
     if rating >= 55:
         async with db.pool.acquire() as conn:
             rows = await conn.fetch(
-                "SELECT * FROM teams WHERE league = $1 ORDER BY RANDOM() LIMIT 4",
+                "SELECT * FROM teams WHERE league = $1 ORDER BY RANDOM() LIMIT 5",
                 'League One'
             )
             interested_teams.extend([dict(row) for row in rows])
     
-    # Remove current team
+    # Also include League Two for lower rated players
+    if rating >= 50:
+        async with db.pool.acquire() as conn:
+            rows = await conn.fetch(
+                "SELECT * FROM teams WHERE league = $1 ORDER BY RANDOM() LIMIT 4",
+                'League Two'
+            )
+            interested_teams.extend([dict(row) for row in rows])
+    
+    # Remove current team from interested teams
     interested_teams = [t for t in interested_teams if t['team_id'] != player['team_id']]
     
     if not interested_teams:
+        print(f"    No interested teams found for {player['player_name']}")
         return []
     
-    # Mix: 40% chance to re-offer from previously rejected teams
+    # Strategy: Mix of new offers and improved offers from rejected teams
     teams_to_offer = []
     rejected_team_ids = [o['team_id'] for o in previous_offers if o['status'] == 'rejected']
     
+    # 40% chance per slot to make an improved offer from a previously rejected team
     for _ in range(num_offers):
         if rejected_team_ids and random.random() < 0.4:
+            # Make an improved offer
             team_id = random.choice(rejected_team_ids)
             team = next((t for t in interested_teams if t['team_id'] == team_id), None)
             if team:
@@ -97,34 +223,37 @@ async def generate_offers_for_player(player: dict, current_week: int, num_offers
                     team['is_improved'] = True
                     team['previous_offer_id'] = prev_offer['offer_id']
                     team['previous_wage'] = prev_offer['wage_offer']
-                teams_to_offer.append(team)
+                    teams_to_offer.append(team)
+                    rejected_team_ids.remove(team_id)  # Don't offer from same team twice
         else:
+            # Make a standard new offer
             available = [t for t in interested_teams if t not in teams_to_offer]
             if available:
                 team = random.choice(available)
                 team['is_improved'] = False
                 teams_to_offer.append(team)
     
-    # Add current club renewal offer if contract expiring
+    # Always add current club renewal offer if contract is expiring
     if player['contract_years'] <= 1 and player['team_id'] != 'free_agent':
         current_team = await db.get_team(player['team_id'])
         if current_team:
             current_team['is_renewal'] = True
             current_team['is_improved'] = False
             teams_to_offer.append(current_team)
+            print(f"    Added renewal offer from current club: {current_team['team_name']}")
     
     # Create offers in database
     created_offers = []
     async with db.pool.acquire() as conn:
-        for team in teams_to_offer[:num_offers + 1]:
+        for team in teams_to_offer[:num_offers + 1]:  # +1 to allow for renewal offer
             # IMPROVED WAGE CALCULATION - exponential growth
             base_wage = (player['overall_rating'] ** 2) * 10
             
             # Performance bonus
             performance_bonus = 0
-            if player['season_rating'] >= 7.5:
+            if player.get('season_rating', 6.5) >= 7.5:
                 performance_bonus = int(base_wage * 0.2)
-            if player['season_goals'] >= 10:
+            if player.get('season_goals', 0) >= 10:
                 performance_bonus += int(base_wage * 0.15)
             
             # League wage multipliers
@@ -132,24 +261,38 @@ async def generate_offers_for_player(player: dict, current_week: int, num_offers
                 wage_offer = int((base_wage + performance_bonus) * random.uniform(1.5, 2.5))
             elif team['league'] == 'Championship':
                 wage_offer = int((base_wage + performance_bonus) * random.uniform(0.8, 1.2))
-            else:
+            elif team['league'] == 'League One':
                 wage_offer = int((base_wage + performance_bonus) * random.uniform(0.4, 0.7))
+            else:  # League Two
+                wage_offer = int((base_wage + performance_bonus) * random.uniform(0.2, 0.4))
             
-            # Improved offer bonus
+            # Ensure minimum wage
+            wage_offer = max(wage_offer, 1000)
+            
+            # Handle special offer types
             if team.get('is_improved'):
-                wage_offer = int(team['previous_wage'] * 1.15)
+                # Improved offers are 15-25% higher than previous
+                wage_offer = int(team['previous_wage'] * random.uniform(1.15, 1.25))
                 offer_type = 'improved'
                 previous_offer_id = team['previous_offer_id']
             elif team.get('is_renewal'):
-                wage_offer = int(player['contract_wage'] * 1.1)
+                # Renewal offers are 10-20% higher than current wage
+                wage_offer = int(player['contract_wage'] * random.uniform(1.1, 1.2))
                 offer_type = 'renewal'
                 previous_offer_id = None
             else:
                 offer_type = 'standard'
                 previous_offer_id = None
             
-            contract_length = random.randint(2, 4)
+            # Contract length (2-4 years, with young players getting longer contracts)
+            if player['age'] <= 23:
+                contract_length = random.randint(3, 4)
+            elif player['age'] >= 32:
+                contract_length = random.randint(1, 2)
+            else:
+                contract_length = random.randint(2, 4)
             
+            # Insert offer into database
             result = await conn.fetchrow('''
                 INSERT INTO transfer_offers (
                     user_id, team_id, wage_offer, contract_length,
@@ -171,6 +314,8 @@ async def generate_offers_for_player(player: dict, current_week: int, num_offers
                 'contract_length': contract_length,
                 'offer_type': offer_type
             })
+            
+            print(f"    Created {offer_type} offer: {team['team_name']} - £{wage_offer:,}/wk")
     
     return created_offers
 
@@ -210,6 +355,7 @@ async def accept_transfer_offer(user_id: int, offer_id: int, bot=None):
         state = await db.get_game_state()
         current_window = get_current_transfer_window(state['current_week'])
         
+        # Check if already transferred this window
         if player.get('last_transfer_window') == current_window:
             return None, "You've already transferred this window"
         
@@ -222,10 +368,14 @@ async def accept_transfer_offer(user_id: int, offer_id: int, bot=None):
             elif player['age'] > 30:
                 age_modifier = 0.6
             
-            transfer_fee = int(base_fee * age_modifier * random.uniform(0.5, 1.5))
+            # Contract length affects fee
+            contract_modifier = 1.0 + (player['contract_years'] * 0.1)
+            
+            transfer_fee = int(base_fee * age_modifier * contract_modifier * random.uniform(0.5, 1.5))
         else:
             transfer_fee = 0
         
+        # Update player's team and contract
         await conn.execute('''
             UPDATE players 
             SET team_id = $1, league = $2, contract_wage = $3, contract_years = $4,
@@ -236,16 +386,19 @@ async def accept_transfer_offer(user_id: int, offer_id: int, bot=None):
             offer['contract_length'], current_window, user_id
         )
         
+        # Mark this offer as accepted
         await conn.execute(
             "UPDATE transfer_offers SET status = 'accepted' WHERE offer_id = $1",
             offer_id
         )
         
+        # Reject all other pending offers
         await conn.execute(
             "UPDATE transfer_offers SET status = 'rejected' WHERE user_id = $1 AND offer_id != $2 AND status = 'pending'",
             user_id, offer_id
         )
         
+        # Record transfer in history
         await conn.execute('''
             INSERT INTO transfers (user_id, from_team, to_team, fee, wage, contract_length, transfer_type)
             VALUES ($1, $2, $3, $4, $5, $6, $7)
@@ -257,6 +410,7 @@ async def accept_transfer_offer(user_id: int, offer_id: int, bot=None):
         
         old_team_name = old_team['team_name'] if old_team else 'free agency'
         
+        # Add news article
         await db.add_news(
             f"TRANSFER: {player['player_name']} joins {new_team['team_name']}!",
             f"{player['player_name']} completes move from {old_team_name} to {new_team['team_name']} "
@@ -298,11 +452,11 @@ async def accept_transfer_offer(user_id: int, offer_id: int, bot=None):
 async def reject_transfer_offer(user_id: int, offer_id: int):
     """Reject a single transfer offer"""
     async with db.pool.acquire() as conn:
-        await conn.execute(
-            "UPDATE transfer_offers SET status = 'rejected' WHERE offer_id = $1 AND user_id = $2",
+        result = await conn.execute(
+            "UPDATE transfer_offers SET status = 'rejected' WHERE offer_id = $1 AND user_id = $2 AND status = 'pending'",
             offer_id, user_id
         )
-    return True
+        return result != "UPDATE 0"
 
 async def reject_all_offers(user_id: int):
     """Reject all pending offers for a player"""
@@ -316,27 +470,27 @@ async def reject_all_offers(user_id: int):
 async def expire_all_pending_offers():
     """Expire all pending offers at end of transfer window"""
     async with db.pool.acquire() as conn:
-        await conn.execute(
+        result = await conn.execute(
             "UPDATE transfer_offers SET status = 'expired' WHERE status = 'pending'"
         )
-    print("All pending offers expired")
+    print(f"All pending offers expired: {result}")
 
 async def cleanup_old_offers(current_week: int):
     """Delete old transfer offers to prevent database bloat"""
     async with db.pool.acquire() as conn:
-        await conn.execute(
+        result = await conn.execute(
             """DELETE FROM transfer_offers 
                WHERE offer_week < $1 AND status != 'accepted'""",
-            current_week - 4
+            current_week - 5
         )
-    print(f"Cleaned up old transfer offers")
+    print(f"Cleaned up old transfer offers: {result}")
 
 def get_current_transfer_window(week: int) -> int:
     """Get transfer window ID based on week number"""
     if week in config.TRANSFER_WINDOW_WEEKS[:3]:
-        return 1
+        return 1  # Summer window
     elif week in config.TRANSFER_WINDOW_WEEKS[3:]:
-        return 2
+        return 2  # Winter window
     return 0
 
 async def send_offer_notification(bot, user_id: int, num_offers: int):
@@ -346,46 +500,52 @@ async def send_offer_notification(bot, user_id: int, num_offers: int):
         if user:
             import discord
             embed = discord.Embed(
-                title="NEW TRANSFER OFFERS!",
+                title="📬 NEW TRANSFER OFFERS!",
                 description=f"You have **{num_offers} new club offers** waiting for you!\n\n"
                            f"The transfer window is open. Use `/offers` to review them.",
                 color=discord.Color.gold()
             )
             embed.add_field(
-                name="Offers Expire",
+                name="⏰ Offers Expire",
                 value="At the end of this week",
                 inline=False
             )
-            embed.set_footer(text="Use /offers to view")
+            embed.add_field(
+                name="⚡ Quick Actions",
+                value="• `/offers` - View all offers\n"
+                      "• `/my_contract` - Check current contract",
+                inline=False
+            )
+            embed.set_footer(text="New offers generated each week during transfer windows!")
             await user.send(embed=embed)
-            print(f"Sent offer notification to user {user_id}")
+            print(f"✅ Sent offer notification to user {user_id}")
     except Exception as e:
-        print(f"Could not send notification to user {user_id}: {e}")
+        print(f"❌ Could not send notification to user {user_id}: {e}")
 
 async def simulate_npc_transfers():
     """Simulate NPC player transfers between clubs during transfer windows"""
     
-    print("Simulating NPC transfers...")
+    print("\n=== Simulating NPC Transfers ===")
     
-    # Get NPCs who might transfer (aged 20-32, not top stars)
+    # Get NPCs who might transfer (aged 20-32, not retired)
     async with db.pool.acquire() as conn:
         transfer_candidates = await conn.fetch("""
             SELECT n.*, t.league 
             FROM npc_players n
             LEFT JOIN teams t ON n.team_id = t.team_id
             WHERE n.retired = FALSE 
-            AND n.age BETWEEN 20 AND 32
-            AND n.overall_rating BETWEEN 60 AND 82
+            AND n.age BETWEEN 18 AND 33
+            AND n.overall_rating BETWEEN 55 AND 85
             AND n.team_id IS NOT NULL
             ORDER BY RANDOM()
-            LIMIT 15
+            LIMIT 20
         """)
     
     transfers_made = 0
     
     for candidate in transfer_candidates:
-        # 20% chance to transfer
-        if random.random() > 0.2:
+        # 25% chance to transfer
+        if random.random() > 0.25:
             continue
         
         candidate = dict(candidate)
@@ -400,8 +560,10 @@ async def simulate_npc_transfers():
             potential_leagues.append('Championship')
         if rating >= 55:
             potential_leagues.append('League One')
+        if rating >= 50:
+            potential_leagues.append('League Two')
         
-        # Remove current league sometimes (50% lateral move, 50% up/down)
+        # 50% chance of lateral move, 50% chance of up/down move
         if random.random() < 0.5 and current_league in potential_leagues:
             potential_leagues.remove(current_league)
         
@@ -427,7 +589,13 @@ async def simulate_npc_transfers():
         
         # Calculate transfer fee
         base_fee = rating * 100000
-        fee = int(base_fee * random.uniform(0.5, 1.5))
+        age_modifier = 1.0
+        if candidate['age'] < 23:
+            age_modifier = 1.3
+        elif candidate['age'] > 30:
+            age_modifier = 0.6
+        
+        fee = int(base_fee * age_modifier * random.uniform(0.3, 1.2))
         
         # Execute transfer
         async with db.pool.acquire() as conn:
@@ -456,21 +624,24 @@ async def simulate_npc_transfers():
                 fee,
                 rating * 1000,
                 random.randint(2, 4),
-                'transfer'
+                'transfer' if fee > 0 else 'free_transfer'
             )
         
         # Add news
         old_team_name = old_team['team_name'] if old_team else 'Unknown'
+        state = await db.get_game_state()
         await db.add_news(
             f"{candidate['player_name']} joins {new_team['team_name']}",
-            f"{candidate['player_name']} ({rating} OVR) has transferred from {old_team_name} to {new_team['team_name']} for £{fee:,}.",
+            f"{candidate['player_name']} ({rating} OVR) has transferred from {old_team_name} to {new_team['team_name']} "
+            f"{'for £' + f'{fee:,}' if fee > 0 else 'on a free transfer'}.",
             "transfer_news",
             None,
-            3
+            3,
+            state['current_week']
         )
         
         transfers_made += 1
-        print(f"  {candidate['player_name']} ({old_team_name} -> {new_team['team_name']}) £{fee:,}")
+        print(f"  ✅ {candidate['player_name']} ({old_team_name} -> {new_team['team_name']}) £{fee:,}")
     
-    print(f"Completed {transfers_made} NPC transfers")
+    print(f"=== Completed {transfers_made} NPC transfers ===\n")
     return transfers_made
