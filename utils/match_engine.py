@@ -5,6 +5,7 @@ from database import db
 from datetime import datetime
 import random
 import config
+from utils.football_data_api import get_team_crest_url, get_competition_logo
 
 
 class MatchEngine:
@@ -26,6 +27,56 @@ class MatchEngine:
             'GK': ['save', 'claim_cross', 'distribution', 'sweep']
         }
         return position_events.get(position, ['pass', 'dribble', 'tackle'])
+
+    def get_detailed_scenario(self, position, minute, attacking_team, defending_team, defender):
+        """Generate detailed, immersive scenario description"""
+        
+        defender_name = defender['player_name'] if defender else "a defender"
+        def_team = defending_team['team_name']
+        att_team = attacking_team['team_name']
+        
+        scenarios = {
+            'ST': [
+                f"💨 **{att_team} counter-attack!**\nYou break free from the defensive line. {defender_name} chasing back desperately!",
+                f"🎯 Ball played into your feet in the box!\n{def_team}'s defense scrambling. {defender_name} closing you down fast!",
+                f"⚡ Through ball splits the defense!\nYou're racing towards goal! Only {defender_name} to beat!",
+                f"🎪 Cross coming in from the wing!\nYou position yourself in the box. {defender_name} marking tight!"
+            ],
+            'W': [
+                f"💨 Space opens up on the flank!\nYou receive the ball with room to run. {defender_name} moving to intercept!",
+                f"🎯 1v1 situation developing!\n{defender_name} squares up. The crowd roars with anticipation!",
+                f"⚡ Ball at your feet on the touchline!\nCut inside or go outside? {defender_name} blocking your path!"
+            ],
+            'CAM': [
+                f"🎯 Pocket of space in the hole!\nYou find yourself unmarked momentarily. {defender_name} rushing to close you down!",
+                f"⚡ Ball drops to you 25 yards out!\nStrikers making runs. {def_team}'s midfield scrambling back!",
+                f"🎪 Quick one-two with your striker!\nYou're in behind! {defender_name} slides across to block!"
+            ],
+            'CM': [
+                f"💪 Won the ball in midfield!\nTransition opportunity! {def_team}'s defense exposed!",
+                f"🎯 Time and space in the center circle!\nForwards making runs. {defender_name} pressing!"
+            ],
+            'CDM': [
+                f"🛡️ DANGER! They're breaking through!\n{defender_name} driving at your defense! You're the last line!",
+                f"⚡ Ball breaks loose in midfield!\nWin it back or they counter! {att_team}'s defense needs you!"
+            ],
+            'FB': [
+                f"🏃 Winger running at you with pace!\n{defender_name} in full flight! Stand strong!",
+                f"⚡ Overlapping run opportunity!\nYour winger has the ball. {def_team}'s defense tracking back!"
+            ],
+            'CB': [
+                f"🛡️ CRITICAL MOMENT! Striker through on goal!\n{defender_name} bearing down! Last-ditch defending needed!",
+                f"💪 Aerial duel incoming!\nCross flying in. {defender_name} challenging! Command the box!"
+            ],
+            'GK': [
+                f"🧤 1v1 WITH THE STRIKER!\n{defender_name} clean through! Make yourself big!",
+                f"🎯 Shot from distance!\nPowerful strike heading your way! Quick reactions needed!",
+                f"⚡ Cross swinging into your box!\nStrikers lurking. Claim it or punch clear?"
+            ]
+        }
+        
+        position_scenarios = scenarios.get(position, scenarios['CM'])
+        return random.choice(position_scenarios)
 
     def get_action_description(self, action):
         descriptions = {
@@ -152,10 +203,16 @@ class MatchEngine:
                 color=discord.Color.green()
             )
 
-            from utils.football_data_api import get_team_crest_url
             home_crest = get_team_crest_url(home_team['team_id'])
             if home_crest:
                 embed.set_thumbnail(url=home_crest)
+            
+            comp_logo = get_competition_logo(home_team.get('league', 'Premier League'))
+            if comp_logo:
+                embed.set_footer(
+                    text=f"{home_team.get('league', 'Premier League')} • Minute {minute}",
+                    icon_url=comp_logo
+                )
 
             if match_id in self.pinned_messages:
                 msg = self.pinned_messages[match_id]
@@ -178,7 +235,7 @@ class MatchEngine:
         except Exception as e:
             print(f"Error updating pinned score: {e}")
 
-    async def post_goal_celebration(self, channel, scorer_name, team_name, home_score, away_score):
+    async def post_goal_celebration(self, channel, scorer_name, team_name, team_id, home_score, away_score):
         celebrations = [
             "🔥🔥🔥 **GOOOOAAAALLL!!!** 🔥🔥🔥", "⚽⚽⚽ **WHAT A GOAL!!!** ⚽⚽⚽",
             "💥💥💥 **SPECTACULAR!!!** 💥💥💥", "🎯🎯🎯 **INCREDIBLE FINISH!!!** 🎯🎯🎯",
@@ -189,6 +246,11 @@ class MatchEngine:
             description=f"## **{scorer_name}** scores for {team_name}!\n\n**{home_score} - {away_score}**",
             color=discord.Color.gold()
         )
+        
+        team_crest = get_team_crest_url(team_id)
+        if team_crest:
+            embed.set_thumbnail(url=team_crest)
+        
         await channel.send(embed=embed)
 
     async def post_halftime_summary(self, channel, home_team, away_team, home_score, away_score, participants,
@@ -235,6 +297,125 @@ class MatchEngine:
             return random.choice(follow_up)
         return follow_up
 
+    async def handle_teammate_followup(self, channel, player, action, minute, match_id, attacking_team):
+        """Handle teammate scoring after successful pass/cross - WORKING VERSION"""
+        
+        if action not in ['pass', 'through_ball', 'cross', 'key_pass']:
+            return None
+        
+        if random.random() > 0.45:
+            return None
+        
+        async with db.pool.acquire() as conn:
+            teammate = await conn.fetchrow(
+                """SELECT player_name, position, overall_rating, shooting
+                   FROM npc_players
+                   WHERE team_id = $1
+                     AND position IN ('ST', 'W', 'CAM')
+                     AND retired = FALSE
+                   ORDER BY RANDOM() LIMIT 1""",
+                attacking_team['team_id']
+            )
+        
+        if not teammate:
+            return None
+        
+        teammate = dict(teammate)
+        
+        embed = discord.Embed(
+            title="⚡ TEAMMATE OPPORTUNITY!",
+            description=f"**{teammate['player_name']}** receives from {player['player_name']}!\n\n"
+                        f"🎯 Position: {teammate['position']}\n"
+                        f"📊 Shooting: **{teammate['shooting']}**",
+            color=discord.Color.orange()
+        )
+        suspense_msg = await channel.send(embed=embed)
+        await asyncio.sleep(2)
+        
+        teammate_roll = random.randint(1, 20)
+        shooting_bonus = teammate['shooting'] // 10
+        total = teammate_roll + shooting_bonus
+        
+        difficulty = {
+            'through_ball': 12,
+            'cross': 14,
+            'pass': 13,
+            'key_pass': 11
+        }.get(action, 13)
+        
+        success = total >= difficulty
+        
+        result_embed = discord.Embed(
+            title=f"🎲 {teammate['player_name']}'s FINISH",
+            color=discord.Color.green() if success else discord.Color.red()
+        )
+        
+        result_embed.add_field(
+            name="📊 The Roll",
+            value=f"🎲 Roll: **{teammate_roll}**\n"
+                  f"📈 Shooting Bonus: **+{shooting_bonus}**\n"
+                  f"💯 Total: **{total}** vs DC {difficulty}",
+            inline=False
+        )
+        
+        if success:
+            result_embed.add_field(
+                name="⚽ GOOOOOAL!",
+                value=f"**{teammate['player_name']}** buries it!\n"
+                      f"🅰️ **ASSIST: {player['player_name']}**",
+                inline=False
+            )
+            
+            async with db.pool.acquire() as conn:
+                await conn.execute(
+                    """UPDATE players 
+                       SET season_assists = season_assists + 1, 
+                           career_assists = career_assists + 1 
+                       WHERE user_id = $1""",
+                    player['user_id']
+                )
+                
+                await conn.execute(
+                    """UPDATE match_participants 
+                       SET match_rating = LEAST(10.0, match_rating + 0.8) 
+                       WHERE match_id = $1 AND user_id = $2""",
+                    match_id, player['user_id']
+                )
+                
+                await conn.execute(
+                    """UPDATE npc_players 
+                       SET season_goals = season_goals + 1 
+                       WHERE player_name = $1 AND team_id = $2""",
+                    teammate['player_name'], attacking_team['team_id']
+                )
+            
+            from utils.form_morale_system import update_player_morale
+            await update_player_morale(player['user_id'], 'assist')
+            
+            await suspense_msg.delete()
+            await channel.send(embed=result_embed)
+            
+            return 'goal'
+        else:
+            miss_msgs = [
+                "Blazes it over the bar!",
+                "Straight at the keeper!",
+                "Hits the post!",
+                "Slices it wide!",
+                "What a miss!"
+            ]
+            
+            result_embed.add_field(
+                name="❌ MISS!",
+                value=random.choice(miss_msgs),
+                inline=False
+            )
+            
+            await suspense_msg.delete()
+            await channel.send(embed=result_embed)
+            
+            return None
+
     async def start_match(self, fixture: dict, interaction: discord.Interaction):
         home_team = await db.get_team(fixture['home_team_id'])
         away_team = await db.get_team(fixture['away_team_id'])
@@ -274,13 +455,13 @@ class MatchEngine:
             color=discord.Color.green()
         )
 
-        from utils.football_data_api import get_team_crest_url
         home_crest = get_team_crest_url(fixture['home_team_id'])
         if home_crest:
             embed.set_thumbnail(url=home_crest)
 
         embed.add_field(name="🏠 Home", value=f"**{home_team['team_name']}**\n{home_team['league']}", inline=True)
         embed.add_field(name="✈️ Away", value=f"**{away_team['team_name']}**\n{away_team['league']}", inline=True)
+        
         embed.add_field(
             name="📊 Match Info",
             value=f"🎯 {num_events} key moments\n⏱️ 30s decision time\n🎲 Stat + D20 battle system",
@@ -375,7 +556,7 @@ class MatchEngine:
                         if result == 'goal':
                             home_score += 1
                             await self.post_goal_celebration(channel, player['player_name'], home_team['team_name'],
-                                                             home_score, away_score)
+                                                             home_team['team_id'], home_score, away_score)
                             await self.update_pinned_score(channel, match_id, home_team, away_team, home_score,
                                                            away_score, minute)
                 else:
@@ -395,7 +576,7 @@ class MatchEngine:
                         if result == 'goal':
                             away_score += 1
                             await self.post_goal_celebration(channel, player['player_name'], away_team['team_name'],
-                                                             home_score, away_score)
+                                                             away_team['team_id'], home_score, away_score)
                             await self.update_pinned_score(channel, match_id, home_team, away_team, home_score,
                                                            away_score, minute)
                 else:
@@ -437,11 +618,17 @@ class MatchEngine:
         from utils.form_morale_system import get_form_description
         form_desc = get_form_description(player['form'])
 
+        scenario_text = self.get_detailed_scenario(player['position'], minute, attacking_team, defending_team, defender)
+
         embed = discord.Embed(
             title=f"🎯 {member.display_name}'S BIG MOMENT!",
-            description=f"## {player['player_name']} ({player['position']})\n**Minute {minute}'** | Form: {form_desc}",
+            description=f"## {player['player_name']} ({player['position']})\n**Minute {minute}'** | Form: {form_desc}\n\n{scenario_text}",
             color=discord.Color.gold()
         )
+
+        team_crest = get_team_crest_url(attacking_team['team_id'])
+        if team_crest:
+            embed.set_thumbnail(url=team_crest)
 
         embed.add_field(
             name="📊 Your Stats (Form-Adjusted)",
@@ -451,6 +638,12 @@ class MatchEngine:
         )
 
         if defender:
+            opp_crest = get_team_crest_url(defending_team['team_id'])
+            embed.set_footer(
+                text=f"Defending: {defender['player_name']} ({defender['position']}) • {defending_team['team_name']}",
+                icon_url=opp_crest if opp_crest else None
+            )
+            
             embed.add_field(
                 name=f"🛡️ Defending: {defender['player_name']} ({defender['position']})",
                 value=f"⚡ PAC: **{defender['pace']}** | 🛡️ DEF: **{defender['defending']}** | 💪 PHY: **{defender['physical']}**",
@@ -480,11 +673,6 @@ class MatchEngine:
                         inline=False)
         embed.add_field(name="⏱️ TIME LIMIT", value="**30 SECONDS** to choose!", inline=False)
 
-        from utils.football_data_api import get_team_crest_url
-        team_crest = get_team_crest_url(attacking_team['team_id'])
-        if team_crest:
-            embed.set_thumbnail(url=team_crest)
-
         view = EnhancedActionView(available_actions, recommended_action, timeout=30)
         message = await channel.send(content=f"📢 {member.mention}", embed=embed, view=view)
         await view.wait()
@@ -494,7 +682,7 @@ class MatchEngine:
             await channel.send(f"⏰ {member.mention} **AUTO-SELECTED**: {action.upper()}")
 
         result = await self.execute_action_with_duel(channel, player, adjusted_stats, defender, action, minute,
-                                                     match_id, member)
+                                                     match_id, member, attacking_team)
 
         async with db.pool.acquire() as conn:
             row = await conn.fetchrow(
@@ -508,18 +696,22 @@ class MatchEngine:
             )
             await channel.send(embed=mini_embed)
 
+        if result.get('goal'):
+            return 'goal'
+
         if result['success']:
             follow_up = self.get_follow_up_event(action, True, player['position'])
             if follow_up:
                 await asyncio.sleep(2)
                 follow_result = await self.execute_follow_up_action(channel, player, adjusted_stats,
-                                                                    defender, follow_up, minute, match_id, member)
+                                                                    defender, follow_up, minute, match_id, member, attacking_team)
                 if follow_result == 'goal':
                     return 'goal'
-        return 'goal' if result.get('goal') else None
+        
+        return None
 
     async def execute_action_with_duel(self, channel, player, adjusted_stats, defender, action, minute,
-                                       match_id, member=None):
+                                       match_id, member=None, attacking_team=None):
         stat_name = self.get_stat_for_action(action)
         player_stat = adjusted_stats[stat_name]
         player_roll = random.randint(1, 20)
@@ -625,79 +817,27 @@ class MatchEngine:
                 'UPDATE match_participants SET match_rating = GREATEST(0.0, LEAST(10.0, match_rating + $1)), actions_taken = actions_taken + 1 WHERE match_id = $2 AND user_id = $3',
                 rating_change, match_id, player['user_id'])
 
+        # CHECK FOR TEAMMATE SCORING
+        if success and attacking_team and action in ['pass', 'through_ball', 'cross', 'key_pass']:
+            teammate_result = await self.handle_teammate_followup(
+                channel, player, action, minute, match_id, attacking_team
+            )
+            
+            if teammate_result == 'goal':
+                return {'success': True, 'goal': True, 'assist': True, 'roll': player_roll}
+
         return {'success': success, 'goal': is_goal, 'roll': player_roll}
 
     async def execute_follow_up_action(self, channel, player, adjusted_stats, defender, action, minute, match_id,
-                                       member):
+                                       member, attacking_team):
         embed = discord.Embed(title=f"⚡ FOLLOW-UP: {action.upper()}!",
                               description=f"**{player['player_name']}** continues the attack!",
                               color=discord.Color.orange())
         await channel.send(embed=embed)
         await asyncio.sleep(1)
         result = await self.execute_action_with_duel(channel, player, adjusted_stats, defender, action,
-                                                     minute, match_id, member)
+                                                     minute, match_id, member, attacking_team)
         return 'goal' if result.get('goal') else None
-
-    async def handle_teammate_followup(self, channel, player, action, minute, match_id, attacking_team):
-        """Handle teammate scoring opportunity after successful action"""
-
-        if action in ['pass', 'through_ball', 'cross', 'key_pass'] and random.random() < 0.4:
-            # 40% chance teammate scores after good pass
-
-            # Get random teammate
-            async with db.pool.acquire() as conn:
-                teammate = await conn.fetchrow(
-                    """SELECT player_name, position
-                       FROM npc_players
-                       WHERE team_id = $1
-                         AND position IN ('ST', 'W', 'CAM')
-                       ORDER BY RANDOM() LIMIT 1""",
-                    attacking_team['team_id']
-                )
-
-            if teammate:
-                embed = discord.Embed(
-                    title=f"⚡ TEAMMATE OPPORTUNITY!",
-                    description=f"**{teammate['player_name']}** receives from {player['player_name']}!",
-                    color=discord.Color.orange()
-                )
-                await channel.send(embed=embed)
-                await asyncio.sleep(2)
-
-                # Roll for teammate
-                teammate_roll = random.randint(1, 20)
-                if teammate_roll >= 12:  # Success
-                    embed = discord.Embed(
-                        title="⚽ GOOOOOAL!",
-                        description=f"**{teammate['player_name']}** scores!\n🅰️ Assist: **{player['player_name']}**",
-                        color=discord.Color.green()
-                    )
-
-                    # Update player assists
-                    async with db.pool.acquire() as conn:
-                        await conn.execute(
-                            "UPDATE players SET season_assists = season_assists + 1, career_assists = career_assists + 1 WHERE user_id = $1",
-                            player['user_id']
-                        )
-
-                    # Boost player rating for assist
-                    async with db.pool.acquire() as conn:
-                        await conn.execute(
-                            'UPDATE match_participants SET match_rating = LEAST(10.0, match_rating + 0.8) WHERE match_id = $1 AND user_id = $2',
-                            match_id, player['user_id']
-                        )
-
-                    await channel.send(embed=embed)
-                    return 'goal'
-                else:
-                    embed = discord.Embed(
-                        title="❌ Chance missed!",
-                        description=f"{teammate['player_name']} couldn't convert!",
-                        color=discord.Color.red()
-                    )
-                    await channel.send(embed=embed)
-
-        return None
 
     async def handle_npc_moment(self, channel, team_id, minute, attacking_team, defending_team, is_home):
         async with db.pool.acquire() as conn:
@@ -751,7 +891,6 @@ class MatchEngine:
                               description=f"## {home_team['team_name']} {home_score} - {away_score} {away_team['team_name']}",
                               color=discord.Color.gold())
 
-        from utils.football_data_api import get_team_crest_url
         home_crest = get_team_crest_url(fixture['home_team_id'])
         if home_crest:
             embed.set_thumbnail(url=home_crest)
@@ -794,16 +933,6 @@ class MatchEngine:
         await db.add_news(f"{home_team['team_name']} {home_score}-{away_score} {away_team['team_name']}",
                           f"FT Week {fixture['week_number']}", "match_news", None, 3,
                           fixture['week_number'])
-
-        # AUTO-POST TO RESULTS CHANNEL
-        try:
-            for guild in self.bot.guilds:
-                results_channel = discord.utils.get(guild.text_channels, name="match-results")
-                if results_channel:
-                    from utils.event_poster import post_match_result_to_channel
-                    await post_match_result_to_channel(self.bot, guild, fixture, home_score, away_score)
-        except Exception as e:
-            print(f"Could not post match result: {e}")
 
         await asyncio.sleep(60)
         try:
@@ -861,5 +990,4 @@ class ActionButton(discord.ui.Button):
         self.view.stop()
 
 
-# Global instance to be initialized by the main bot
 match_engine = None
