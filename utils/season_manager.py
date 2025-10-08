@@ -2,6 +2,12 @@ from database import db
 from datetime import datetime, timedelta
 import config
 from utils.event_poster import post_weekly_news_digest
+from utils.transfer_window_manager import (
+    check_and_update_transfer_window,
+    process_weekly_transfer_offers,
+    simulate_npc_transfers,
+    is_transfer_window_open
+)
 
 
 async def start_season():
@@ -24,8 +30,70 @@ async def start_season():
         next_match_day=next_match.isoformat()
     )
 
-    print(f"Season {config.CURRENT_SEASON} started!")
-    print(f"First match day scheduled for {next_match.strftime('%Y-%m-%d %H:%M')}")
+    print(f"✅ Season {config.CURRENT_SEASON} started!")
+    print(f"📅 First match day scheduled for {next_match.strftime('%Y-%m-%d %H:%M')}")
+
+
+async def advance_week():
+    """Advance to the next week - CALLED BY /admin advance_week"""
+    state = await db.get_game_state()
+
+    if not state['season_started']:
+        print("⚠️ Season hasn't started yet")
+        return
+
+    current_week = state['current_week']
+
+    if current_week >= config.SEASON_TOTAL_WEEKS:
+        await end_season()
+        return
+
+    if state['match_window_open']:
+        await close_match_window()
+
+    new_week = current_week + 1
+    
+    print(f"\n{'='*60}")
+    print(f"ADVANCING TO WEEK {new_week}")
+    print(f"{'='*60}")
+
+    # Update week number
+    next_match = datetime.now() + timedelta(days=2)
+    next_match = next_match.replace(hour=config.MATCH_START_HOUR, minute=0, second=0, microsecond=0)
+
+    await db.update_game_state(
+        current_week=new_week,
+        next_match_day=next_match.isoformat() if new_week <= config.SEASON_TOTAL_WEEKS else None
+    )
+
+    # CHECK AND UPDATE TRANSFER WINDOW
+    await check_and_update_transfer_window()
+    window_active = await is_transfer_window_open(new_week)
+
+    # GENERATE TRANSFER OFFERS IF WINDOW IS OPEN
+    if window_active:
+        print(f"\n🔥 Transfer Window is OPEN for Week {new_week}")
+        try:
+            from bot import bot
+            offers_count = await process_weekly_transfer_offers(bot)
+            print(f"✅ Generated {offers_count} transfer offers")
+        except Exception as e:
+            print(f"❌ Error generating offers: {e}")
+        
+        # SIMULATE NPC TRANSFERS
+        try:
+            npc_count = await simulate_npc_transfers()
+            print(f"✅ Simulated {npc_count} NPC transfers")
+        except Exception as e:
+            print(f"❌ Error simulating NPC transfers: {e}")
+    else:
+        print(f"❌ Transfer window is CLOSED for Week {new_week}")
+
+    print(f"\n✅ Advanced to Week {new_week}/{config.SEASON_TOTAL_WEEKS}")
+    if new_week <= config.SEASON_TOTAL_WEEKS:
+        print(f"📅 Next match day: {next_match.strftime('%Y-%m-%d %H:%M')}")
+    
+    print(f"{'='*60}\n")
 
 
 async def open_match_window(bot=None):
@@ -39,11 +107,11 @@ async def open_match_window(bot=None):
 
     async with db.pool.acquire() as conn:
         await conn.execute('''
-                           UPDATE fixtures
-                           SET playable = TRUE
-                           WHERE week_number = $1
-                             AND played = FALSE
-                           ''', current_week)
+            UPDATE fixtures
+            SET playable = TRUE
+            WHERE week_number = $1
+              AND played = FALSE
+        ''', current_week)
 
     window_closes = datetime.now() + timedelta(hours=config.MATCH_WINDOW_HOURS)
 
@@ -52,48 +120,8 @@ async def open_match_window(bot=None):
         match_window_closes=window_closes.isoformat()
     )
 
-    print(f"Match window opened for Week {current_week}")
-    print(f"Window closes at {window_closes.strftime('%Y-%m-%d %H:%M')}")
-
-    # Generate transfer offers if window is open
-    from utils.transfer_window_manager import (
-        is_transfer_window_open,
-        generate_offers_for_player,
-        send_offer_notification,
-        get_current_transfer_window
-    )
-
-    if await is_transfer_window_open(current_week):
-        print(f"Generating weekly transfer offers...")
-
-        if bot:
-            try:
-                async with db.pool.acquire() as conn:
-                    players = await conn.fetch(
-                        "SELECT user_id FROM players WHERE retired = FALSE AND team_id != 'free_agent'"
-                    )
-
-                for player_row in players:
-                    user_id = player_row['user_id']
-                    player = await db.get_player(user_id)
-
-                    if player.get('last_transfer_window') == get_current_transfer_window(current_week):
-                        continue
-
-                    offers = await generate_offers_for_player(player, current_week, num_offers=3)
-
-                    if offers:
-                        await send_offer_notification(bot, user_id, len(offers))
-
-                print(f"Transfer offers generated and notifications sent")
-            except Exception as e:
-                print(f"Could not send transfer notifications: {e}")
-        else:
-            print("Bot instance not provided, skipping transfer notifications")
-
-        # Execute NPC transfers
-        from utils.npc_transfer_system import execute_npc_transfers
-        await execute_npc_transfers(current_week)
+    print(f"✅ Match window opened for Week {current_week}")
+    print(f"⏰ Window closes at {window_closes.strftime('%Y-%m-%d %H:%M')}")
 
     # POST WEEKLY NEWS TO CHANNELS
     if bot:
@@ -120,16 +148,16 @@ async def close_match_window():
         unplayed = [dict(row) for row in rows]
 
     if unplayed:
-        print(f"Auto-simulating {len(unplayed)} unplayed matches...")
+        print(f"🤖 Auto-simulating {len(unplayed)} unplayed matches...")
         for fixture in unplayed:
             await simulate_match(fixture)
 
     async with db.pool.acquire() as conn:
         await conn.execute('''
-                           UPDATE fixtures
-                           SET playable = FALSE
-                           WHERE week_number = $1
-                           ''', current_week)
+            UPDATE fixtures
+            SET playable = FALSE
+            WHERE week_number = $1
+        ''', current_week)
 
     await db.update_game_state(
         match_window_open=False,
@@ -137,46 +165,7 @@ async def close_match_window():
         last_match_day=datetime.now().isoformat()
     )
 
-    print(f"Match window closed for Week {current_week}")
-
-
-async def advance_week():
-    """Advance to the next week"""
-    state = await db.get_game_state()
-
-    if not state['season_started']:
-        print("Season hasn't started yet")
-        return
-
-    current_week = state['current_week']
-
-    if current_week >= config.SEASON_TOTAL_WEEKS:
-        await end_season()
-        return
-
-    if state['match_window_open']:
-        await close_match_window()
-
-    new_week = current_week + 1
-
-    next_match = datetime.now() + timedelta(days=2)
-    next_match = next_match.replace(hour=config.MATCH_START_HOUR, minute=0, second=0, microsecond=0)
-
-    await db.update_game_state(
-        current_week=new_week,
-        next_match_day=next_match.isoformat() if new_week <= config.SEASON_TOTAL_WEEKS else None
-    )
-
-    print(f"Advanced to Week {new_week}/{config.SEASON_TOTAL_WEEKS}")
-
-    from utils.transfer_window_manager import check_and_update_transfer_window
-    window_active = await check_and_update_transfer_window()
-
-    if window_active:
-        print(f"Transfer window active - Week {new_week}")
-
-    if new_week <= config.SEASON_TOTAL_WEEKS:
-        print(f"Next match day: {next_match.strftime('%Y-%m-%d %H:%M')}")
+    print(f"✅ Match window closed for Week {current_week}")
 
 
 async def check_match_day_trigger(bot=None):
@@ -201,44 +190,13 @@ async def check_match_day_trigger(bot=None):
             await open_match_window(bot)
             return True
 
-    async def send_match_window_notifications(bot):
-        """Send notifications when match window opens"""
-        try:
-            async with db.pool.acquire() as conn:
-                players = await conn.fetch(
-                    "SELECT user_id FROM players WHERE retired = FALSE AND team_id != 'free_agent'"
-                )
-
-            for player_row in players:
-                try:
-                    user = await bot.fetch_user(player_row['user_id'])
-                    embed = discord.Embed(
-                        title="⚽ MATCH WINDOW OPEN!",
-                        description="Your match is ready to play!\n\nUse `/play_match` to start.",
-                        color=discord.Color.green()
-                    )
-                    embed.add_field(
-                        name="⏱️ Window Duration",
-                        value=f"{config.MATCH_WINDOW_HOURS} hours to play",
-                        inline=False
-                    )
-                    await user.send(embed=embed)
-                except:
-                    pass  # User might have DMs disabled
-        except Exception as e:
-            print(f"Could not send match notifications: {e}")
-
-    # Call this in open_match_window after setting match_window_open to True:
-    if bot and config.NOTIFY_MATCH_WINDOW:
-        await send_match_window_notifications(bot)
-
     return False
 
 
 async def end_season():
     """End the current season with relegation and promotion"""
 
-    print("Season ending...")
+    print("\n🏁 SEASON ENDING...")
 
     await db.age_all_players()
     retirements = await db.retire_old_players()
@@ -247,7 +205,7 @@ async def end_season():
     from utils.npc_transfer_system import balance_team_squads
     await balance_team_squads()
 
-    print("Processing relegation and promotion...")
+    print("⚖️ Processing relegation and promotion...")
 
     pl_table = await db.get_league_table('Premier League')
     champ_table = await db.get_league_table('Championship')
@@ -266,10 +224,6 @@ async def end_season():
             )
             await conn.execute(
                 "UPDATE players SET league = 'Championship' WHERE team_id = $1 AND retired = FALSE",
-                team['team_id']
-            )
-            await conn.execute(
-                "UPDATE npc_players SET team_id = $1 WHERE team_id = $1",
                 team['team_id']
             )
 
@@ -291,10 +245,6 @@ async def end_season():
                 "UPDATE players SET league = 'Premier League' WHERE team_id = $1 AND retired = FALSE",
                 team['team_id']
             )
-            await conn.execute(
-                "UPDATE npc_players SET team_id = $1 WHERE team_id = $1",
-                team['team_id']
-            )
 
             await db.add_news(
                 f"PROMOTION: {team['team_name']} Promoted!",
@@ -305,6 +255,7 @@ async def end_season():
             )
             print(f"  ⬆️ {team['team_name']} promoted to Premier League")
 
+        # Similar for Championship <-> League One
         for team in relegated_from_champ:
             await conn.execute(
                 "UPDATE teams SET league = 'League One' WHERE team_id = $1",
@@ -312,10 +263,6 @@ async def end_season():
             )
             await conn.execute(
                 "UPDATE players SET league = 'League One' WHERE team_id = $1 AND retired = FALSE",
-                team['team_id']
-            )
-            await conn.execute(
-                "UPDATE npc_players SET team_id = $1 WHERE team_id = $1",
                 team['team_id']
             )
 
@@ -335,10 +282,6 @@ async def end_season():
             )
             await conn.execute(
                 "UPDATE players SET league = 'Championship' WHERE team_id = $1 AND retired = FALSE",
-                team['team_id']
-            )
-            await conn.execute(
-                "UPDATE npc_players SET team_id = $1 WHERE team_id = $1",
                 team['team_id']
             )
 
@@ -363,74 +306,40 @@ async def end_season():
         )
         print(f"  🏆 Premier League Champions: {champion['team_name']}")
 
-    if champ_table:
-        champion = champ_table[0]
-        await db.add_news(
-            f"{champion['team_name']} Win Championship Title!",
-            f"{champion['team_name']} are Championship champions!",
-            "league_news",
-            None,
-            9
-        )
-        print(f"  🏆 Championship Champions: {champion['team_name']}")
-
-    if l1_table:
-        champion = l1_table[0]
-        await db.add_news(
-            f"{champion['team_name']} Win League One!",
-            f"{champion['team_name']} are League One champions!",
-            "league_news",
-            None,
-            8
-        )
-        print(f"  🏆 League One Champions: {champion['team_name']}")
-
     # Decrease contract years
     async with db.pool.acquire() as conn:
         await conn.execute("""
-                           UPDATE players
-                           SET contract_years = GREATEST(0, contract_years - 1)
-                           WHERE retired = FALSE
-                           """)
+            UPDATE players
+            SET contract_years = GREATEST(0, contract_years - 1)
+            WHERE retired = FALSE
+        """)
 
         await conn.execute("""
-                           UPDATE players
-                           SET team_id = 'free_agent',
-                               league  = NULL
-                           WHERE contract_years = 0
-                             AND retired = FALSE
-                           """)
+            UPDATE players
+            SET team_id = 'free_agent', league = NULL
+            WHERE contract_years = 0 AND retired = FALSE
+        """)
 
     # Reset season stats
     async with db.pool.acquire() as conn:
         await conn.execute("""
-                           UPDATE players
-                           SET season_goals   = 0,
-                               season_assists = 0,
-                               season_apps    = 0,
-                               season_rating  = 0.0
-                           WHERE retired = FALSE
-                           """)
+            UPDATE players
+            SET season_goals = 0, season_assists = 0, 
+                season_apps = 0, season_rating = 0.0
+            WHERE retired = FALSE
+        """)
 
         await conn.execute("""
-                           UPDATE teams
-                           SET played        = 0,
-                               won           = 0,
-                               drawn         = 0,
-                               lost          = 0,
-                               goals_for     = 0,
-                               goals_against = 0,
-                               points        = 0,
-                               form          = ''
-                           """)
+            UPDATE teams
+            SET played = 0, won = 0, drawn = 0, lost = 0,
+                goals_for = 0, goals_against = 0, points = 0, form = ''
+        """)
 
         await conn.execute("""
-                           UPDATE npc_players
-                           SET season_goals   = 0,
-                               season_assists = 0,
-                               season_apps    = 0
-                           WHERE retired = FALSE
-                           """)
+            UPDATE npc_players
+            SET season_goals = 0, season_assists = 0, season_apps = 0
+            WHERE retired = FALSE
+        """)
 
     await db.add_news(
         f"Season {config.CURRENT_SEASON} Concludes",
@@ -449,4 +358,4 @@ async def end_season():
         transfer_window_active=False
     )
 
-    print(f"Season ended. {retirements} retirements. Ready for new season.")
+    print(f"✅ Season ended. {retirements} retirements. Ready for new season.")
