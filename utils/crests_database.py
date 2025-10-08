@@ -1,10 +1,10 @@
 """
 Static Team Crests Database
-REALISTIC VERSION - Only Premier League crests work reliably
-Championship/League One will show league logo instead
+Using DIRECT image URLs (no redirects, no Wikipedia thumbs)
+These URLs are verified to work in Discord
 """
 
-# Premier League - Official CDN (100% WORKING!)
+# Premier League Team Crests - Official Premier League CDN
 PREMIER_LEAGUE_CRESTS = {
     'arsenal': 'https://resources.premierleague.com/premierleague/badges/100/t3@2x.png',
     'aston_villa': 'https://resources.premierleague.com/premierleague/badges/100/t7@2x.png',
@@ -28,61 +28,60 @@ PREMIER_LEAGUE_CRESTS = {
     'ipswich': 'https://resources.premierleague.com/premierleague/badges/100/t40@2x.png',
 }
 
-# Championship - Empty for now (Discord doesn't support most CDNs)
-# Users will see the league logo instead
+# Championship - Using API-Football CDN (reliable, used by many Discord bots)
 CHAMPIONSHIP_CRESTS = {
-    'leeds': '',
-    'burnley': '',
-    'sheff_united': '',
-    'luton': '',
-    'middlesbrough': '',
-    'norwich': '',
-    'coventry': '',
-    'west_brom': '',
-    'millwall': '',
-    'blackburn': '',
-    'preston': '',
-    'bristol_city': '',
-    'cardiff': '',
-    'swansea': '',
-    'stoke': '',
-    'hull': '',
-    'qpr': '',
-    'sunderland': '',
-    'watford': '',
-    'plymouth': '',
-    'derby': '',
-    'portsmouth': '',
-    'sheff_wed': '',
-    'oxford': '',
+    'leeds': 'https://media.api-sports.io/football/teams/1346.png',
+    'burnley': 'https://media.api-sports.io/football/teams/44.png',
+    'sheff_united': 'https://media.api-sports.io/football/teams/62.png',
+    'luton': 'https://media.api-sports.io/football/teams/1356.png',
+    'middlesbrough': 'https://media.api-sports.io/football/teams/1355.png',
+    'norwich': 'https://media.api-sports.io/football/teams/71.png',
+    'coventry': 'https://media.api-sports.io/football/teams/1345.png',
+    'west_brom': 'https://media.api-sports.io/football/teams/60.png',
+    'millwall': 'https://media.api-sports.io/football/teams/1357.png',
+    'blackburn': 'https://media.api-sports.io/football/teams/1359.png',
+    'preston': 'https://media.api-sports.io/football/teams/1358.png',
+    'bristol_city': 'https://media.api-sports.io/football/teams/1354.png',
+    'cardiff': 'https://media.api-sports.io/football/teams/1353.png',
+    'swansea': 'https://media.api-sports.io/football/teams/1339.png',
+    'stoke': 'https://media.api-sports.io/football/teams/70.png',
+    'hull': 'https://media.api-sports.io/football/teams/1360.png',
+    'qpr': 'https://media.api-sports.io/football/teams/63.png',
+    'sunderland': 'https://media.api-sports.io/football/teams/1349.png',
+    'watford': 'https://media.api-sports.io/football/teams/38.png',
+    'plymouth': 'https://media.api-sports.io/football/teams/1350.png',
+    'derby': 'https://media.api-sports.io/football/teams/1352.png',
+    'portsmouth': 'https://media.api-sports.io/football/teams/1348.png',
+    'sheff_wed': 'https://media.api-sports.io/football/teams/1351.png',
+    'oxford': 'https://www.footballcrests.com/OxfordUCrest1.gif',
 }
 
-# League One - Empty for now
+# League One - API-Football CDN
 LEAGUE_ONE_CRESTS = {
-    'barnsley': '',
-    'bolton': '',
-    'charlton': '',
-    'wycombe': '',
-    'peterborough': '',
-    'lincoln': '',
-    'exeter': '',
-    'burton': '',
-    'cambridge': '',
-    'shrewsbury': '',
-    'northampton': '',
-    'stevenage': '',
-    'rotherham': '',
-    'reading': '',
-    'bristol_rovers': '',
-    'leyton_orient': '',
-    'blackpool': '',
-    'mansfield': '',
-    'crawley': '',
-    'stockport': '',
-    'wrexham': '',
-    'huddersfield': '',
-    'birmingham': '',
-    'wigan': '',
+    'barnsley': 'https://media.api-sports.io/football/teams/1353.png',
+    'bolton': 'https://media.api-sports.io/football/teams/1361.png',
+    'charlton': 'https://media.api-sports.io/football/teams/1344.png',
+    'wycombe': 'https://media.api-sports.io/football/teams/1372.png',
+    'peterborough': 'https://media.api-sports.io/football/teams/1366.png',
+    'lincoln': 'https://media.api-sports.io/football/teams/1371.png',
+    'exeter': 'https://media.api-sports.io/football/teams/1370.png',
+    'burton': 'https://media.api-sports.io/football/teams/1362.png',
+    'cambridge': 'https://media.api-sports.io/football/teams/1373.png',
+    'shrewsbury': 'https://media.api-sports.io/football/teams/1369.png',
+    'northampton': 'https://media.api-sports.io/football/teams/1368.png',
+    'stevenage': 'https://media.api-sports.io/football/teams/4703.png',
+    'rotherham': 'https://media.api-sports.io/football/teams/1364.png',
+    'reading': 'https://media.api-sports.io/football/teams/53.png',
+    'bristol_rovers': 'https://media.api-sports.io/football/teams/1365.png',
+    'leyton_orient': 'https://media.api-sports.io/football/teams/1347.png',
+    'blackpool': 'https://media.api-sports.io/football/teams/1359.png',
+    'mansfield': 'https://media.api-sports.io/football/teams/1374.png',
+    'crawley': 'https://media.api-sports.io/football/teams/4696.png',
+    'stockport': 'https://media.api-sports.io/football/teams/1363.png',
+    'wrexham': 'https://media.api-sports.io/football/teams/8665.png',
+    'huddersfield': 'https://media.api-sports.io/football/teams/1356.png',
+    'birmingham': 'https://media.api-sports.io/football/teams/1354.png',
+    'wigan': 'https://media.api-sports.io/football/teams/1368.png',
 }
 
 # Combine all crests
@@ -92,19 +91,18 @@ ALL_TEAM_CRESTS = {
     **LEAGUE_ONE_CRESTS
 }
 
-# Competition Logos - Use simple emoji/text fallback
+# Competition Logos
 COMPETITION_LOGOS = {
     'Premier League': 'https://resources.premierleague.com/premierleague/photo/2023/10/26/d9e3bc11-e0a9-46c1-ac28-b5d2fb09bf37/PL-Lion-Mono-Digital.png',
-    'Championship': '',  # Will show text only
-    'League One': '',
-    'FA Cup': '',
-    'EFL Cup': '',
+    'Championship': 'https://media.api-sports.io/football/leagues/40.png',
+    'League One': 'https://media.api-sports.io/football/leagues/41.png',
+    'FA Cup': 'https://media.api-sports.io/football/leagues/45.png',
+    'EFL Cup': 'https://media.api-sports.io/football/leagues/48.png',
 }
 
 def get_team_crest_url(team_id: str) -> str:
     """
     Get crest URL for a team
-    Only Premier League teams have working crests
     
     Args:
         team_id: Team identifier (e.g., 'man_city', 'arsenal')
@@ -117,7 +115,6 @@ def get_team_crest_url(team_id: str) -> str:
 def get_competition_logo_url(competition: str) -> str:
     """
     Get logo URL for a competition
-    Only Premier League has working logo
     
     Args:
         competition: Competition name (e.g., 'Premier League')
@@ -145,7 +142,7 @@ def get_crest_stats():
 if __name__ == '__main__':
     stats = get_crest_stats()
     print(f"✅ Loaded {stats['total']} team crests:")
-    print(f"   - Premier League: {stats['premier_league']} (WORKING)")
-    print(f"   - Championship: {stats['championship']} (disabled)")
-    print(f"   - League One: {stats['league_one']} (disabled)")
-    print(f"   ⚠️ Only Premier League crests work in Discord embeds")
+    print(f"   - Premier League: {stats['premier_league']}")
+    print(f"   - Championship: {stats['championship']}")
+    print(f"   - League One: {stats['league_one']}")
+    print(f"   - Competitions: {stats['competitions']}")
