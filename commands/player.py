@@ -89,11 +89,9 @@ class PlayerCommands(commands.Cog):
         overall = sum(base_stats.values()) // 6
         potential = random.randint(overall + 12, overall + 28)
         
-        # CHANGED: Everyone starts in Championship
         target_league = 'Championship'
-        wage = random.randint(8000, 15000)  # Championship wages
+        wage = random.randint(8000, 15000)
         
-        # Get random Championship team
         async with db.pool.acquire() as conn2:
             result = await conn2.fetchrow(
                 "SELECT team_id FROM teams WHERE league = $1 ORDER BY RANDOM() LIMIT 1",
@@ -137,7 +135,6 @@ class PlayerCommands(commands.Cog):
                 ON CONFLICT (user_id) DO NOTHING
             ''', interaction.user.id)
         
-        # Record transfer
         if assigned_team != 'free_agent':
             async with db.pool.acquire() as conn:
                 await conn.execute('''
@@ -188,6 +185,12 @@ class PlayerCommands(commands.Cog):
                 value=f"£{wage:,}/week\n{contract_years} years",
                 inline=False
             )
+            
+            # ADD TEAM CREST
+            from utils.football_data_api import get_team_crest_url
+            crest = get_team_crest_url(assigned_team)
+            if crest:
+                embed.set_thumbnail(url=crest)
         
         embed.add_field(name="Career Path", value=(
             f"**Starting Point: Championship**\n"
@@ -259,6 +262,12 @@ class PlayerCommands(commands.Cog):
         if player['team_id'] != 'free_agent':
             team = await db.get_team(player['team_id'])
             team_display = f"{team['team_name']} ({team['league']})" if team else player['team_id']
+            
+            # ADD TEAM CREST
+            from utils.football_data_api import get_team_crest_url
+            crest = get_team_crest_url(player['team_id'])
+            if crest:
+                embed.set_thumbnail(url=crest)
         else:
             team_display = '🆓 Free Agent'
         
@@ -438,6 +447,13 @@ class PlayerCommands(commands.Cog):
         team2_name = team2['team_name'] if team2 else 'Free Agent'
         
         embed.add_field(name="🏢 Clubs", value=f"{team1_name} | {team2_name}", inline=False)
+        
+        # ADD TEAM CRESTS
+        if team1:
+            from utils.football_data_api import get_team_crest_url
+            crest1 = get_team_crest_url(player1['team_id'])
+            if crest1:
+                embed.set_thumbnail(url=crest1)
         
         embed.set_footer(text="✅ = Higher/Better stat")
         
