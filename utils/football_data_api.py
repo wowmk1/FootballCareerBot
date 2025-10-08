@@ -1,6 +1,7 @@
 """
 Simple Crests Loader - No API Required
 Uses static Wikipedia URLs stored in crests_database.py
+FIXED VERSION - Ensures clean URLs
 """
 
 from utils.crests_database import (
@@ -27,33 +28,44 @@ async def cache_all_crests():
 def get_team_crest_url(team_id: str) -> str:
     """
     Get team crest URL with better fallback handling
+    FIXED: Returns clean string with no hidden characters
     """
+    if not team_id or team_id in ['free_agent', 'retired', None]:
+        return ""
+    
     # Direct mapping first
     url = get_crest(team_id)
 
     # If not found, try converting team name format
-    if not url and team_id not in ['free_agent', 'retired']:
+    if not url:
         # Try underscore version (e.g., "man-city" -> "man_city")
         converted_id = team_id.replace('-', '_')
         url = get_crest(converted_id)
 
         if not url:
             print(f"⚠️ No crest mapping for: {team_id}")
+            return ""
 
-    return url or ""  # Return empty string if no URL found
+    # Force clean string and strip any whitespace/hidden chars
+    clean_url = str(url).strip()
+    
+    return clean_url if clean_url else ""
 
 
 def get_competition_logo(competition: str) -> str:
     """
     Get competition logo URL
-
-    Args:
-        competition: Competition name (e.g., 'Premier League')
-
-    Returns:
-        Direct image URL or empty string
+    FIXED: Returns clean string
     """
-    return get_logo(competition)
+    if not competition:
+        return ""
+    
+    url = get_logo(competition)
+    
+    # Clean the URL
+    clean_url = str(url).strip() if url else ""
+    
+    return clean_url
 
 
 # Backwards compatibility
