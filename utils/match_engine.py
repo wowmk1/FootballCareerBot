@@ -8,7 +8,7 @@ import config
 
 # Import crest functions at top level
 try:
-    from utils.crests_database import get_team_crest_url, get_competition_logo_url
+    from utils.football_data_api import get_team_crest_url, get_competition_logo
     print("✅ Loaded crests_database directly")
 except ImportError:
     print("⚠️ crests_database not found, using fallback")
