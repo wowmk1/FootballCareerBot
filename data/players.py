@@ -1,482 +1,349 @@
-import discord
-from discord import app_commands
-from discord.ext import commands
-from database import db
-import random
-from datetime import datetime
-import config
+# Real Premier League Players (2024/2025 rosters with ages)
 
-class PlayerCommands(commands.Cog):
-    def __init__(self, bot):
-        self.bot = bot
+PREMIER_LEAGUE_PLAYERS = [
     
-    @app_commands.command(name="start", description="Create your football player and start your career!")
-    @app_commands.describe(
-        player_name="Your player's name (e.g., John Smith)",
-        position="Your preferred position"
-    )
-    @app_commands.choices(position=[
-        app_commands.Choice(name="⚽ Striker (ST)", value="ST"),
-        app_commands.Choice(name="✨ Winger (W)", value="W"),
-        app_commands.Choice(name="🎯 Attacking Midfielder (CAM)", value="CAM"),
-        app_commands.Choice(name="⚙️ Central Midfielder (CM)", value="CM"),
-        app_commands.Choice(name="🛡️ Defensive Midfielder (CDM)", value="CDM"),
-        app_commands.Choice(name="🏃 Full Back (FB)", value="FB"),
-        app_commands.Choice(name="💪 Center Back (CB)", value="CB"),
-        app_commands.Choice(name="🧤 Goalkeeper (GK)", value="GK"),
-    ])
-    async def start(self, interaction: discord.Interaction, player_name: str, position: str):
-        """Create a new player"""
-        
-        existing = await db.get_player(interaction.user.id)
-        
-        if existing:
-            if existing['retired']:
-                async with db.pool.acquire() as conn:
-                    await conn.execute(
-                        "DELETE FROM players WHERE user_id = $1",
-                        interaction.user.id
-                    )
-            else:
-                await interaction.response.send_message(
-                    f"You already have an active player: **{existing['player_name']}** ({existing['age']} years old)!\n\n"
-                    f"Players retire at age {config.RETIREMENT_AGE}. You can create a new player after retirement.",
-                    ephemeral=True
-                )
-                return
-        
-        state = await db.get_game_state()
-        current_week = state['current_week'] if state['season_started'] else 0
-        
-        if not state['season_started']:
-            from utils.season_manager import start_season
-            await start_season()
-            current_week = 1
-            
-            await db.add_news(
-                "Season 2027/28 Begins!",
-                "The football season has officially started! 38 weeks of intense competition await.",
-                "league_news",
-                None,
-                10,
-                1
-            )
-        
-        base_stats = {
-            'pace': random.randint(55, 68),
-            'shooting': random.randint(55, 68),
-            'passing': random.randint(55, 68),
-            'dribbling': random.randint(55, 68),
-            'defending': random.randint(35, 50),
-            'physical': random.randint(55, 68)
-        }
-        
-        position_bonuses = {
-            'ST': {'shooting': 8, 'physical': 5, 'pace': 3},
-            'W': {'pace': 8, 'dribbling': 8, 'shooting': 3},
-            'CAM': {'passing': 7, 'dribbling': 6, 'shooting': 4},
-            'CM': {'passing': 8, 'physical': 5, 'defending': 3},
-            'CDM': {'defending': 10, 'physical': 7, 'passing': 3},
-            'FB': {'pace': 6, 'defending': 8, 'physical': 4},
-            'CB': {'defending': 12, 'physical': 8, 'pace': -5},
-            'GK': {'defending': 15, 'physical': 5, 'pace': -10}
-        }
-        
-        if position in position_bonuses:
-            for stat, bonus in position_bonuses[position].items():
-                base_stats[stat] = max(35, min(99, base_stats[stat] + bonus))
-        
-        overall = sum(base_stats.values()) // 6
-        potential = random.randint(overall + 12, overall + 28)
-        
-        target_league = 'Championship'
-        wage = random.randint(8000, 15000)
-        
-        async with db.pool.acquire() as conn2:
-            result = await conn2.fetchrow(
-                "SELECT team_id FROM teams WHERE league = $1 ORDER BY RANDOM() LIMIT 1",
-                target_league
-            )
-            assigned_team = result['team_id'] if result else 'free_agent'
-        
-        contract_years = random.randint(2, 4)
-        
-        async with db.pool.acquire() as conn:
-            await conn.execute('''
-                INSERT INTO players (
-                    user_id, discord_username, player_name, position,
-                    age, overall_rating, pace, shooting, passing, dribbling, defending, physical,
-                    potential, team_id, league, joined_week, contract_wage, contract_years
-                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
-            ''',
-                interaction.user.id,
-                str(interaction.user),
-                player_name,
-                position,
-                config.STARTING_AGE,
-                overall,
-                base_stats['pace'],
-                base_stats['shooting'],
-                base_stats['passing'],
-                base_stats['dribbling'],
-                base_stats['defending'],
-                base_stats['physical'],
-                potential,
-                assigned_team,
-                target_league,
-                current_week,
-                wage,
-                contract_years
-            )
-            
-            await conn.execute('''
-                INSERT INTO user_settings (user_id) 
-                VALUES ($1) 
-                ON CONFLICT (user_id) DO NOTHING
-            ''', interaction.user.id)
-        
-        if assigned_team != 'free_agent':
-            async with db.pool.acquire() as conn:
-                await conn.execute('''
-                    INSERT INTO transfers (user_id, from_team, to_team, fee, wage, contract_length, transfer_type)
-                    VALUES ($1, $2, $3, $4, $5, $6, $7)
-                ''', interaction.user.id, 'free_agent', assigned_team, 0, wage, contract_years, 'signing')
-        
-        await db.add_news(
-            f"New Talent: {player_name}",
-            f"{player_name} ({position}) joins {target_league} at age {config.STARTING_AGE}. "
-            f"Scouts rate potential at {potential} OVR. Every great career starts somewhere!",
-            "transfer_news",
-            interaction.user.id,
-            5,
-            current_week
-        )
-        
-        embed = discord.Embed(
-            title="Welcome to Your Football Career!",
-            description=f"**{player_name}** has been created!\n\n*\"Every legend starts somewhere...\"*",
-            color=discord.Color.green()
-        )
-        
-        embed.add_field(name="Position", value=position, inline=True)
-        embed.add_field(name="Age", value=f"{config.STARTING_AGE} years old", inline=True)
-        embed.add_field(name="Overall", value=f"**{overall}** OVR", inline=True)
-        
-        embed.add_field(name="Attributes", value=(
-            f"Pace: **{base_stats['pace']}**\n"
-            f"Shooting: **{base_stats['shooting']}**\n"
-            f"Passing: **{base_stats['passing']}**\n"
-            f"Dribbling: **{base_stats['dribbling']}**\n"
-            f"Defending: **{base_stats['defending']}**\n"
-            f"Physical: **{base_stats['physical']}**"
-        ), inline=True)
-        
-        embed.add_field(name="Potential", value=f"**{potential}** OVR", inline=True)
-        
-        if assigned_team != 'free_agent':
-            assigned_team_obj = await db.get_team(assigned_team)
-            embed.add_field(
-                name="First Club", 
-                value=f"**{assigned_team_obj['team_name']}**\n{target_league}", 
-                inline=True
-            )
-            embed.add_field(
-                name="Contract",
-                value=f"£{wage:,}/week\n{contract_years} years",
-                inline=False
-            )
-            
-            # ADD TEAM CREST - IMPROVED WITH ERROR HANDLING
-            try:
-                from utils.football_data_api import get_team_crest_url
-                crest = get_team_crest_url(assigned_team)
-                if crest:
-                    embed.set_thumbnail(url=crest)
-                    print(f"✅ Set crest for {assigned_team}: {crest[:50]}")
-                else:
-                    print(f"⚠️ No crest found for {assigned_team}")
-            except Exception as e:
-                print(f"❌ Error getting crest: {e}")
-        
-        embed.add_field(name="Career Path", value=(
-            f"**Starting Point: Championship**\n"
-            f"Perform well to attract Premier League interest!\n"
-            f"Train daily, play matches, and build your legacy.\n\n"
-            f"You'll play until age **{config.RETIREMENT_AGE}** - that's **{config.RETIREMENT_AGE - config.STARTING_AGE} years** to become a legend!"
-        ), inline=False)
-        
-        embed.add_field(name="Next Steps", value=(
-            "`/train` - Train daily to improve\n"
-            "`/season` - Check current week & schedule\n"
-            "`/play_match` - Play matches during windows\n"
-            "`/help` - See all commands"
-        ), inline=False)
-        
-        embed.set_footer(text="Your journey begins now. Make it legendary!")
-        
-        await interaction.response.send_message(embed=embed)
+    # ========== MANCHESTER CITY ==========
+    {'player_name': 'Ederson', 'team_id': 'man_city', 'position': 'GK', 'overall_rating': 89, 'age': 31},
+    {'player_name': 'Stefan Ortega', 'team_id': 'man_city', 'position': 'GK', 'overall_rating': 79, 'age': 31},
+    {'player_name': 'Kyle Walker', 'team_id': 'man_city', 'position': 'FB', 'overall_rating': 84, 'age': 34},
+    {'player_name': 'Josko Gvardiol', 'team_id': 'man_city', 'position': 'CB', 'overall_rating': 82, 'age': 22},
+    {'player_name': 'Ruben Dias', 'team_id': 'man_city', 'position': 'CB', 'overall_rating': 88, 'age': 27},
+    {'player_name': 'Manuel Akanji', 'team_id': 'man_city', 'position': 'CB', 'overall_rating': 83, 'age': 29},
+    {'player_name': 'Nathan Aké', 'team_id': 'man_city', 'position': 'CB', 'overall_rating': 81, 'age': 29},
+    {'player_name': 'Rico Lewis', 'team_id': 'man_city', 'position': 'FB', 'overall_rating': 76, 'age': 19},
+    {'player_name': 'Rodri', 'team_id': 'man_city', 'position': 'CDM', 'overall_rating': 91, 'age': 28},
+    {'player_name': 'Mateo Kovacic', 'team_id': 'man_city', 'position': 'CM', 'overall_rating': 84, 'age': 30},
+    {'player_name': 'Bernardo Silva', 'team_id': 'man_city', 'position': 'CM', 'overall_rating': 88, 'age': 30},
+    {'player_name': 'Kevin De Bruyne', 'team_id': 'man_city', 'position': 'CAM', 'overall_rating': 91, 'age': 33},
+    {'player_name': 'Phil Foden', 'team_id': 'man_city', 'position': 'W', 'overall_rating': 87, 'age': 24},
+    {'player_name': 'Jack Grealish', 'team_id': 'man_city', 'position': 'W', 'overall_rating': 84, 'age': 29},
+    {'player_name': 'Jeremy Doku', 'team_id': 'man_city', 'position': 'W', 'overall_rating': 81, 'age': 22},
+    {'player_name': 'Erling Haaland', 'team_id': 'man_city', 'position': 'ST', 'overall_rating': 91, 'age': 24},
+    {'player_name': 'Julian Alvarez', 'team_id': 'man_city', 'position': 'ST', 'overall_rating': 83, 'age': 24},
     
-    @app_commands.command(name="profile", description="View your player stats and career info")
-    @app_commands.describe(user="View another player's profile (optional)")
-    async def profile(self, interaction: discord.Interaction, user: discord.User = None):
-        """View player profile"""
-        
-        target_user = user or interaction.user
-        player = await db.get_player(target_user.id)
-        
-        if not player:
-            if user:
-                await interaction.response.send_message(
-                    f"❌ {user.mention} hasn't created a player yet!",
-                    ephemeral=True
-                )
-            else:
-                await interaction.response.send_message(
-                    "❌ You haven't created a player yet! Use `/start` to begin your career.",
-                    ephemeral=True
-                )
-            return
-        
-        if player['retired']:
-            embed = discord.Embed(
-                title=f"🏆 {player['player_name']} (Retired Legend)",
-                description=f"*Retired at age {player['age']} on {player['retirement_date'][:10]}*",
-                color=discord.Color.gold()
-            )
-            
-            embed.add_field(name="📋 Position", value=player['position'], inline=True)
-            embed.add_field(name="🎂 Retirement Age", value=str(player['age']), inline=True)
-            embed.add_field(name="⭐ Peak Rating", value=f"**{player['overall_rating']}** OVR", inline=True)
-            
-            embed.add_field(name="🏆 Career Legacy", value=(
-                f"⚽ Goals: **{player['career_goals']}**\n"
-                f"🅰️ Assists: **{player['career_assists']}**\n"
-                f"👕 Appearances: **{player['career_apps']}**\n"
-                f"⏳ Career span: **{player['age'] - config.STARTING_AGE} years**"
-            ), inline=False)
-            
-            embed.set_footer(text="Use /start to create a new player!")
-            
-            await interaction.response.send_message(embed=embed)
-            return
-        
-        embed = discord.Embed(
-            title=f"{'⭐ ' if user == interaction.user else ''}{player['player_name']}",
-            color=discord.Color.blue() if user == interaction.user else discord.Color.greyple()
-        )
-        
-        if player['team_id'] != 'free_agent':
-            team = await db.get_team(player['team_id'])
-            team_display = f"{team['team_name']} ({team['league']})" if team else player['team_id']
-            
-            # ADD TEAM CREST - IMPROVED WITH DEBUGGING
-            try:
-                from utils.football_data_api import get_team_crest_url
-                crest_url = get_team_crest_url(player['team_id'])
-                
-                if crest_url:
-                    embed.set_thumbnail(url=crest_url)
-                    print(f"✅ Profile crest set: {player['team_id']} -> {crest_url[:50]}")
-                else:
-                    print(f"⚠️ Profile: No crest URL for {player['team_id']}")
-            except Exception as e:
-                print(f"❌ Profile crest error: {e}")
-                import traceback
-                traceback.print_exc()
-        else:
-            team_display = '🆓 Free Agent'
-        
-        form_icons = min(5, player['form'] // 20)
-        form_display = "🔥" * form_icons if form_icons > 0 else "❄️"
-        
-        years_left = config.RETIREMENT_AGE - player['age']
-        
-        embed.add_field(name="📋 Position", value=player['position'], inline=True)
-        embed.add_field(name="🎂 Age", value=f"{player['age']} ({years_left}y left)", inline=True)
-        embed.add_field(name="⭐ Overall", value=f"**{player['overall_rating']}** OVR", inline=True)
-        
-        embed.add_field(name="🏢 Club", value=team_display, inline=True)
-        embed.add_field(name="🔥 Form", value=form_display, inline=True)
-        embed.add_field(name="📅 Streak", value=f"{player['training_streak']} days", inline=True)
-        
-        embed.add_field(name="📊 Attributes", value=(
-            f"⚡ Pace: **{player['pace']}**\n"
-            f"🎯 Shooting: **{player['shooting']}**\n"
-            f"🎪 Passing: **{player['passing']}**\n"
-            f"🪄 Dribbling: **{player['dribbling']}**\n"
-            f"🛡️ Defending: **{player['defending']}**\n"
-            f"💪 Physical: **{player['physical']}**"
-        ), inline=True)
-        
-        avg_rating = f"{player['season_rating']:.1f}" if player['season_apps'] > 0 else "N/A"
-        embed.add_field(name="📈 This Season", value=(
-            f"⚽ Goals: **{player['season_goals']}**\n"
-            f"🅰️ Assists: **{player['season_assists']}**\n"
-            f"👕 Apps: **{player['season_apps']}**\n"
-            f"⭐ Avg: **{avg_rating}**"
-        ), inline=True)
-        
-        embed.add_field(name="🏆 Career", value=(
-            f"⚽ Goals: **{player['career_goals']}**\n"
-            f"🅰️ Assists: **{player['career_assists']}**\n"
-            f"👕 Apps: **{player['career_apps']}**"
-        ), inline=True)
-        
-        if player['team_id'] != 'free_agent':
-            embed.add_field(
-                name="💼 Contract",
-                value=f"💰 **£{player['contract_wage']:,}**/week\n⏳ **{player['contract_years']}** years left",
-                inline=False
-            )
-        
-        if player['injury_weeks'] and player['injury_weeks'] > 0:
-            embed.add_field(
-                name="🤕 Injury",
-                value=f"**{player['injury_type']}** - Out for **{player['injury_weeks']} weeks**",
-                inline=False
-            )
-        
-        career_progress = ((player['age'] - config.STARTING_AGE) / (config.RETIREMENT_AGE - config.STARTING_AGE)) * 100
-        progress_bar = self._create_progress_bar(career_progress)
-        
-        embed.add_field(
-            name="⏳ Career Timeline",
-            value=f"{progress_bar}\n{player['age']}/{config.RETIREMENT_AGE} years old ({int(career_progress)}% complete)",
-            inline=False
-        )
-        
-        state = await db.get_game_state()
-        embed.add_field(
-            name="📅 Season Info",
-            value=f"Joined: Week {player['joined_week']}\nCurrent: Week {state['current_week']}/{config.SEASON_TOTAL_WEEKS}",
-            inline=False
-        )
-        
-        embed.set_footer(text=f"Potential: {player['potential']} OVR | Retires at {config.RETIREMENT_AGE}")
-        
-        await interaction.response.send_message(embed=embed)
+    # ========== ARSENAL ==========
+    {'player_name': 'David Raya', 'team_id': 'arsenal', 'position': 'GK', 'overall_rating': 85, 'age': 29},
+    {'player_name': 'Aaron Ramsdale', 'team_id': 'arsenal', 'position': 'GK', 'overall_rating': 82, 'age': 26},
+    {'player_name': 'Ben White', 'team_id': 'arsenal', 'position': 'FB', 'overall_rating': 84, 'age': 27},
+    {'player_name': 'William Saliba', 'team_id': 'arsenal', 'position': 'CB', 'overall_rating': 86, 'age': 23},
+    {'player_name': 'Gabriel Magalhães', 'team_id': 'arsenal', 'position': 'CB', 'overall_rating': 85, 'age': 26},
+    {'player_name': 'Jurrien Timber', 'team_id': 'arsenal', 'position': 'FB', 'overall_rating': 81, 'age': 23},
+    {'player_name': 'Oleksandr Zinchenko', 'team_id': 'arsenal', 'position': 'FB', 'overall_rating': 82, 'age': 27},
+    {'player_name': 'Takehiro Tomiyasu', 'team_id': 'arsenal', 'position': 'FB', 'overall_rating': 80, 'age': 25},
+    {'player_name': 'Declan Rice', 'team_id': 'arsenal', 'position': 'CDM', 'overall_rating': 87, 'age': 25},
+    {'player_name': 'Thomas Partey', 'team_id': 'arsenal', 'position': 'CDM', 'overall_rating': 83, 'age': 31},
+    {'player_name': 'Martin Ødegaard', 'team_id': 'arsenal', 'position': 'CAM', 'overall_rating': 88, 'age': 25},
+    {'player_name': 'Kai Havertz', 'team_id': 'arsenal', 'position': 'CM', 'overall_rating': 84, 'age': 25},
+    {'player_name': 'Bukayo Saka', 'team_id': 'arsenal', 'position': 'W', 'overall_rating': 88, 'age': 23},
+    {'player_name': 'Gabriel Martinelli', 'team_id': 'arsenal', 'position': 'W', 'overall_rating': 84, 'age': 23},
+    {'player_name': 'Leandro Trossard', 'team_id': 'arsenal', 'position': 'W', 'overall_rating': 83, 'age': 29},
+    {'player_name': 'Gabriel Jesus', 'team_id': 'arsenal', 'position': 'ST', 'overall_rating': 83, 'age': 27},
     
-    def _create_progress_bar(self, percentage: float, length: int = 20) -> str:
-        """Create a visual progress bar"""
-        filled = int((percentage / 100) * length)
-        empty = length - filled
-        return f"[{'█' * filled}{'░' * empty}]"
+    # ========== LIVERPOOL ==========
+    {'player_name': 'Alisson Becker', 'team_id': 'liverpool', 'position': 'GK', 'overall_rating': 89, 'age': 32},
+    {'player_name': 'Caoimhin Kelleher', 'team_id': 'liverpool', 'position': 'GK', 'overall_rating': 78, 'age': 25},
+    {'player_name': 'Trent Alexander-Arnold', 'team_id': 'liverpool', 'position': 'FB', 'overall_rating': 87, 'age': 26},
+    {'player_name': 'Virgil van Dijk', 'team_id': 'liverpool', 'position': 'CB', 'overall_rating': 89, 'age': 33},
+    {'player_name': 'Ibrahima Konaté', 'team_id': 'liverpool', 'position': 'CB', 'overall_rating': 84, 'age': 25},
+    {'player_name': 'Joe Gomez', 'team_id': 'liverpool', 'position': 'CB', 'overall_rating': 81, 'age': 27},
+    {'player_name': 'Andy Robertson', 'team_id': 'liverpool', 'position': 'FB', 'overall_rating': 85, 'age': 30},
+    {'player_name': 'Kostas Tsimikas', 'team_id': 'liverpool', 'position': 'FB', 'overall_rating': 79, 'age': 28},
+    {'player_name': 'Alexis Mac Allister', 'team_id': 'liverpool', 'position': 'CM', 'overall_rating': 84, 'age': 25},
+    {'player_name': 'Dominik Szoboszlai', 'team_id': 'liverpool', 'position': 'CM', 'overall_rating': 83, 'age': 23},
+    {'player_name': 'Curtis Jones', 'team_id': 'liverpool', 'position': 'CM', 'overall_rating': 79, 'age': 23},
+    {'player_name': 'Ryan Gravenberch', 'team_id': 'liverpool', 'position': 'CM', 'overall_rating': 80, 'age': 22},
+    {'player_name': 'Mohamed Salah', 'team_id': 'liverpool', 'position': 'W', 'overall_rating': 89, 'age': 32},
+    {'player_name': 'Luis Díaz', 'team_id': 'liverpool', 'position': 'W', 'overall_rating': 85, 'age': 27},
+    {'player_name': 'Cody Gakpo', 'team_id': 'liverpool', 'position': 'W', 'overall_rating': 83, 'age': 25},
+    {'player_name': 'Darwin Núñez', 'team_id': 'liverpool', 'position': 'ST', 'overall_rating': 82, 'age': 25},
+    {'player_name': 'Diogo Jota', 'team_id': 'liverpool', 'position': 'ST', 'overall_rating': 84, 'age': 27},
     
-    @app_commands.command(name="compare", description="Compare your stats with another player")
-    @app_commands.describe(user="Player to compare with")
-    async def compare(self, interaction: discord.Interaction, user: discord.User):
-        """Compare two players"""
-        
-        player1 = await db.get_player(interaction.user.id)
-        player2 = await db.get_player(user.id)
-        
-        if not player1:
-            await interaction.response.send_message(
-                "❌ You haven't created a player yet! Use `/start` to begin.",
-                ephemeral=True
-            )
-            return
-        
-        if not player2:
-            await interaction.response.send_message(
-                f"❌ {user.mention} hasn't created a player yet!",
-                ephemeral=True
-            )
-            return
-        
-        if player1['retired']:
-            await interaction.response.send_message(
-                "❌ Your player is retired! Use `/start` to create a new player.",
-                ephemeral=True
-            )
-            return
-        
-        if player2['retired']:
-            await interaction.response.send_message(
-                f"❌ {user.mention}'s player is retired!",
-                ephemeral=True
-            )
-            return
-        
-        embed = discord.Embed(
-            title="⚔️ Player Comparison",
-            description=f"**{player1['player_name']}** vs **{player2['player_name']}**",
-            color=discord.Color.orange()
-        )
-        
-        def compare_stat(stat1, stat2):
-            if stat1 > stat2:
-                return f"**{stat1}** ✅", f"{stat2}"
-            elif stat2 > stat1:
-                return f"{stat1}", f"**{stat2}** ✅"
-            else:
-                return f"{stat1}", f"{stat2}"
-        
-        ovr1, ovr2 = compare_stat(player1['overall_rating'], player2['overall_rating'])
-        embed.add_field(name="⭐ Overall", value=f"{ovr1} | {ovr2}", inline=False)
-        
-        embed.add_field(name="📋 Position", value=f"{player1['position']} | {player2['position']}", inline=True)
-        age1, age2 = compare_stat(player2['age'], player1['age'])
-        embed.add_field(name="🎂 Age", value=f"{age2} | {age1}", inline=True)
-        
-        pace1, pace2 = compare_stat(player1['pace'], player2['pace'])
-        shoot1, shoot2 = compare_stat(player1['shooting'], player2['shooting'])
-        pass1, pass2 = compare_stat(player1['passing'], player2['passing'])
-        drib1, drib2 = compare_stat(player1['dribbling'], player2['dribbling'])
-        def1, def2 = compare_stat(player1['defending'], player2['defending'])
-        phys1, phys2 = compare_stat(player1['physical'], player2['physical'])
-        
-        embed.add_field(name="📊 Stats Comparison", value=(
-            f"⚡ Pace: {pace1} | {pace2}\n"
-            f"🎯 Shooting: {shoot1} | {shoot2}\n"
-            f"🎪 Passing: {pass1} | {pass2}\n"
-            f"🪄 Dribbling: {drib1} | {drib2}\n"
-            f"🛡️ Defending: {def1} | {def2}\n"
-            f"💪 Physical: {phys1} | {phys2}"
-        ), inline=False)
-        
-        goals1, goals2 = compare_stat(player1['season_goals'], player2['season_goals'])
-        assists1, assists2 = compare_stat(player1['season_assists'], player2['season_assists'])
-        apps1, apps2 = compare_stat(player1['season_apps'], player2['season_apps'])
-        
-        embed.add_field(name="📈 This Season", value=(
-            f"⚽ Goals: {goals1} | {goals2}\n"
-            f"🅰️ Assists: {assists1} | {assists2}\n"
-            f"👕 Apps: {apps1} | {apps2}"
-        ), inline=True)
-        
-        cgoals1, cgoals2 = compare_stat(player1['career_goals'], player2['career_goals'])
-        cassists1, cassists2 = compare_stat(player1['career_assists'], player2['career_assists'])
-        capps1, capps2 = compare_stat(player1['career_apps'], player2['career_apps'])
-        
-        embed.add_field(name="🏆 Career", value=(
-            f"⚽ Goals: {cgoals1} | {cgoals2}\n"
-            f"🅰️ Assists: {cassists1} | {cassists2}\n"
-            f"👕 Apps: {capps1} | {capps2}"
-        ), inline=True)
-        
-        team1 = await db.get_team(player1['team_id']) if player1['team_id'] != 'free_agent' else None
-        team2 = await db.get_team(player2['team_id']) if player2['team_id'] != 'free_agent' else None
-        
-        team1_name = team1['team_name'] if team1 else 'Free Agent'
-        team2_name = team2['team_name'] if team2 else 'Free Agent'
-        
-        embed.add_field(name="🏢 Clubs", value=f"{team1_name} | {team2_name}", inline=False)
-        
-        # ADD TEAM CRESTS
-        if team1:
-            try:
-                from utils.football_data_api import get_team_crest_url
-                crest1 = get_team_crest_url(player1['team_id'])
-                if crest1:
-                    embed.set_thumbnail(url=crest1)
-            except:
-                pass
-        
-        embed.set_footer(text="✅ = Higher/Better stat")
-        
-        await interaction.response.send_message(embed=embed)
+    # ========== CHELSEA ==========
+    {'player_name': 'Robert Sánchez', 'team_id': 'chelsea', 'position': 'GK', 'overall_rating': 81, 'age': 26},
+    {'player_name': 'Đorđe Petrović', 'team_id': 'chelsea', 'position': 'GK', 'overall_rating': 76, 'age': 24},
+    {'player_name': 'Reece James', 'team_id': 'chelsea', 'position': 'FB', 'overall_rating': 84, 'age': 24},
+    {'player_name': 'Malo Gusto', 'team_id': 'chelsea', 'position': 'FB', 'overall_rating': 78, 'age': 21},
+    {'player_name': 'Wesley Fofana', 'team_id': 'chelsea', 'position': 'CB', 'overall_rating': 81, 'age': 23},
+    {'player_name': 'Levi Colwill', 'team_id': 'chelsea', 'position': 'CB', 'overall_rating': 79, 'age': 21},
+    {'player_name': 'Thiago Silva', 'team_id': 'chelsea', 'position': 'CB', 'overall_rating': 86, 'age': 40},  # Will retire immediately
+    {'player_name': 'Ben Chilwell', 'team_id': 'chelsea', 'position': 'FB', 'overall_rating': 82, 'age': 27},
+    {'player_name': 'Marc Cucurella', 'team_id': 'chelsea', 'position': 'FB', 'overall_rating': 80, 'age': 26},
+    {'player_name': 'Moisés Caicedo', 'team_id': 'chelsea', 'position': 'CDM', 'overall_rating': 82, 'age': 22},
+    {'player_name': 'Enzo Fernández', 'team_id': 'chelsea', 'position': 'CM', 'overall_rating': 84, 'age': 23},
+    {'player_name': 'Conor Gallagher', 'team_id': 'chelsea', 'position': 'CM', 'overall_rating': 80, 'age': 24},
+    {'player_name': 'Cole Palmer', 'team_id': 'chelsea', 'position': 'CAM', 'overall_rating': 85, 'age': 22},
+    {'player_name': 'Raheem Sterling', 'team_id': 'chelsea', 'position': 'W', 'overall_rating': 84, 'age': 29},
+    {'player_name': 'Mykhailo Mudryk', 'team_id': 'chelsea', 'position': 'W', 'overall_rating': 79, 'age': 23},
+    {'player_name': 'Noni Madueke', 'team_id': 'chelsea', 'position': 'W', 'overall_rating': 77, 'age': 22},
+    {'player_name': 'Nicolas Jackson', 'team_id': 'chelsea', 'position': 'ST', 'overall_rating': 79, 'age': 23},
+    {'player_name': 'Christopher Nkunku', 'team_id': 'chelsea', 'position': 'ST', 'overall_rating': 85, 'age': 26},
+    
+    # ========== MANCHESTER UNITED ==========
+    {'player_name': 'André Onana', 'team_id': 'man_united', 'position': 'GK', 'overall_rating': 84, 'age': 28},
+    {'player_name': 'Altay Bayındır', 'team_id': 'man_united', 'position': 'GK', 'overall_rating': 76, 'age': 26},
+    {'player_name': 'Diogo Dalot', 'team_id': 'man_united', 'position': 'FB', 'overall_rating': 81, 'age': 25},
+    {'player_name': 'Aaron Wan-Bissaka', 'team_id': 'man_united', 'position': 'FB', 'overall_rating': 80, 'age': 26},
+    {'player_name': 'Lisandro Martínez', 'team_id': 'man_united', 'position': 'CB', 'overall_rating': 84, 'age': 26},
+    {'player_name': 'Raphaël Varane', 'team_id': 'man_united', 'position': 'CB', 'overall_rating': 85, 'age': 31},
+    {'player_name': 'Harry Maguire', 'team_id': 'man_united', 'position': 'CB', 'overall_rating': 81, 'age': 31},
+    {'player_name': 'Luke Shaw', 'team_id': 'man_united', 'position': 'FB', 'overall_rating': 83, 'age': 29},
+    {'player_name': 'Tyrell Malacia', 'team_id': 'man_united', 'position': 'FB', 'overall_rating': 77, 'age': 25},
+    {'player_name': 'Casemiro', 'team_id': 'man_united', 'position': 'CDM', 'overall_rating': 87, 'age': 32},
+    {'player_name': 'Kobbie Mainoo', 'team_id': 'man_united', 'position': 'CM', 'overall_rating': 75, 'age': 19},
+    {'player_name': 'Bruno Fernandes', 'team_id': 'man_united', 'position': 'CAM', 'overall_rating': 88, 'age': 30},
+    {'player_name': 'Mason Mount', 'team_id': 'man_united', 'position': 'CAM', 'overall_rating': 82, 'age': 25},
+    {'player_name': 'Marcus Rashford', 'team_id': 'man_united', 'position': 'W', 'overall_rating': 85, 'age': 27},
+    {'player_name': 'Alejandro Garnacho', 'team_id': 'man_united', 'position': 'W', 'overall_rating': 77, 'age': 20},
+    {'player_name': 'Antony', 'team_id': 'man_united', 'position': 'W', 'overall_rating': 80, 'age': 24},
+    {'player_name': 'Rasmus Højlund', 'team_id': 'man_united', 'position': 'ST', 'overall_rating': 79, 'age': 21},
+    
+    # ========== NEWCASTLE UNITED ==========
+    {'player_name': 'Nick Pope', 'team_id': 'newcastle', 'position': 'GK', 'overall_rating': 84, 'age': 32},
+    {'player_name': 'Martin Dúbravka', 'team_id': 'newcastle', 'position': 'GK', 'overall_rating': 78, 'age': 35},
+    {'player_name': 'Kieran Trippier', 'team_id': 'newcastle', 'position': 'FB', 'overall_rating': 83, 'age': 34},
+    {'player_name': 'Tino Livramento', 'team_id': 'newcastle', 'position': 'FB', 'overall_rating': 76, 'age': 21},
+    {'player_name': 'Sven Botman', 'team_id': 'newcastle', 'position': 'CB', 'overall_rating': 83, 'age': 24},
+    {'player_name': 'Fabian Schär', 'team_id': 'newcastle', 'position': 'CB', 'overall_rating': 82, 'age': 32},
+    {'player_name': 'Jamaal Lascelles', 'team_id': 'newcastle', 'position': 'CB', 'overall_rating': 77, 'age': 30},
+    {'player_name': 'Dan Burn', 'team_id': 'newcastle', 'position': 'CB', 'overall_rating': 79, 'age': 32},
+    {'player_name': 'Lewis Hall', 'team_id': 'newcastle', 'position': 'FB', 'overall_rating': 73, 'age': 19},
+    {'player_name': 'Bruno Guimarães', 'team_id': 'newcastle', 'position': 'CM', 'overall_rating': 86, 'age': 26},
+    {'player_name': 'Sandro Tonali', 'team_id': 'newcastle', 'position': 'CM', 'overall_rating': 84, 'age': 24},
+    {'player_name': 'Joelinton', 'team_id': 'newcastle', 'position': 'CM', 'overall_rating': 81, 'age': 28},
+    {'player_name': 'Sean Longstaff', 'team_id': 'newcastle', 'position': 'CM', 'overall_rating': 76, 'age': 26},
+    {'player_name': 'Anthony Gordon', 'team_id': 'newcastle', 'position': 'W', 'overall_rating': 81, 'age': 23},
+    {'player_name': 'Miguel Almirón', 'team_id': 'newcastle', 'position': 'W', 'overall_rating': 80, 'age': 30},
+    {'player_name': 'Harvey Barnes', 'team_id': 'newcastle', 'position': 'W', 'overall_rating': 79, 'age': 26},
+    {'player_name': 'Alexander Isak', 'team_id': 'newcastle', 'position': 'ST', 'overall_rating': 85, 'age': 25},
+    {'player_name': 'Callum Wilson', 'team_id': 'newcastle', 'position': 'ST', 'overall_rating': 81, 'age': 32},
+    
+    # ========== TOTTENHAM HOTSPUR ==========
+    {'player_name': 'Guglielmo Vicario', 'team_id': 'tottenham', 'position': 'GK', 'overall_rating': 81, 'age': 27},
+    {'player_name': 'Fraser Forster', 'team_id': 'tottenham', 'position': 'GK', 'overall_rating': 76, 'age': 36},
+    {'player_name': 'Pedro Porro', 'team_id': 'tottenham', 'position': 'FB', 'overall_rating': 82, 'age': 24},
+    {'player_name': 'Destiny Udogie', 'team_id': 'tottenham', 'position': 'FB', 'overall_rating': 78, 'age': 21},
+    {'player_name': 'Cristian Romero', 'team_id': 'tottenham', 'position': 'CB', 'overall_rating': 85, 'age': 26},
+    {'player_name': 'Micky van de Ven', 'team_id': 'tottenham', 'position': 'CB', 'overall_rating': 81, 'age': 23},
+    {'player_name': 'Ben Davies', 'team_id': 'tottenham', 'position': 'CB', 'overall_rating': 78, 'age': 31},
+    {'player_name': 'Yves Bissouma', 'team_id': 'tottenham', 'position': 'CDM', 'overall_rating': 81, 'age': 27},
+    {'player_name': 'Pape Matar Sarr', 'team_id': 'tottenham', 'position': 'CM', 'overall_rating': 77, 'age': 21},
+    {'player_name': 'Rodrigo Bentancur', 'team_id': 'tottenham', 'position': 'CM', 'overall_rating': 82, 'age': 27},
+    {'player_name': 'James Maddison', 'team_id': 'tottenham', 'position': 'CAM', 'overall_rating': 85, 'age': 27},
+    {'player_name': 'Dejan Kulusevski', 'team_id': 'tottenham', 'position': 'W', 'overall_rating': 83, 'age': 24},
+    {'player_name': 'Brennan Johnson', 'team_id': 'tottenham', 'position': 'W', 'overall_rating': 78, 'age': 23},
+    {'player_name': 'Son Heung-min', 'team_id': 'tottenham', 'position': 'W', 'overall_rating': 87, 'age': 32},
+    {'player_name': 'Richarlison', 'team_id': 'tottenham', 'position': 'ST', 'overall_rating': 81, 'age': 27},
+    
+    # ========== ASTON VILLA ==========
+    {'player_name': 'Emiliano Martínez', 'team_id': 'aston_villa', 'position': 'GK', 'overall_rating': 87, 'age': 32},
+    {'player_name': 'Robin Olsen', 'team_id': 'aston_villa', 'position': 'GK', 'overall_rating': 75, 'age': 34},
+    {'player_name': 'Matty Cash', 'team_id': 'aston_villa', 'position': 'FB', 'overall_rating': 80, 'age': 27},
+    {'player_name': 'Ezri Konsa', 'team_id': 'aston_villa', 'position': 'CB', 'overall_rating': 81, 'age': 26},
+    {'player_name': 'Pau Torres', 'team_id': 'aston_villa', 'position': 'CB', 'overall_rating': 83, 'age': 27},
+    {'player_name': 'Diego Carlos', 'team_id': 'aston_villa', 'position': 'CB', 'overall_rating': 81, 'age': 31},
+    {'player_name': 'Lucas Digne', 'team_id': 'aston_villa', 'position': 'FB', 'overall_rating': 81, 'age': 31},
+    {'player_name': 'Boubacar Kamara', 'team_id': 'aston_villa', 'position': 'CDM', 'overall_rating': 81, 'age': 24},
+    {'player_name': 'Douglas Luiz', 'team_id': 'aston_villa', 'position': 'CM', 'overall_rating': 83, 'age': 26},
+    {'player_name': 'John McGinn', 'team_id': 'aston_villa', 'position': 'CM', 'overall_rating': 81, 'age': 29},
+    {'player_name': 'Youri Tielemans', 'team_id': 'aston_villa', 'position': 'CM', 'overall_rating': 82, 'age': 27},
+    {'player_name': 'Leon Bailey', 'team_id': 'aston_villa', 'position': 'W', 'overall_rating': 81, 'age': 27},
+    {'player_name': 'Moussa Diaby', 'team_id': 'aston_villa', 'position': 'W', 'overall_rating': 82, 'age': 25},
+    {'player_name': 'Ollie Watkins', 'team_id': 'aston_villa', 'position': 'ST', 'overall_rating': 84, 'age': 28},
+    
+    # ========== BRIGHTON ==========
+    {'player_name': 'Bart Verbruggen', 'team_id': 'brighton', 'position': 'GK', 'overall_rating': 78, 'age': 21},
+    {'player_name': 'Jason Steele', 'team_id': 'brighton', 'position': 'GK', 'overall_rating': 72, 'age': 33},
+    {'player_name': 'Tariq Lamptey', 'team_id': 'brighton', 'position': 'FB', 'overall_rating': 76, 'age': 23},
+    {'player_name': 'Lewis Dunk', 'team_id': 'brighton', 'position': 'CB', 'overall_rating': 81, 'age': 32},
+    {'player_name': 'Jan Paul van Hecke', 'team_id': 'brighton', 'position': 'CB', 'overall_rating': 76, 'age': 24},
+    {'player_name': 'Igor Julio', 'team_id': 'brighton', 'position': 'CB', 'overall_rating': 75, 'age': 26},
+    {'player_name': 'Pervis Estupiñán', 'team_id': 'brighton', 'position': 'FB', 'overall_rating': 80, 'age': 26},
+    {'player_name': 'Pascal Groß', 'team_id': 'brighton', 'position': 'CM', 'overall_rating': 80, 'age': 33},
+    {'player_name': 'Billy Gilmour', 'team_id': 'brighton', 'position': 'CM', 'overall_rating': 76, 'age': 23},
+    {'player_name': 'Mahmoud Dahoud', 'team_id': 'brighton', 'position': 'CM', 'overall_rating': 77, 'age': 28},
+    {'player_name': 'Kaoru Mitoma', 'team_id': 'brighton', 'position': 'W', 'overall_rating': 82, 'age': 27},
+    {'player_name': 'Simon Adingra', 'team_id': 'brighton', 'position': 'W', 'overall_rating': 76, 'age': 22},
+    {'player_name': 'Joao Pedro', 'team_id': 'brighton', 'position': 'ST', 'overall_rating': 81, 'age': 22},
+    {'player_name': 'Evan Ferguson', 'team_id': 'brighton', 'position': 'ST', 'overall_rating': 76, 'age': 19},
+    
+    # ========== WEST HAM ==========
+    {'player_name': 'Alphonse Areola', 'team_id': 'west_ham', 'position': 'GK', 'overall_rating': 80, 'age': 31},
+    {'player_name': 'Łukasz Fabiański', 'team_id': 'west_ham', 'position': 'GK', 'overall_rating': 78, 'age': 39},
+    {'player_name': 'Vladimir Coufal', 'team_id': 'west_ham', 'position': 'FB', 'overall_rating': 78, 'age': 32},
+    {'player_name': 'Ben Johnson', 'team_id': 'west_ham', 'position': 'FB', 'overall_rating': 74, 'age': 24},
+    {'player_name': 'Kurt Zouma', 'team_id': 'west_ham', 'position': 'CB', 'overall_rating': 80, 'age': 29},
+    {'player_name': 'Nayef Aguerd', 'team_id': 'west_ham', 'position': 'CB', 'overall_rating': 79, 'age': 28},
+    {'player_name': 'Angelo Ogbonna', 'team_id': 'west_ham', 'position': 'CB', 'overall_rating': 76, 'age': 36},
+    {'player_name': 'Aaron Cresswell', 'team_id': 'west_ham', 'position': 'FB', 'overall_rating': 77, 'age': 34},
+    {'player_name': 'Emerson Palmieri', 'team_id': 'west_ham', 'position': 'FB', 'overall_rating': 78, 'age': 30},
+    {'player_name': 'Edson Álvarez', 'team_id': 'west_ham', 'position': 'CDM', 'overall_rating': 81, 'age': 26},
+    {'player_name': 'Tomáš Souček', 'team_id': 'west_ham', 'position': 'CM', 'overall_rating': 81, 'age': 29},
+    {'player_name': 'James Ward-Prowse', 'team_id': 'west_ham', 'position': 'CM', 'overall_rating': 82, 'age': 29},
+    {'player_name': 'Lucas Paquetá', 'team_id': 'west_ham', 'position': 'CAM', 'overall_rating': 84, 'age': 27},
+    {'player_name': 'Mohammed Kudus', 'team_id': 'west_ham', 'position': 'W', 'overall_rating': 80, 'age': 24},
+    {'player_name': 'Jarrod Bowen', 'team_id': 'west_ham', 'position': 'W', 'overall_rating': 83, 'age': 27},
+    {'player_name': 'Michail Antonio', 'team_id': 'west_ham', 'position': 'ST', 'overall_rating': 78, 'age': 34},
+    
+    # ========== BRENTFORD ==========
+    {'player_name': 'Mark Flekken', 'team_id': 'brentford', 'position': 'GK', 'overall_rating': 78, 'age': 31},
+    {'player_name': 'Thomas Strakosha', 'team_id': 'brentford', 'position': 'GK', 'overall_rating': 74, 'age': 29},
+    {'player_name': 'Aaron Hickey', 'team_id': 'brentford', 'position': 'FB', 'overall_rating': 76, 'age': 22},
+    {'player_name': 'Nathan Collins', 'team_id': 'brentford', 'position': 'CB', 'overall_rating': 78, 'age': 23},
+    {'player_name': 'Ethan Pinnock', 'team_id': 'brentford', 'position': 'CB', 'overall_rating': 76, 'age': 31},
+    {'player_name': 'Ben Mee', 'team_id': 'brentford', 'position': 'CB', 'overall_rating': 75, 'age': 34},
+    {'player_name': 'Kristoffer Ajer', 'team_id': 'brentford', 'position': 'CB', 'overall_rating': 77, 'age': 26},
+    {'player_name': 'Rico Henry', 'team_id': 'brentford', 'position': 'FB', 'overall_rating': 77, 'age': 27},
+    {'player_name': 'Christian Nørgaard', 'team_id': 'brentford', 'position': 'CDM', 'overall_rating': 78, 'age': 30},
+    {'player_name': 'Vitaly Janelt', 'team_id': 'brentford', 'position': 'CM', 'overall_rating': 77, 'age': 25},
+    {'player_name': 'Mathias Jensen', 'team_id': 'brentford', 'position': 'CM', 'overall_rating': 77, 'age': 28},
+    {'player_name': 'Mikkel Damsgaard', 'team_id': 'brentford', 'position': 'CAM', 'overall_rating': 76, 'age': 24},
+    {'player_name': 'Bryan Mbeumo', 'team_id': 'brentford', 'position': 'W', 'overall_rating': 79, 'age': 25},
+    {'player_name': 'Yoane Wissa', 'team_id': 'brentford', 'position': 'W', 'overall_rating': 77, 'age': 27},
+    {'player_name': 'Ivan Toney', 'team_id': 'brentford', 'position': 'ST', 'overall_rating': 82, 'age': 28},
+    
+    # ========== FULHAM ==========
+    {'player_name': 'Bernd Leno', 'team_id': 'fulham', 'position': 'GK', 'overall_rating': 82, 'age': 32},
+    {'player_name': 'Marek Rodák', 'team_id': 'fulham', 'position': 'GK', 'overall_rating': 73, 'age': 27},
+    {'player_name': 'Kenny Tete', 'team_id': 'fulham', 'position': 'FB', 'overall_rating': 76, 'age': 28},
+    {'player_name': 'Tim Ream', 'team_id': 'fulham', 'position': 'CB', 'overall_rating': 76, 'age': 36},
+    {'player_name': 'Tosin Adarabioyo', 'team_id': 'fulham', 'position': 'CB', 'overall_rating': 77, 'age': 26},
+    {'player_name': 'Calvin Bassey', 'team_id': 'fulham', 'position': 'CB', 'overall_rating': 77, 'age': 24},
+    {'player_name': 'Antonee Robinson', 'team_id': 'fulham', 'position': 'FB', 'overall_rating': 79, 'age': 27},
+    {'player_name': 'João Palhinha', 'team_id': 'fulham', 'position': 'CDM', 'overall_rating': 84, 'age': 29},
+    {'player_name': 'Harrison Reed', 'team_id': 'fulham', 'position': 'CM', 'overall_rating': 74, 'age': 29},
+    {'player_name': 'Tom Cairney', 'team_id': 'fulham', 'position': 'CM', 'overall_rating': 73, 'age': 33},
+    {'player_name': 'Andreas Pereira', 'team_id': 'fulham', 'position': 'CAM', 'overall_rating': 80, 'age': 28},
+    {'player_name': 'Willian', 'team_id': 'fulham', 'position': 'W', 'overall_rating': 76, 'age': 36},
+    {'player_name': 'Harry Wilson', 'team_id': 'fulham', 'position': 'W', 'overall_rating': 76, 'age': 27},
+    {'player_name': 'Raúl Jiménez', 'team_id': 'fulham', 'position': 'ST', 'overall_rating': 79, 'age': 33},
+    
+    # ========== CRYSTAL PALACE ==========
+    {'player_name': 'Sam Johnstone', 'team_id': 'crystal_palace', 'position': 'GK', 'overall_rating': 77, 'age': 31},
+    {'player_name': 'Dean Henderson', 'team_id': 'crystal_palace', 'position': 'GK', 'overall_rating': 78, 'age': 27},
+    {'player_name': 'Joel Ward', 'team_id': 'crystal_palace', 'position': 'FB', 'overall_rating': 73, 'age': 34},
+    {'player_name': 'Marc Guéhi', 'team_id': 'crystal_palace', 'position': 'CB', 'overall_rating': 80, 'age': 24},
+    {'player_name': 'Joachim Andersen', 'team_id': 'crystal_palace', 'position': 'CB', 'overall_rating': 79, 'age': 28},
+    {'player_name': 'Chris Richards', 'team_id': 'crystal_palace', 'position': 'CB', 'overall_rating': 74, 'age': 24},
+    {'player_name': 'Tyrick Mitchell', 'team_id': 'crystal_palace', 'position': 'FB', 'overall_rating': 76, 'age': 25},
+    {'player_name': 'Cheick Doucouré', 'team_id': 'crystal_palace', 'position': 'CDM', 'overall_rating': 76, 'age': 24},
+    {'player_name': 'Jefferson Lerma', 'team_id': 'crystal_palace', 'position': 'CM', 'overall_rating': 77, 'age': 29},
+    {'player_name': 'Will Hughes', 'team_id': 'crystal_palace', 'position': 'CM', 'overall_rating': 73, 'age': 29},
+    {'player_name': 'Eberechi Eze', 'team_id': 'crystal_palace', 'position': 'CAM', 'overall_rating': 82, 'age': 26},
+    {'player_name': 'Michael Olise', 'team_id': 'crystal_palace', 'position': 'W', 'overall_rating': 81, 'age': 22},
+    {'player_name': 'Jordan Ayew', 'team_id': 'crystal_palace', 'position': 'W', 'overall_rating': 74, 'age': 32},
+    {'player_name': 'Jean-Philippe Mateta', 'team_id': 'crystal_palace', 'position': 'ST', 'overall_rating': 76, 'age': 27},
+    
+    # ========== EVERTON ==========
+    {'player_name': 'Jordan Pickford', 'team_id': 'everton', 'position': 'GK', 'overall_rating': 83, 'age': 30},
+    {'player_name': 'João Virgínia', 'team_id': 'everton', 'position': 'GK', 'overall_rating': 69, 'age': 24},
+    {'player_name': 'Ashley Young', 'team_id': 'everton', 'position': 'FB', 'overall_rating': 71, 'age': 39},
+    {'player_name': 'James Tarkowski', 'team_id': 'everton', 'position': 'CB', 'overall_rating': 79, 'age': 31},
+    {'player_name': 'Jarrad Branthwaite', 'team_id': 'everton', 'position': 'CB', 'overall_rating': 76, 'age': 22},
+    {'player_name': 'Michael Keane', 'team_id': 'everton', 'position': 'CB', 'overall_rating': 75, 'age': 31},
+    {'player_name': 'Vitalii Mykolenko', 'team_id': 'everton', 'position': 'FB', 'overall_rating': 74, 'age': 25},
+    {'player_name': 'Idrissa Gueye', 'team_id': 'everton', 'position': 'CDM', 'overall_rating': 77, 'age': 34},
+    {'player_name': 'Abdoulaye Doucouré', 'team_id': 'everton', 'position': 'CM', 'overall_rating': 76, 'age': 31},
+    {'player_name': 'Amadou Onana', 'team_id': 'everton', 'position': 'CM', 'overall_rating': 78, 'age': 22},
+    {'player_name': 'James Garner', 'team_id': 'everton', 'position': 'CM', 'overall_rating': 74, 'age': 23},
+    {'player_name': 'Jack Harrison', 'team_id': 'everton', 'position': 'W', 'overall_rating': 76, 'age': 27},
+    {'player_name': 'Dwight McNeil', 'team_id': 'everton', 'position': 'W', 'overall_rating': 76, 'age': 24},
+    {'player_name': 'Dominic Calvert-Lewin', 'team_id': 'everton', 'position': 'ST', 'overall_rating': 78, 'age': 27},
+    
+    # ========== NOTTINGHAM FOREST ==========
+    {'player_name': 'Matz Sels', 'team_id': 'nottm_forest', 'position': 'GK', 'overall_rating': 76, 'age': 32},
+    {'player_name': 'Matt Turner', 'team_id': 'nottm_forest', 'position': 'GK', 'overall_rating': 73, 'age': 30},
+    {'player_name': 'Neco Williams', 'team_id': 'nottm_forest', 'position': 'FB', 'overall_rating': 75, 'age': 23},
+    {'player_name': 'Murillo', 'team_id': 'nottm_forest', 'position': 'CB', 'overall_rating': 76, 'age': 22},
+    {'player_name': 'Willy Boly', 'team_id': 'nottm_forest', 'position': 'CB', 'overall_rating': 75, 'age': 33},
+    {'player_name': 'Joe Worrall', 'team_id': 'nottm_forest', 'position': 'CB', 'overall_rating': 72, 'age': 27},
+    {'player_name': 'Ola Aina', 'team_id': 'nottm_forest', 'position': 'FB', 'overall_rating': 74, 'age': 27},
+    {'player_name': 'Danilo', 'team_id': 'nottm_forest', 'position': 'CDM', 'overall_rating': 75, 'age': 23},
+    {'player_name': 'Ibrahim Sangaré', 'team_id': 'nottm_forest', 'position': 'CDM', 'overall_rating': 78, 'age': 26},
+    {'player_name': 'Ryan Yates', 'team_id': 'nottm_forest', 'position': 'CM', 'overall_rating': 71, 'age': 26},
+    {'player_name': 'Morgan Gibbs-White', 'team_id': 'nottm_forest', 'position': 'CAM', 'overall_rating': 78, 'age': 24},
+    {'player_name': 'Anthony Elanga', 'team_id': 'nottm_forest', 'position': 'W', 'overall_rating': 74, 'age': 22},
+    {'player_name': 'Callum Hudson-Odoi', 'team_id': 'nottm_forest', 'position': 'W', 'overall_rating': 76, 'age': 23},
+    {'player_name': 'Chris Wood', 'team_id': 'nottm_forest', 'position': 'ST', 'overall_rating': 75, 'age': 32},
+    
+    # ========== BOURNEMOUTH ==========
+    {'player_name': 'Neto', 'team_id': 'bournemouth', 'position': 'GK', 'overall_rating': 78, 'age': 35},
+    {'player_name': 'Mark Travers', 'team_id': 'bournemouth', 'position': 'GK', 'overall_rating': 68, 'age': 25},
+    {'player_name': 'Adam Smith', 'team_id': 'bournemouth', 'position': 'FB', 'overall_rating': 72, 'age': 33},
+    {'player_name': 'Illia Zabarnyi', 'team_id': 'bournemouth', 'position': 'CB', 'overall_rating': 75, 'age': 22},
+    {'player_name': 'Marcos Senesi', 'team_id': 'bournemouth', 'position': 'CB', 'overall_rating': 76, 'age': 27},
+    {'player_name': 'Chris Mepham', 'team_id': 'bournemouth', 'position': 'CB', 'overall_rating': 72, 'age': 26},
+    {'player_name': 'Milos Kerkez', 'team_id': 'bournemouth', 'position': 'FB', 'overall_rating': 72, 'age': 20},
+    {'player_name': 'Ryan Christie', 'team_id': 'bournemouth', 'position': 'CM', 'overall_rating': 74, 'age': 29},
+    {'player_name': 'Lewis Cook', 'team_id': 'bournemouth', 'position': 'CM', 'overall_rating': 74, 'age': 27},
+    {'player_name': 'Philip Billing', 'team_id': 'bournemouth', 'position': 'CM', 'overall_rating': 74, 'age': 28},
+    {'player_name': 'Marcus Tavernier', 'team_id': 'bournemouth', 'position': 'CAM', 'overall_rating': 74, 'age': 25},
+    {'player_name': 'Luis Sinisterra', 'team_id': 'bournemouth', 'position': 'W', 'overall_rating': 76, 'age': 25},
+    {'player_name': 'Dango Ouattara', 'team_id': 'bournemouth', 'position': 'W', 'overall_rating': 73, 'age': 22},
+    {'player_name': 'Dominic Solanke', 'team_id': 'bournemouth', 'position': 'ST', 'overall_rating': 78, 'age': 27},
+    
+    # ========== WOLVES ==========
+    {'player_name': 'José Sá', 'team_id': 'wolves', 'position': 'GK', 'overall_rating': 79, 'age': 31},
+    {'player_name': 'Daniel Bentley', 'team_id': 'wolves', 'position': 'GK', 'overall_rating': 70, 'age': 30},
+    {'player_name': 'Nélson Semedo', 'team_id': 'wolves', 'position': 'FB', 'overall_rating': 78, 'age': 30},
+    {'player_name': 'Max Kilman', 'team_id': 'wolves', 'position': 'CB', 'overall_rating': 77, 'age': 27},
+    {'player_name': 'Craig Dawson', 'team_id': 'wolves', 'position': 'CB', 'overall_rating': 73, 'age': 34},
+    {'player_name': 'Santiago Bueno', 'team_id': 'wolves', 'position': 'CB', 'overall_rating': 73, 'age': 24},
+    {'player_name': 'Rayan Aït-Nouri', 'team_id': 'wolves', 'position': 'FB', 'overall_rating': 76, 'age': 23},
+    {'player_name': 'João Gomes', 'team_id': 'wolves', 'position': 'CDM', 'overall_rating': 76, 'age': 23},
+    {'player_name': 'Mario Lemina', 'team_id': 'wolves', 'position': 'CM', 'overall_rating': 76, 'age': 31},
+    {'player_name': 'Tommy Doyle', 'team_id': 'wolves', 'position': 'CM', 'overall_rating': 70, 'age': 22},
+    {'player_name': 'Pablo Sarabia', 'team_id': 'wolves', 'position': 'CAM', 'overall_rating': 79, 'age': 32},
+    {'player_name': 'Pedro Neto', 'team_id': 'wolves', 'position': 'W', 'overall_rating': 79, 'age': 24},
+    {'player_name': 'Hwang Hee-chan', 'team_id': 'wolves', 'position': 'W', 'overall_rating': 76, 'age': 28},
+    {'player_name': 'Matheus Cunha', 'team_id': 'wolves', 'position': 'ST', 'overall_rating': 79, 'age': 25},
+    
+    # ========== LEICESTER ==========
+    {'player_name': 'Mads Hermansen', 'team_id': 'leicester', 'position': 'GK', 'overall_rating': 73, 'age': 24},
+    {'player_name': 'Danny Ward', 'team_id': 'leicester', 'position': 'GK', 'overall_rating': 73, 'age': 31},
+    {'player_name': 'James Justin', 'team_id': 'leicester', 'position': 'FB', 'overall_rating': 75, 'age': 26},
+    {'player_name': 'Jannik Vestergaard', 'team_id': 'leicester', 'position': 'CB', 'overall_rating': 74, 'age': 32},
+    {'player_name': 'Wout Faes', 'team_id': 'leicester', 'position': 'CB', 'overall_rating': 75, 'age': 26},
+    {'player_name': 'Caleb Okoli', 'team_id': 'leicester', 'position': 'CB', 'overall_rating': 71, 'age': 23},
+    {'player_name': 'Victor Kristiansen', 'team_id': 'leicester', 'position': 'FB', 'overall_rating': 72, 'age': 21},
+    {'player_name': 'Harry Winks', 'team_id': 'leicester', 'position': 'CM', 'overall_rating': 75, 'age': 28},
+    {'player_name': 'Wilfred Ndidi', 'team_id': 'leicester', 'position': 'CDM', 'overall_rating': 79, 'age': 27},
+    {'player_name': 'Kiernan Dewsbury-Hall', 'team_id': 'leicester', 'position': 'CM', 'overall_rating': 74, 'age': 25},
+    {'player_name': 'Abdul Fatawu', 'team_id': 'leicester', 'position': 'W', 'overall_rating': 72, 'age': 20},
+    {'player_name': 'Stephy Mavididi', 'team_id': 'leicester', 'position': 'W', 'overall_rating': 73, 'age': 26},
+    {'player_name': 'Jamie Vardy', 'team_id': 'leicester', 'position': 'ST', 'overall_rating': 76, 'age': 37},
+    {'player_name': 'Patson Daka', 'team_id': 'leicester', 'position': 'ST', 'overall_rating': 74, 'age': 25},
+    
+    # ========== SOUTHAMPTON ==========
+    {'player_name': 'Gavin Bazunu', 'team_id': 'southampton', 'position': 'GK', 'overall_rating': 74, 'age': 22},
+    {'player_name': 'Alex McCarthy', 'team_id': 'southampton', 'position': 'GK', 'overall_rating': 72, 'age': 34},
+    {'player_name': 'Kyle Walker-Peters', 'team_id': 'southampton', 'position': 'FB', 'overall_rating': 75, 'age': 27},
+    {'player_name': 'Jan Bednarek', 'team_id': 'southampton', 'position': 'CB', 'overall_rating': 74, 'age': 28},
+    {'player_name': 'Taylor Harwood-Bellis', 'team_id': 'southampton', 'position': 'CB', 'overall_rating': 70, 'age': 22},
+    {'player_name': 'Jack Stephens', 'team_id': 'southampton', 'position': 'CB', 'overall_rating': 68, 'age': 30},
+    {'player_name': 'Ryan Manning', 'team_id': 'southampton', 'position': 'FB', 'overall_rating': 71, 'age': 28},
+    {'player_name': 'Flynn Downes', 'team_id': 'southampton', 'position': 'CDM', 'overall_rating': 72, 'age': 25},
+    {'player_name': 'Joe Aribo', 'team_id': 'southampton', 'position': 'CM', 'overall_rating': 74, 'age': 28},
+    {'player_name': 'Will Smallbone', 'team_id': 'southampton', 'position': 'CM', 'overall_rating': 69, 'age': 24},
+    {'player_name': 'Samuel Edozie', 'team_id': 'southampton', 'position': 'W', 'overall_rating': 68, 'age': 21},
+    {'player_name': 'Kamaldeen Sulemana', 'team_id': 'southampton', 'position': 'W', 'overall_rating': 72, 'age': 22},
+    {'player_name': 'Adam Armstrong', 'team_id': 'southampton', 'position': 'ST', 'overall_rating': 74, 'age': 27},
+    {'player_name': 'Ché Adams', 'team_id': 'southampton', 'position': 'ST', 'overall_rating': 74, 'age': 28},
+    
+    # ========== IPSWICH TOWN ==========
+    {'player_name': 'Václav Hladký', 'team_id': 'ipswich', 'position': 'GK', 'overall_rating': 71, 'age': 33},
+    {'player_name': 'Christian Walton', 'team_id': 'ipswich', 'position': 'GK', 'overall_rating': 68, 'age': 28},
+    {'player_name': 'Axel Tuanzebe', 'team_id': 'ipswich', 'position': 'CB', 'overall_rating': 72, 'age': 26},
+    {'player_name': 'Cameron Burgess', 'team_id': 'ipswich', 'position': 'CB', 'overall_rating': 69, 'age': 28},
+    {'player_name': 'Luke Woolfenden', 'team_id': 'ipswich', 'position': 'CB', 'overall_rating': 68, 'age': 25},
+    {'player_name': 'Leif Davis', 'team_id': 'ipswich', 'position': 'FB', 'overall_rating': 70, 'age': 24},
+    {'player_name': 'Sam Morsy', 'team_id': 'ipswich', 'position': 'CDM', 'overall_rating': 72, 'age': 32},
+    {'player_name': 'Massimo Luongo', 'team_id': 'ipswich', 'position': 'CM', 'overall_rating': 70, 'age': 31},
+    {'player_name': 'Wes Burns', 'team_id': 'ipswich', 'position': 'W', 'overall_rating': 69, 'age': 29},
+    {'player_name': 'Nathan Broadhead', 'team_id': 'ipswich', 'position': 'W', 'overall_rating': 70, 'age': 26},
+    {'player_name': 'Omari Hutchinson', 'team_id': 'ipswich', 'position': 'W', 'overall_rating': 71, 'age': 20},
+    {'player_name': 'George Hirst', 'team_id': 'ipswich', 'position': 'ST', 'overall_rating': 68, 'age': 25},
+    {'player_name': 'Ali Al-Hamadi', 'team_id': 'ipswich', 'position': 'ST', 'overall_rating': 67, 'age': 22},
+]
 
-
-async def setup(bot):
-    await bot.add_cog(PlayerCommands(bot))
+# Note: Thiago Silva (age 40), Łukasz Fabiański (age 39), Ashley Young (age 39), 
+# and Jamie Vardy (age 37) are close to retirement age and may retire early in the game
