@@ -186,11 +186,17 @@ class PlayerCommands(commands.Cog):
                 inline=False
             )
             
-            # ADD TEAM CREST
-            from utils.football_data_api import get_team_crest_url
-            crest = get_team_crest_url(assigned_team)
-            if crest:
-                embed.set_thumbnail(url=crest)
+            # ADD TEAM CREST - IMPROVED WITH ERROR HANDLING
+            try:
+                from utils.football_data_api import get_team_crest_url
+                crest = get_team_crest_url(assigned_team)
+                if crest:
+                    embed.set_thumbnail(url=crest)
+                    print(f"✅ Set crest for {assigned_team}: {crest[:50]}")
+                else:
+                    print(f"⚠️ No crest found for {assigned_team}")
+            except Exception as e:
+                print(f"❌ Error getting crest: {e}")
         
         embed.add_field(name="Career Path", value=(
             f"**Starting Point: Championship**\n"
@@ -263,11 +269,20 @@ class PlayerCommands(commands.Cog):
             team = await db.get_team(player['team_id'])
             team_display = f"{team['team_name']} ({team['league']})" if team else player['team_id']
             
-            # ADD TEAM CREST
-            from utils.football_data_api import get_team_crest_url
-            crest = get_team_crest_url(player['team_id'])
-            if crest:
-                embed.set_thumbnail(url=crest)
+            # ADD TEAM CREST - IMPROVED WITH DEBUGGING
+            try:
+                from utils.football_data_api import get_team_crest_url
+                crest_url = get_team_crest_url(player['team_id'])
+                
+                if crest_url:
+                    embed.set_thumbnail(url=crest_url)
+                    print(f"✅ Profile crest set: {player['team_id']} -> {crest_url[:50]}")
+                else:
+                    print(f"⚠️ Profile: No crest URL for {player['team_id']}")
+            except Exception as e:
+                print(f"❌ Profile crest error: {e}")
+                import traceback
+                traceback.print_exc()
         else:
             team_display = '🆓 Free Agent'
         
@@ -450,14 +465,18 @@ class PlayerCommands(commands.Cog):
         
         # ADD TEAM CRESTS
         if team1:
-            from utils.football_data_api import get_team_crest_url
-            crest1 = get_team_crest_url(player1['team_id'])
-            if crest1:
-                embed.set_thumbnail(url=crest1)
+            try:
+                from utils.football_data_api import get_team_crest_url
+                crest1 = get_team_crest_url(player1['team_id'])
+                if crest1:
+                    embed.set_thumbnail(url=crest1)
+            except:
+                pass
         
         embed.set_footer(text="✅ = Higher/Better stat")
         
         await interaction.response.send_message(embed=embed)
+
 
 async def setup(bot):
     await bot.add_cog(PlayerCommands(bot))
