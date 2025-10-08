@@ -368,7 +368,8 @@ class AcceptOfferButton(discord.ui.Button):
         self.view.stop()
 
 async def setup(bot):
-    await bot.add_cog(TransferCommands(bot))        offers = await get_pending_offers(interaction.user.id)
+    await bot.add_cog(TransferCommands(bot))        
+    offers = await get_pending_offers(interaction.user.id)
         
         if not offers:
             await interaction.response.send_message(
