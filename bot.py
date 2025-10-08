@@ -601,6 +601,256 @@ async def admin_command(
         await interaction.followup.send(embed=embed)
 
 
+# ========== DEBUG COMMANDS FOR CRESTS ==========
+
+@bot.tree.command(name="debug_crests", description="[ADMIN] Test team crests and logos display")
+@app_commands.describe(team_id="Team ID to test (e.g., man_city, arsenal)")
+async def debug_crests(interaction: discord.Interaction, team_id: str = "man_city"):
+    """Debug command to test crest loading"""
+    
+    if not interaction.user.guild_permissions.administrator:
+        await interaction.response.send_message("❌ Administrator permissions required!", ephemeral=True)
+        return
+    
+    await interaction.response.defer()
+    
+    # Test importing
+    import_results = []
+    
+    try:
+        from utils.crests_database import get_team_crest_url as db_get_crest
+        from utils.crests_database import get_competition_logo_url as db_get_logo
+        import_results.append("✅ utils.crests_database imported")
+        
+        test_crest = db_get_crest(team_id)
+        test_logo = db_get_logo('Premier League')
+        
+        import_results.append(f"✅ Direct DB: {test_crest[:50] if test_crest else 'EMPTY'}...")
+        import_results.append(f"✅ Logo DB: {test_logo[:50] if test_logo else 'EMPTY'}...")
+    except Exception as e:
+        import_results.append(f"❌ crests_database error: {e}")
+    
+    try:
+        from utils.football_data_api import get_team_crest_url, get_competition_logo
+        import_results.append("✅ utils.football_data_api imported")
+        
+        api_crest = get_team_crest_url(team_id)
+        api_logo = get_competition_logo('Premier League')
+        
+        import_results.append(f"✅ API crest: {api_crest[:50] if api_crest else 'EMPTY'}...")
+        import_results.append(f"✅ API logo: {api_logo[:50] if api_logo else 'EMPTY'}...")
+    except Exception as e:
+        import_results.append(f"❌ football_data_api error: {e}")
+    
+    # Create visual test embed
+    embed = discord.Embed(
+        title="🔍 Crest System Debug Report",
+        description=f"Testing team: `{team_id}`",
+        color=discord.Color.blue()
+    )
+    
+    embed.add_field(
+        name="Import Tests",
+        value="\n".join(import_results),
+        inline=False
+    )
+    
+    # Test popular teams
+    test_teams = ['man_city', 'arsenal', 'liverpool', 'chelsea', 'leeds']
+    team_results = []
+    
+    from utils.football_data_api import get_team_crest_url
+    
+    for tid in test_teams:
+        url = get_team_crest_url(tid)
+        if url:
+            team_results.append(f"✅ {tid}: Found")
+        else:
+            team_results.append(f"❌ {tid}: NOT FOUND")
+    
+    embed.add_field(
+        name="Team Crest Tests",
+        value="\n".join(team_results),
+        inline=False
+    )
+    
+    # Try to display the crest
+    final_url = get_team_crest_url(team_id)
+    
+    if final_url:
+        embed.set_thumbnail(url=final_url)
+        embed.add_field(
+            name="✅ Visual Test",
+            value=f"If you see a crest above, it works!\nURL: {final_url}",
+            inline=False
+        )
+    else:
+        embed.add_field(
+            name="❌ Visual Test Failed",
+            value=f"No URL returned for `{team_id}`",
+            inline=False
+        )
+    
+    # Test competition logo
+    from utils.football_data_api import get_competition_logo
+    logo_url = get_competition_logo('Premier League')
+    
+    if logo_url:
+        embed.set_footer(text="Premier League", icon_url=logo_url)
+    
+    await interaction.followup.send(embed=embed)
+
+
+@bot.tree.command(name="test_profile_crest", description="[ADMIN] Test if profile shows team crest")
+async def test_profile_crest(interaction: discord.Interaction, user: discord.User = None):
+    """Test profile crest display"""
+    
+    if not interaction.user.guild_permissions.administrator:
+        await interaction.response.send_message("❌ Admin only!", ephemeral=True)
+        return
+    
+    target_user = user or interaction.user
+    player = await db.get_player(target_user.id)
+    
+    if not player:
+        await interaction.response.send_message("❌ User has no player!", ephemeral=True)
+        return
+    
+    embed = discord.Embed(
+        title=f"🔍 Profile Crest Test",
+        description=f"Player: {player['player_name']}\nTeam: {player['team_id']}",
+        color=discord.Color.green()
+    )
+    
+    if player['team_id'] == 'free_agent':
+        embed.add_field(name="Status", value="❌ Player is free agent (no crest)", inline=False)
+    else:
+        from utils.football_data_api import get_team_crest_url
+        crest_url = get_team_crest_url(player['team_id'])
+        
+        embed.add_field(name="Team ID", value=f"`{player['team_id']}`", inline=True)
+        embed.add_field(name="Crest URL Found?", value="✅ Yes" if crest_url else "❌ No", inline=True)
+        
+        if crest_url:
+            embed.add_field(name="URL", value=crest_url, inline=False)
+            embed.set_thumbnail(url=crest_url)
+            embed.add_field(name="Result", value="✅ If you see the crest above, it works!", inline=False)
+        else:
+            embed.add_field(name="Result", value=f"❌ No crest URL found for `{player['team_id']}`", inline=False)
+            
+            # Suggest fix
+            team = await db.get_team(player['team_id'])
+            if team:
+                embed.add_field(
+                    name="Team Info",
+                    value=f"Team Name: {team['team_name']}\nLeague: {team['league']}",
+                    inline=False
+                )
+    
+    await interaction.response.send_message(embed=embed)
+
+
+@bot.tree.command(name="check_imports", description="[ADMIN] Check which modules are loaded")
+async def check_imports(interaction: discord.Interaction):
+    """Check what's imported in the bot"""
+    
+    if not interaction.user.guild_permissions.administrator:
+        await interaction.response.send_message("❌ Admin only!", ephemeral=True)
+        return
+    
+    import sys
+    
+    embed = discord.Embed(
+        title="🔍 Module Import Check",
+        color=discord.Color.blue()
+    )
+    
+    # Check if modules are loaded
+    modules_to_check = [
+        'utils.crests_database',
+        'utils.football_data_api',
+        'utils.match_engine',
+        'utils.transfer_window_manager',
+        'commands.transfers'
+    ]
+    
+    results = []
+    for module in modules_to_check:
+        if module in sys.modules:
+            results.append(f"✅ {module}")
+        else:
+            results.append(f"❌ {module} (not loaded)")
+    
+    embed.add_field(name="Loaded Modules", value="\n".join(results), inline=False)
+    
+    # Test actual function calls
+    try:
+        from utils.football_data_api import get_team_crest_url
+        test_result = get_team_crest_url('man_city')
+        embed.add_field(
+            name="Function Test",
+            value=f"✅ get_team_crest_url('man_city'):\n{test_result[:100] if test_result else 'EMPTY'}",
+            inline=False
+        )
+    except Exception as e:
+        embed.add_field(name="Function Test", value=f"❌ Error: {e}", inline=False)
+    
+    await interaction.response.send_message(embed=embed)
+
+
+@bot.tree.command(name="reload_crests", description="[ADMIN] Reload the crest system")
+async def reload_crests(interaction: discord.Interaction):
+    """Attempt to reload crest modules"""
+    
+    if not interaction.user.guild_permissions.administrator:
+        await interaction.response.send_message("❌ Admin only!", ephemeral=True)
+        return
+    
+    await interaction.response.defer()
+    
+    import importlib
+    import sys
+    
+    results = []
+    
+    # Reload modules
+    modules = [
+        'utils.crests_database',
+        'utils.football_data_api',
+    ]
+    
+    for module_name in modules:
+        try:
+            if module_name in sys.modules:
+                importlib.reload(sys.modules[module_name])
+                results.append(f"✅ Reloaded {module_name}")
+            else:
+                # Try to import fresh
+                importlib.import_module(module_name)
+                results.append(f"✅ Imported {module_name}")
+        except Exception as e:
+            results.append(f"❌ {module_name}: {e}")
+    
+    # Test after reload
+    try:
+        from utils.football_data_api import get_team_crest_url
+        test_url = get_team_crest_url('man_city')
+        if test_url:
+            results.append(f"✅ Test successful: URL found")
+        else:
+            results.append("⚠️ Test: No URL returned")
+    except Exception as e:
+        results.append(f"❌ Test failed: {e}")
+    
+    embed = discord.Embed(
+        title="🔧 Crest System Reload",
+        description="\n".join(results),
+        color=discord.Color.green()
+    )
+    
+    await interaction.followup.send(embed=embed)
+
+
 class ConfirmWipeView(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=30)
