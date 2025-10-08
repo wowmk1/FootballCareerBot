@@ -18,6 +18,42 @@ except ImportError:
         return ""
 
 
+class EnhancedActionView(discord.ui.View):
+    def __init__(self, available_actions, timeout=30):
+        super().__init__(timeout=timeout)
+        self.chosen_action = None
+        
+        # Create a button for each available action
+        for action in available_actions:
+            button = discord.ui.Button(
+                label=action.replace('_', ' ').title(),
+                style=discord.ButtonStyle.primary,
+                custom_id=action
+            )
+            button.callback = self.make_callback(action)
+            self.add_item(button)
+    
+    def make_callback(self, action):
+        async def callback(interaction: discord.Interaction):
+            self.chosen_action = action
+            # Disable all buttons after selection
+            for item in self.children:
+                item.disabled = True
+            
+            await interaction.response.edit_message(
+                content=f"✅ **{interaction.user.mention}** chose: **{action.replace('_', ' ').upper()}**",
+                view=self
+            )
+            self.stop()
+        
+        return callback
+    
+    async def on_timeout(self):
+        # Disable all buttons on timeout
+        for item in self.children:
+            item.disabled = True
+
+
 class MatchEngine:
     def __init__(self, bot):
         self.bot = bot
@@ -155,6 +191,10 @@ class MatchEngine:
             print(f"❌ Error updating pinned score: {e}")
 
     async def start_match(self, fixture: dict, interaction: discord.Interaction):
+        # 🔥 CRITICAL: Defer immediately to prevent interaction timeout
+        if not interaction.response.is_done():
+            await interaction.response.defer(ephemeral=True)
+        
         home_team = await db.get_team(fixture['home_team_id'])
         away_team = await db.get_team(fixture['away_team_id'])
 
@@ -497,26 +537,4 @@ class MatchEngine:
                 if is_goal:
                     result_embed.add_field(
                         name="⚽ TEAMMATE SCORES!",
-                        value=f"🅰️ **ASSIST: {player['player_name']}**\nGreat {action.replace('_', ' ')}!",
-                        inline=False
-                    )
-                else:
-                    result_embed.add_field(name="✅ SUCCESS!", value=f"Great {action.replace('_', ' ')}! Chance created.", inline=False)
-            else:
-                result_embed.add_field(name="✅ SUCCESS!", value=f"Perfect {action.replace('_', ' ')}!", inline=False)
-        
-        # DRIBBLING - Follow up with shooting chance
-        elif action == 'dribble' and success:
-            result_embed.add_field(name="✅ BEATEN THE DEFENDER!", value=f"You've created space!", inline=False)
-            # Could add follow-up shot here
-        
-        # OTHER SUCCESS
-        elif success:
-            result_embed.add_field(name="✅ SUCCESS!", value=f"Great {action.replace('_', ' ')}!", inline=False)
-        
-        # FAILURE
-        else:
-            result_embed.add_field(name="❌ FAILED!", value=f"{action.replace('_', ' ')} unsuccessful!", inline=False)
-
-        await suspense_msg.delete()
-        await channel.send(embed=result_embed)
+                        value=f"🅰
