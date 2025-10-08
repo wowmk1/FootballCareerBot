@@ -5,7 +5,17 @@ from database import db
 from datetime import datetime
 import random
 import config
-from utils.football_data_api import get_team_crest_url, get_competition_logo
+
+# Import crest functions at top level
+try:
+    from utils.crests_database import get_team_crest_url, get_competition_logo_url
+    print("✅ Loaded crests_database directly")
+except ImportError:
+    print("⚠️ crests_database not found, using fallback")
+    def get_team_crest_url(team_id):
+        return ""
+    def get_competition_logo_url(comp):
+        return ""
 
 
 class MatchEngine:
@@ -14,49 +24,49 @@ class MatchEngine:
         self.active_matches = {}
         self.pinned_messages = {}
 
-    def get_action_description(self, action):
-        """Get detailed description of what an action does"""
+    def get_action_description_detailed(self, action):
+        """Get detailed description with follow-up info"""
         descriptions = {
-            'shoot': "⚽ **SHOOT**: Take a shot on goal. High reward but needs good positioning",
-            'pass': "🎯 **PASS**: Find a teammate. Safe option to maintain possession",
-            'dribble': "💨 **DRIBBLE**: Take on your defender 1v1. Beat them to create space",
-            'tackle': "🛡️ **TACKLE**: Win the ball back. Timing is crucial",
-            'cross': "📤 **CROSS**: Deliver ball into box for teammates to attack",
-            'clearance': "🚀 **CLEAR**: Get the ball away from danger. Safety first",
-            'save': "🧤 **SAVE**: Stop the shot. Goalkeeper's primary job",
-            'through_ball': "⚡ **THROUGH BALL**: Split the defense with a penetrating pass",
-            'interception': "👀 **INTERCEPT**: Read the play and cut out their pass",
-            'block': "🧱 **BLOCK**: Throw your body in front of the shot",
-            'cut_inside': "↩️ **CUT INSIDE**: Move from wing towards center for shooting opportunity",
-            'key_pass': "🔑 **KEY PASS**: Create a clear scoring chance for teammate",
-            'long_ball': "📡 **LONG BALL**: Switch play or launch counter attack",
-            'overlap': "🏃 **OVERLAP**: Run past teammate to provide passing option",
-            'claim_cross': "✊ **CLAIM CROSS**: Catch or punch the cross away",
-            'distribution': "🎯 **DISTRIBUTE**: Start attack from goalkeeper",
-            'hold_up_play': "💪 **HOLD UP**: Shield ball and wait for support",
-            'run_in_behind': "🏃 **RUN BEHIND**: Make off-ball run to stretch defense",
-            'press_defender': "⚡ **PRESS**: Force defender into mistake high up pitch",
-            'track_back': "🔙 **TRACK BACK**: Help defense by getting back quickly",
-            'press': "⚡ **PRESS**: Hunt the ball to win it back",
-            'cover': "🛡️ **COVER**: Fill defensive gaps",
-            'track_runner': "🏃 **TRACK RUNNER**: Stay with attacking player making run",
-            'sweep': "🧹 **SWEEP**: Rush out to clear danger behind defense"
+            'shoot': "⚽ **SHOOT**: Take a shot on goal\n→ Success: Possible goal | Fail: Blocked/saved",
+            'pass': "🎯 **PASS**: Find a teammate safely\n→ Success: 35% chance teammate scores (assist) | Fail: Intercepted",
+            'dribble': "💨 **DRIBBLE**: Take on defender 1v1\n→ Success: Create space, may get shooting chance | Fail: Dispossessed",
+            'tackle': "🛡️ **TACKLE**: Win the ball back\n→ Success: Gain possession | Fail: Beaten/foul",
+            'cross': "📤 **CROSS**: Deliver ball into box\n→ Success: 40% chance teammate scores (assist) | Fail: Cleared",
+            'clearance': "🚀 **CLEAR**: Get ball away from danger\n→ Success: Safety | Fail: Poor clearance",
+            'save': "🧤 **SAVE**: Stop the shot\n→ Success: Keep clean sheet | Fail: Goal conceded",
+            'through_ball': "⚡ **THROUGH BALL**: Split defense\n→ Success: 40% chance teammate scores (assist) | Fail: Intercepted",
+            'interception': "👀 **INTERCEPT**: Read and cut out pass\n→ Success: Win possession | Fail: Miss the ball",
+            'block': "🧱 **BLOCK**: Body on the line\n→ Success: Heroic block | Fail: Shot gets through",
+            'cut_inside': "↩️ **CUT INSIDE**: Move to center for shot\n→ Success: Shooting opportunity | Fail: Closed down",
+            'key_pass': "🔑 **KEY PASS**: Create clear chance\n→ Success: 45% chance teammate scores (assist) | Fail: Defended",
+            'long_ball': "📡 **LONG BALL**: Switch play/launch attack\n→ Success: Create opportunity | Fail: Intercepted",
+            'overlap': "🏃 **OVERLAP**: Run past teammate\n→ Success: Crossing opportunity | Fail: Tracked back",
+            'claim_cross': "✊ **CLAIM CROSS**: Catch/punch away\n→ Success: Command box | Fail: Drop/spill",
+            'distribution': "🎯 **DISTRIBUTE**: Start attack from GK\n→ Success: Launch counter | Fail: Poor pass",
+            'hold_up_play': "💪 **HOLD UP**: Shield ball for support\n→ Success: Maintain possession, pass option | Fail: Dispossessed",
+            'run_in_behind': "🏃 **RUN BEHIND**: Off-ball run\n→ Success: 1v1 with keeper possible | Fail: Offside/caught",
+            'press_defender': "⚡ **PRESS HIGH**: Force mistake\n→ Success: Win ball high | Fail: Bypassed",
+            'track_back': "🔙 **TRACK BACK**: Help defense\n→ Success: Stop attack | Fail: Too slow",
+            'press': "⚡ **PRESS**: Hunt the ball\n→ Success: Win possession | Fail: Bypassed",
+            'cover': "🛡️ **COVER**: Fill defensive gap\n→ Success: Stop attack | Fail: Exposed",
+            'track_runner': "🏃 **TRACK RUNNER**: Stay with attacker\n→ Success: Deny space | Fail: Lost them",
+            'sweep': "🧹 **SWEEP**: Rush out behind defense\n→ Success: Clear danger | Fail: Caught out"
         }
         return descriptions.get(action, f"Attempt {action.replace('_', ' ')}")
 
     def get_position_events(self, position):
-        """Enhanced position-specific events - MORE OPTIONS"""
+        """Position-specific actions - BUTTONS MUST MATCH DESCRIPTIONS"""
         position_events = {
-            'ST': ['shoot', 'pass', 'hold_up_play', 'run_in_behind', 'press_defender', 'dribble'],
-            'W': ['dribble', 'cross', 'cut_inside', 'shoot', 'pass', 'track_back'],
-            'CAM': ['through_ball', 'shoot', 'key_pass', 'dribble', 'pass', 'press'],
-            'CM': ['pass', 'through_ball', 'long_ball', 'tackle', 'shoot', 'interception'],
-            'CDM': ['tackle', 'interception', 'pass', 'block', 'cover', 'long_ball'],
-            'FB': ['tackle', 'cross', 'overlap', 'pass', 'clearance', 'track_runner'],
+            'ST': ['shoot', 'pass', 'hold_up_play', 'run_in_behind', 'press_defender'],
+            'W': ['shoot', 'dribble', 'cross', 'cut_inside', 'pass'],
+            'CAM': ['shoot', 'through_ball', 'key_pass', 'dribble', 'pass'],
+            'CM': ['pass', 'through_ball', 'long_ball', 'tackle', 'shoot'],
+            'CDM': ['tackle', 'interception', 'pass', 'block', 'cover'],
+            'FB': ['tackle', 'cross', 'overlap', 'clearance', 'track_runner'],
             'CB': ['tackle', 'clearance', 'block', 'pass', 'interception'],
-            'GK': ['save', 'claim_cross', 'distribution', 'sweep']
+            'GK': ['save', 'claim_cross', 'distribution', 'clearance', 'sweep']
         }
-        return position_events.get(position, ['pass', 'dribble', 'tackle', 'shoot'])
+        return position_events.get(position, ['pass', 'dribble', 'tackle', 'shoot', 'clearance'])
 
     def get_stat_for_action(self, action):
         stat_map = {
@@ -106,16 +116,22 @@ class MatchEngine:
                 color=discord.Color.green()
             )
 
+            # Try to get crest
             home_crest = get_team_crest_url(home_team['team_id'])
             if home_crest:
                 embed.set_thumbnail(url=home_crest)
+                print(f"✅ Set crest: {home_crest[:50]}")
+            else:
+                print(f"⚠️ No crest for {home_team['team_id']}")
             
-            comp_logo = get_competition_logo(home_team.get('league', 'Premier League'))
+            # Try to get competition logo
+            comp_logo = get_competition_logo_url(home_team.get('league', 'Premier League'))
             if comp_logo:
                 embed.set_footer(
                     text=f"{home_team.get('league', 'Premier League')} • Minute {minute}",
                     icon_url=comp_logo
                 )
+                print(f"✅ Set logo: {comp_logo[:50]}")
 
             if match_id in self.pinned_messages:
                 msg = self.pinned_messages[match_id]
@@ -136,7 +152,7 @@ class MatchEngine:
                     pass
                 self.pinned_messages[match_id] = msg
         except Exception as e:
-            print(f"Error updating pinned score: {e}")
+            print(f"❌ Error updating pinned score: {e}")
 
     async def start_match(self, fixture: dict, interaction: discord.Interaction):
         home_team = await db.get_team(fixture['home_team_id'])
@@ -177,9 +193,13 @@ class MatchEngine:
             color=discord.Color.green()
         )
 
+        # Add home team crest
         home_crest = get_team_crest_url(fixture['home_team_id'])
         if home_crest:
             embed.set_thumbnail(url=home_crest)
+            print(f"✅ Match start crest: {home_crest[:50]}")
+        else:
+            print(f"⚠️ No crest found for {fixture['home_team_id']}")
 
         embed.add_field(name="🏠 Home", value=f"**{home_team['team_name']}**\n{home_team['league']}", inline=True)
         embed.add_field(name="✈️ Away", value=f"**{away_team['team_name']}**\n{away_team['league']}", inline=True)
@@ -338,9 +358,11 @@ class MatchEngine:
             color=discord.Color.gold()
         )
 
+        # Add team crest
         team_crest = get_team_crest_url(attacking_team['team_id'])
         if team_crest:
             embed.set_thumbnail(url=team_crest)
+            print(f"✅ Player moment crest: {team_crest[:50]}")
 
         embed.add_field(
             name="📊 Your Stats (Form-Adjusted)",
@@ -351,10 +373,13 @@ class MatchEngine:
 
         if defender:
             opp_crest = get_team_crest_url(defending_team['team_id'])
-            embed.set_footer(
-                text=f"Defending: {defender['player_name']} ({defender['position']}) • {defending_team['team_name']}",
-                icon_url=opp_crest if opp_crest else None
-            )
+            if opp_crest:
+                embed.set_footer(
+                    text=f"Defending: {defender['player_name']} ({defender['position']}) • {defending_team['team_name']}",
+                    icon_url=opp_crest
+                )
+            else:
+                embed.set_footer(text=f"Defending: {defender['player_name']} ({defender['position']}) • {defending_team['team_name']}")
             
             embed.add_field(
                 name=f"🛡️ Defending: {defender['player_name']} ({defender['position']})",
@@ -362,7 +387,7 @@ class MatchEngine:
                 inline=False
             )
 
-        # Show action options with descriptions
+        # Show ONLY actions that have buttons
         actions_text = ""
         for action in available_actions:
             player_stat_name = self.get_stat_for_action(action)
@@ -373,7 +398,7 @@ class MatchEngine:
 
             emoji = "🟢" if chance >= 60 else "🟡" if chance >= 45 else "🔴"
             
-            action_desc = self.get_action_description(action)
+            action_desc = self.get_action_description_detailed(action)
             actions_text += f"{emoji} {action_desc}\n   Success: ~{chance}%\n\n"
 
         embed.add_field(name="⚡ AVAILABLE ACTIONS", value=actions_text, inline=False)
@@ -439,6 +464,8 @@ class MatchEngine:
             )
 
         is_goal = False
+        
+        # SHOOTING
         if action == 'shoot' and success:
             if player_roll == 20 or player_total >= defender_total + 10:
                 result_embed.add_field(
@@ -460,203 +487,36 @@ class MatchEngine:
                     value=f"Goalkeeper makes a brilliant save!",
                     inline=False
                 )
+        
+        # PASSING/ASSIST ACTIONS
         elif action in ['pass', 'through_ball', 'key_pass', 'cross'] and success:
-            # Check if teammate scores
-            if random.random() < 0.35:  # 35% chance
+            # Check teammate scoring chances
+            assist_chance = {'pass': 0.35, 'through_ball': 0.40, 'key_pass': 0.45, 'cross': 0.40}
+            if random.random() < assist_chance.get(action, 0.35):
                 is_goal = await self.handle_teammate_goal(channel, player, attacking_team, match_id)
                 if is_goal:
                     result_embed.add_field(
                         name="⚽ TEAMMATE SCORES!",
-                        value=f"🅰️ **ASSIST: {player['player_name']}**",
+                        value=f"🅰️ **ASSIST: {player['player_name']}**\nGreat {action.replace('_', ' ')}!",
                         inline=False
                     )
                 else:
-                    result_embed.add_field(name="✅ SUCCESS!", value=f"Great {action.replace('_', ' ')}!", inline=False)
+                    result_embed.add_field(name="✅ SUCCESS!", value=f"Great {action.replace('_', ' ')}! Chance created.", inline=False)
             else:
                 result_embed.add_field(name="✅ SUCCESS!", value=f"Perfect {action.replace('_', ' ')}!", inline=False)
+        
+        # DRIBBLING - Follow up with shooting chance
+        elif action == 'dribble' and success:
+            result_embed.add_field(name="✅ BEATEN THE DEFENDER!", value=f"You've created space!", inline=False)
+            # Could add follow-up shot here
+        
+        # OTHER SUCCESS
         elif success:
             result_embed.add_field(name="✅ SUCCESS!", value=f"Great {action.replace('_', ' ')}!", inline=False)
+        
+        # FAILURE
         else:
             result_embed.add_field(name="❌ FAILED!", value=f"{action.replace('_', ' ')} unsuccessful!", inline=False)
 
         await suspense_msg.delete()
         await channel.send(embed=result_embed)
-
-        # Update rating
-        rating_change = 0.3 if success else -0.1
-        if is_goal:
-            rating_change = 1.2
-        async with db.pool.acquire() as conn:
-            await conn.execute(
-                'UPDATE match_participants SET match_rating = GREATEST(0.0, LEAST(10.0, match_rating + $1)), actions_taken = actions_taken + 1 WHERE match_id = $2 AND user_id = $3',
-                rating_change, match_id, player['user_id']
-            )
-
-        return {'success': success, 'goal': is_goal, 'roll': player_roll}
-
-    async def handle_teammate_goal(self, channel, player, attacking_team, match_id):
-        """Handle teammate scoring after assist"""
-        async with db.pool.acquire() as conn:
-            teammate = await conn.fetchrow(
-                """SELECT player_name FROM npc_players
-                   WHERE team_id = $1 AND position IN ('ST', 'W', 'CAM') AND retired = FALSE
-                   ORDER BY RANDOM() LIMIT 1""",
-                attacking_team['team_id']
-            )
-            if teammate:
-                await conn.execute(
-                    """UPDATE players SET season_assists = season_assists + 1, career_assists = career_assists + 1 
-                       WHERE user_id = $1""",
-                    player['user_id']
-                )
-                await conn.execute(
-                    """UPDATE match_participants SET match_rating = LEAST(10.0, match_rating + 0.8) 
-                       WHERE match_id = $1 AND user_id = $2""",
-                    match_id, player['user_id']
-                )
-                return True
-        return False
-
-    async def handle_npc_moment(self, channel, team_id, minute, attacking_team, defending_team, is_home):
-        async with db.pool.acquire() as conn:
-            result = await conn.fetchrow(
-                "SELECT * FROM npc_players WHERE team_id = $1 AND retired = FALSE ORDER BY RANDOM() LIMIT 1",
-                team_id
-            )
-            npc = dict(result) if result else None
-        
-        if not npc:
-            return None
-        
-        action = random.choice(['shoot', 'pass'])
-        stat_value = npc['shooting'] if action == 'shoot' else npc['passing']
-        roll = random.randint(1, 20)
-        total = stat_value + roll
-        
-        success = total >= 75
-        
-        if action == 'shoot' and success and roll >= 18:
-            embed = discord.Embed(
-                title=f"⚽ NPC GOAL — Minute {minute}'",
-                description=f"## **{npc['player_name']}** scores for {attacking_team['team_name']}!",
-                color=discord.Color.blue()
-            )
-            await channel.send(embed=embed)
-            async with db.pool.acquire() as conn:
-                await conn.execute(
-                    "UPDATE npc_players SET season_goals = season_goals + 1 WHERE npc_id = $1",
-                    npc['npc_id']
-                )
-            return 'goal'
-        
-        return None
-
-    async def post_goal_celebration(self, channel, scorer_name, team_name, team_id, home_score, away_score):
-        celebrations = ["🔥🔥🔥 **GOOOOAAAALLL!!!** 🔥🔥🔥", "⚽⚽⚽ **WHAT A GOAL!!!** ⚽⚽⚽"]
-        embed = discord.Embed(
-            title=random.choice(celebrations),
-            description=f"## **{scorer_name}** scores for {team_name}!\n\n**{home_score} - {away_score}**",
-            color=discord.Color.gold()
-        )
-        team_crest = get_team_crest_url(team_id)
-        if team_crest:
-            embed.set_thumbnail(url=team_crest)
-        await channel.send(embed=embed)
-
-    async def post_halftime_summary(self, channel, home_team, away_team, home_score, away_score, participants, match_id):
-        embed = discord.Embed(
-            title="⸻ HALF-TIME",
-            description=f"## {home_team['team_name']} {home_score} - {away_score} {away_team['team_name']}",
-            color=discord.Color.orange()
-        )
-        await channel.send(embed=embed)
-        await asyncio.sleep(3)
-
-    async def end_match(self, match_id, fixture, channel, home_score, away_score, participants):
-        home_team = await db.get_team(fixture['home_team_id'])
-        away_team = await db.get_team(fixture['away_team_id'])
-        
-        async with db.pool.acquire() as conn:
-            await conn.execute(
-                'UPDATE fixtures SET home_score = $1, away_score = $2, played = TRUE, playable = FALSE WHERE fixture_id = $3',
-                home_score, away_score, fixture['fixture_id']
-            )
-        
-        await self.update_team_stats(fixture['home_team_id'], home_score, away_score)
-        await self.update_team_stats(fixture['away_team_id'], away_score, home_score)
-        
-        embed = discord.Embed(
-            title="🏁 FULL TIME!",
-            description=f"## {home_team['team_name']} {home_score} - {away_score} {away_team['team_name']}",
-            color=discord.Color.gold()
-        )
-        
-        # POST RESULT TO match-results CHANNEL
-        try:
-            from utils.event_poster import post_match_result_to_channel
-            await post_match_result_to_channel(self.bot, channel.guild, fixture, home_score, away_score)
-        except Exception as e:
-            print(f"Could not post match result: {e}")
-        
-        embed.set_footer(text="Channel deletes in 60 seconds")
-        await channel.send(embed=embed)
-        
-        await asyncio.sleep(60)
-        try:
-            await channel.delete()
-        except:
-            pass
-
-    async def update_team_stats(self, team_id, goals_for, goals_against):
-        if goals_for > goals_against:
-            won, drawn, lost, points = 1, 0, 0, 3
-        elif goals_for == goals_against:
-            won, drawn, lost, points = 0, 1, 0, 1
-        else:
-            won, drawn, lost, points = 0, 0, 1, 0
-        async with db.pool.acquire() as conn:
-            await conn.execute(
-                'UPDATE teams SET played = played + 1, won = won + $1, drawn = drawn + $2, lost = lost + $3, goals_for = goals_for + $4, goals_against = goals_against + $5, points = points + $6 WHERE team_id = $7',
-                won, drawn, lost, goals_for, goals_against, points, team_id
-            )
-
-
-class EnhancedActionView(discord.ui.View):
-    def __init__(self, available_actions, timeout=30):
-        super().__init__(timeout=timeout)
-        self.chosen_action = None
-        emoji_map = {
-            'shoot': '🎯', 'pass': '🎪', 'dribble': '🪄', 'tackle': '🛡️', 'cross': '📤',
-            'clearance': '🚀', 'through_ball': '⚡', 'save': '🧤', 'interception': '👀', 
-            'block': '🧱', 'cut_inside': '↩️', 'key_pass': '🔑', 'long_ball': '📡',
-            'overlap': '🏃', 'claim_cross': '✊', 'distribution': '🎯', 'hold_up_play': '💪',
-            'run_in_behind': '🏃', 'press_defender': '⚡', 'track_back': '🔙',
-            'press': '⚡', 'cover': '🛡️', 'track_runner': '🏃', 'sweep': '🧹'
-        }
-        for action in available_actions[:5]:
-            button = ActionButton(action, emoji_map.get(action, '⚽'))
-            self.add_item(button)
-
-    async def on_timeout(self):
-        for item in self.children:
-            item.disabled = True
-
-
-class ActionButton(discord.ui.Button):
-    def __init__(self, action, emoji):
-        super().__init__(
-            label=action.replace('_', ' ').title(), 
-            emoji=emoji,
-            style=discord.ButtonStyle.primary
-        )
-        self.action = action
-
-    async def callback(self, interaction: discord.Interaction):
-        self.view.chosen_action = self.action
-        for item in self.view.children:
-            item.disabled = True
-        await interaction.response.edit_message(view=self.view)
-        self.view.stop()
-
-
-match_engine = None
