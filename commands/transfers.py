@@ -10,13 +10,241 @@ from utils.transfer_window_manager import (
     is_transfer_window_open
 )
 
+class TransferOfferView(discord.ui.View):
+    def __init__(self, user_id, offers, bot):
+        super().__init__(timeout=300)  # 5 minute timeout
+        self.user_id = user_id
+        self.offers = offers
+        self.bot = bot
+        
+        # Create a select menu for choosing which offer to interact with
+        options = []
+        for i, offer in enumerate(offers[:25], 1):  # Discord limit: 25 options
+            wage_emoji = "🔥" if offer['offer_type'] == 'improved' else "🔄" if offer['offer_type'] == 'renewal' else "⚽"
+            options.append(
+                discord.SelectOption(
+                    label=f"{offer['team_name']}",
+                    description=f"£{offer['wage_offer']:,}/wk | {offer['contract_length']}yr | ID: {offer['offer_id']}",
+                    value=str(offer['offer_id']),
+                    emoji=wage_emoji
+                )
+            )
+        
+        self.offer_select = discord.ui.Select(
+            placeholder="Select an offer to view details...",
+            options=options,
+            row=0
+        )
+        self.offer_select.callback = self.select_callback
+        self.add_item(self.offer_select)
+        
+        self.selected_offer_id = None
+    
+    async def select_callback(self, interaction: discord.Interaction):
+        """Handle offer selection"""
+        if interaction.user.id != self.user_id:
+            await interaction.response.send_message("❌ These aren't your offers!", ephemeral=True)
+            return
+        
+        self.selected_offer_id = int(self.offer_select.values[0])
+        
+        # Find the selected offer
+        selected_offer = next((o for o in self.offers if o['offer_id'] == self.selected_offer_id), None)
+        
+        if not selected_offer:
+            await interaction.response.send_message("❌ Offer not found!", ephemeral=True)
+            return
+        
+        # Get current player info
+        player = await db.get_player(self.user_id)
+        
+        # Create detailed embed for selected offer
+        embed = discord.Embed(
+            title=f"📋 Offer from {selected_offer['team_name']}",
+            color=discord.Color.gold()
+        )
+        
+        # Offer type indicator
+        if selected_offer['offer_type'] == 'improved':
+            embed.add_field(
+                name="🔥 IMPROVED OFFER",
+                value="This club has increased their wage offer!",
+                inline=False
+            )
+        elif selected_offer['offer_type'] == 'renewal':
+            embed.add_field(
+                name="🔄 CONTRACT RENEWAL",
+                value="Your current club wants to extend your contract!",
+                inline=False
+            )
+        
+        # Wage comparison
+        wage_diff = selected_offer['wage_offer'] - player['contract_wage']
+        wage_change = f"+£{wage_diff:,}" if wage_diff > 0 else f"£{wage_diff:,}"
+        wage_percent = ((selected_offer['wage_offer'] - player['contract_wage']) / player['contract_wage']) * 100
+        
+        embed.add_field(
+            name="💰 Wage Offer",
+            value=f"**£{selected_offer['wage_offer']:,}/week**\n"
+                  f"Current: £{player['contract_wage']:,}/week\n"
+                  f"Change: {wage_change} ({wage_percent:+.1f}%)",
+            inline=True
+        )
+        
+        embed.add_field(
+            name="📄 Contract Length",
+            value=f"**{selected_offer['contract_length']} years**\n"
+                  f"Current: {player['contract_years']} years left",
+            inline=True
+        )
+        
+        embed.add_field(
+            name="🏟️ League",
+            value=selected_offer['league'],
+            inline=True
+        )
+        
+        # Enable accept/reject buttons now that an offer is selected
+        for item in self.children:
+            if isinstance(item, discord.ui.Button):
+                item.disabled = False
+        
+        await interaction.response.edit_message(embed=embed, view=self)
+    
+    @discord.ui.button(label="✅ Accept Offer", style=discord.ButtonStyle.success, disabled=True, row=1)
+    async def accept_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        """Accept the selected offer"""
+        if interaction.user.id != self.user_id:
+            await interaction.response.send_message("❌ These aren't your offers!", ephemeral=True)
+            return
+        
+        if not self.selected_offer_id:
+            await interaction.response.send_message("❌ Please select an offer first!", ephemeral=True)
+            return
+        
+        await interaction.response.defer()
+        
+        result, error = await accept_transfer_offer(self.user_id, self.selected_offer_id, self.bot)
+        
+        if error:
+            await interaction.followup.send(f"❌ {error}", ephemeral=True)
+            return
+        
+        # Create success embed
+        embed = discord.Embed(
+            title="✅ TRANSFER COMPLETE!",
+            description=f"**{result['player_name']}** has completed his move!",
+            color=discord.Color.green()
+        )
+        
+        embed.add_field(
+            name="Transfer Details",
+            value=f"**From:** {result['old_team']}\n"
+                  f"**To:** {result['new_team']}\n"
+                  f"**Fee:** £{result['fee']:,}" + (" (Free Transfer)" if result['fee'] == 0 else ""),
+            inline=False
+        )
+        
+        embed.add_field(
+            name="Your New Contract",
+            value=f"💰 **£{result['wage']:,}/week**\n"
+                  f"📄 **{result['contract_length']} years**",
+            inline=False
+        )
+        
+        embed.set_footer(text="Good luck at your new club!")
+        
+        # Disable all buttons after accepting
+        for item in self.children:
+            item.disabled = True
+        
+        await interaction.edit_original_response(embed=embed, view=self)
+        self.stop()
+    
+    @discord.ui.button(label="❌ Reject Offer", style=discord.ButtonStyle.danger, disabled=True, row=1)
+    async def reject_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        """Reject the selected offer"""
+        if interaction.user.id != self.user_id:
+            await interaction.response.send_message("❌ These aren't your offers!", ephemeral=True)
+            return
+        
+        if not self.selected_offer_id:
+            await interaction.response.send_message("❌ Please select an offer first!", ephemeral=True)
+            return
+        
+        success = await reject_transfer_offer(self.user_id, self.selected_offer_id)
+        
+        if success:
+            # Remove rejected offer from list
+            self.offers = [o for o in self.offers if o['offer_id'] != self.selected_offer_id]
+            
+            if not self.offers:
+                await interaction.response.edit_message(
+                    content="✅ All offers rejected!",
+                    embed=None,
+                    view=None
+                )
+                self.stop()
+                return
+            
+            # Recreate the view without the rejected offer
+            new_view = TransferOfferView(self.user_id, self.offers, self.bot)
+            
+            player = await db.get_player(self.user_id)
+            embed = discord.Embed(
+                title="📬 Your Transfer Offers",
+                description=f"**{player['player_name']}** ({player['overall_rating']} OVR)\n"
+                           f"Current: {player['team_id']} | £{player['contract_wage']:,}/week\n\n"
+                           f"✅ Offer rejected! You have **{len(self.offers)} offers** remaining:",
+                color=discord.Color.gold()
+            )
+            
+            await interaction.response.edit_message(embed=embed, view=new_view)
+            self.stop()
+        else:
+            await interaction.response.send_message("❌ Could not reject offer.", ephemeral=True)
+    
+    @discord.ui.button(label="🗑️ Reject All", style=discord.ButtonStyle.secondary, row=2)
+    async def reject_all_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        """Reject all offers"""
+        if interaction.user.id != self.user_id:
+            await interaction.response.send_message("❌ These aren't your offers!", ephemeral=True)
+            return
+        
+        # Create confirmation view
+        confirm_view = ConfirmRejectView()
+        await interaction.response.send_message(
+            "⚠️ Are you sure you want to reject **ALL** transfer offers?",
+            view=confirm_view,
+            ephemeral=True
+        )
+        
+        await confirm_view.wait()
+        
+        if confirm_view.confirmed:
+            await reject_all_offers(self.user_id)
+            
+            # Update original message
+            for item in self.children:
+                item.disabled = True
+            
+            embed = discord.Embed(
+                title="✅ All Offers Rejected",
+                description="You've rejected all transfer offers. You'll stay at your current club.",
+                color=discord.Color.red()
+            )
+            
+            await interaction.edit_original_response(embed=embed, view=self)
+            self.stop()
+
+
 class TransferCommands(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
     
     @app_commands.command(name="offers", description="View your current transfer offers")
     async def offers(self, interaction: discord.Interaction):
-        """View transfer offers"""
+        """View transfer offers with interactive buttons"""
         
         player = await db.get_player(interaction.user.id)
         
@@ -59,132 +287,16 @@ class TransferCommands(commands.Cog):
             title="📬 Your Transfer Offers",
             description=f"**{player['player_name']}** ({player['overall_rating']} OVR)\n"
                        f"Current: {player['team_id']} | £{player['contract_wage']:,}/week\n\n"
-                       f"You have **{len(offers)} offers** waiting:",
+                       f"You have **{len(offers)} offers** waiting!\n\n"
+                       "**Select an offer below to view details and accept/reject.**",
             color=discord.Color.gold()
         )
         
-        for i, offer in enumerate(offers, 1):
-            offer_type_text = ""
-            if offer['offer_type'] == 'improved':
-                offer_type_text = " 🔥 **IMPROVED OFFER**"
-            elif offer['offer_type'] == 'renewal':
-                offer_type_text = " 🔄 **CONTRACT RENEWAL**"
-            
-            wage_comparison = ""
-            if offer['wage_offer'] > player['contract_wage']:
-                increase = ((offer['wage_offer'] - player['contract_wage']) / player['contract_wage']) * 100
-                wage_comparison = f" (+{increase:.0f}%)"
-            
-            embed.add_field(
-                name=f"#{i} - {offer['team_name']}{offer_type_text}",
-                value=f"💰 **£{offer['wage_offer']:,}/week**{wage_comparison}\n"
-                     f"📄 {offer['contract_length']} year contract\n"
-                     f"🏟️ League: {offer['league']}\n"
-                     f"🆔 Offer ID: `{offer['offer_id']}`",
-                inline=False
-            )
-        
-        embed.add_field(
-            name="⚡ How to Respond",
-            value="Use `/accept_offer <offer_id>` to accept an offer\n"
-                 "Use `/reject_offer <offer_id>` to reject a specific offer\n"
-                 "Use `/reject_all_offers` to reject all offers",
-            inline=False
-        )
-        
+        state = await db.get_game_state()
         embed.set_footer(text=f"Offers expire at end of Week {state['current_week']}")
         
-        await interaction.response.send_message(embed=embed)
-    
-    @app_commands.command(name="accept_offer", description="Accept a transfer offer")
-    @app_commands.describe(offer_id="The ID of the offer to accept")
-    async def accept_offer(self, interaction: discord.Interaction, offer_id: int):
-        """Accept a transfer offer"""
-        
-        await interaction.response.defer()
-        
-        player = await db.get_player(interaction.user.id)
-        
-        if not player:
-            await interaction.followup.send(
-                "❌ You haven't created a player yet!",
-                ephemeral=True
-            )
-            return
-        
-        result, error = await accept_transfer_offer(interaction.user.id, offer_id, self.bot)
-        
-        if error:
-            await interaction.followup.send(f"❌ {error}", ephemeral=True)
-            return
-        
-        embed = discord.Embed(
-            title="✅ TRANSFER COMPLETE!",
-            description=f"**{result['player_name']}** has completed his move!",
-            color=discord.Color.green()
-        )
-        
-        embed.add_field(
-            name="Transfer Details",
-            value=f"**From:** {result['old_team']}\n"
-                 f"**To:** {result['new_team']}\n"
-                 f"**Fee:** £{result['fee']:,}" + (" (Free Transfer)" if result['fee'] == 0 else ""),
-            inline=False
-        )
-        
-        embed.add_field(
-            name="Your New Contract",
-            value=f"💰 **£{result['wage']:,}/week**\n"
-                 f"📄 **{result['contract_length']} years**",
-            inline=False
-        )
-        
-        embed.set_footer(text="Good luck at your new club!")
-        
-        await interaction.followup.send(embed=embed)
-    
-    @app_commands.command(name="reject_offer", description="Reject a specific transfer offer")
-    @app_commands.describe(offer_id="The ID of the offer to reject")
-    async def reject_offer(self, interaction: discord.Interaction, offer_id: int):
-        """Reject a specific offer"""
-        
-        success = await reject_transfer_offer(interaction.user.id, offer_id)
-        
-        if success:
-            await interaction.response.send_message(
-                f"✅ Offer #{offer_id} rejected.",
-                ephemeral=True
-            )
-        else:
-            await interaction.response.send_message(
-                "❌ Could not reject offer. Check the offer ID.",
-                ephemeral=True
-            )
-    
-    @app_commands.command(name="reject_all_offers", description="Reject all pending transfer offers")
-    async def reject_all_offers_cmd(self, interaction: discord.Interaction):
-        """Reject all offers"""
-        
-        view = ConfirmRejectView()
-        await interaction.response.send_message(
-            "⚠️ Are you sure you want to reject **ALL** transfer offers?",
-            view=view,
-            ephemeral=True
-        )
-        
-        await view.wait()
-        
-        if view.confirmed:
-            await reject_all_offers(interaction.user.id)
-            await interaction.followup.send(
-                "✅ All transfer offers rejected.",
-                ephemeral=True
-            )
-        else:
-            await interaction.followup.send(
-                "Cancelled.",
-                ephemeral=True
-            )
+        view = TransferOfferView(interaction.user.id, offers, self.bot)
+        await interaction.response.send_message(embed=embed, view=view)
     
     @app_commands.command(name="my_contract", description="View your current contract details")
     async def my_contract(self, interaction: discord.Interaction):
