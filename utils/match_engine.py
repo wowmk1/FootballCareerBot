@@ -18,42 +18,6 @@ except ImportError:
         return ""
 
 
-class EnhancedActionView(discord.ui.View):
-    def __init__(self, available_actions, timeout=30):
-        super().__init__(timeout=timeout)
-        self.chosen_action = None
-        
-        # Create a button for each available action
-        for action in available_actions:
-            button = discord.ui.Button(
-                label=action.replace('_', ' ').title(),
-                style=discord.ButtonStyle.primary,
-                custom_id=action
-            )
-            button.callback = self.make_callback(action)
-            self.add_item(button)
-    
-    def make_callback(self, action):
-        async def callback(interaction: discord.Interaction):
-            self.chosen_action = action
-            # Disable all buttons after selection
-            for item in self.children:
-                item.disabled = True
-            
-            await interaction.response.edit_message(
-                content=f"✅ **{interaction.user.mention}** chose: **{action.replace('_', ' ').upper()}**",
-                view=self
-            )
-            self.stop()
-        
-        return callback
-    
-    async def on_timeout(self):
-        # Disable all buttons on timeout
-        for item in self.children:
-            item.disabled = True
-
-
 class MatchEngine:
     def __init__(self, bot):
         self.bot = bot
@@ -191,10 +155,6 @@ class MatchEngine:
             print(f"❌ Error updating pinned score: {e}")
 
     async def start_match(self, fixture: dict, interaction: discord.Interaction):
-        # 🔥 CRITICAL: Defer immediately to prevent interaction timeout
-        if not interaction.response.is_done():
-            await interaction.response.defer(ephemeral=True)
-        
         home_team = await db.get_team(fixture['home_team_id'])
         away_team = await db.get_team(fixture['away_team_id'])
 
@@ -537,4 +497,215 @@ class MatchEngine:
                 if is_goal:
                     result_embed.add_field(
                         name="⚽ TEAMMATE SCORES!",
-                        value=f"🅰
+                        value=f"🅰️ **ASSIST: {player['player_name']}**\nGreat {action.replace('_', ' ')}!",
+                        inline=False
+                    )
+                else:
+                    result_embed.add_field(name="✅ SUCCESS!", value=f"Great {action.replace('_', ' ')}! Chance created.", inline=False)
+            else:
+                result_embed.add_field(name="✅ SUCCESS!", value=f"Perfect {action.replace('_', ' ')}!", inline=False)
+        
+        # DRIBBLING - Follow up with shooting chance
+        elif action == 'dribble' and success:
+            result_embed.add_field(name="✅ BEATEN THE DEFENDER!", value=f"You've created space!", inline=False)
+            # Could add follow-up shot here
+        
+        # OTHER SUCCESS
+        elif success:
+            result_embed.add_field(name="✅ SUCCESS!", value=f"Great {action.replace('_', ' ')}!", inline=False)
+        
+        # FAILURE
+        else:
+            result_embed.add_field(name="❌ FAILED!", value=f"{action.replace('_', ' ')} unsuccessful!", inline=False)
+
+        await suspense_msg.delete()
+        await channel.send(embed=result_embed)
+
+        # Update rating
+        rating_change = 0.3 if success else -0.1
+        if is_goal:
+            rating_change = 1.2
+        async with db.pool.acquire() as conn:
+            await conn.execute(
+                'UPDATE match_participants SET match_rating = GREATEST(0.0, LEAST(10.0, match_rating + $1)), actions_taken = actions_taken + 1 WHERE match_id = $2 AND user_id = $3',
+                rating_change, match_id, player['user_id']
+            )
+
+        return {'success': success, 'goal': is_goal, 'roll': player_roll}
+
+    async def handle_teammate_goal(self, channel, player, attacking_team, match_id):
+        """Handle teammate scoring after assist"""
+        async with db.pool.acquire() as conn:
+            teammate = await conn.fetchrow(
+                """SELECT player_name FROM npc_players
+                   WHERE team_id = $1 AND position IN ('ST', 'W', 'CAM') AND retired = FALSE
+                   ORDER BY RANDOM() LIMIT 1""",
+                attacking_team['team_id']
+            )
+            if teammate:
+                await conn.execute(
+                    """UPDATE players SET season_assists = season_assists + 1, career_assists = career_assists + 1 
+                       WHERE user_id = $1""",
+                    player['user_id']
+                )
+                await conn.execute(
+                    """UPDATE match_participants SET match_rating = LEAST(10.0, match_rating + 0.8) 
+                       WHERE match_id = $1 AND user_id = $2""",
+                    match_id, player['user_id']
+                )
+                return True
+        return False
+
+    async def handle_npc_moment(self, channel, team_id, minute, attacking_team, defending_team, is_home):
+        async with db.pool.acquire() as conn:
+            result = await conn.fetchrow(
+                "SELECT * FROM npc_players WHERE team_id = $1 AND retired = FALSE ORDER BY RANDOM() LIMIT 1",
+                team_id
+            )
+            npc = dict(result) if result else None
+        
+        if not npc:
+            return None
+        
+        action = random.choice(['shoot', 'pass'])
+        stat_value = npc['shooting'] if action == 'shoot' else npc['passing']
+        roll = random.randint(1, 20)
+        total = stat_value + roll
+        
+        success = total >= 75
+        
+        if action == 'shoot' and success and roll >= 18:
+            embed = discord.Embed(
+                title=f"⚽ NPC GOAL — Minute {minute}'",
+                description=f"## **{npc['player_name']}** scores for {attacking_team['team_name']}!",
+                color=discord.Color.blue()
+            )
+            await channel.send(embed=embed)
+            async with db.pool.acquire() as conn:
+                await conn.execute(
+                    "UPDATE npc_players SET season_goals = season_goals + 1 WHERE npc_id = $1",
+                    npc['npc_id']
+                )
+            return 'goal'
+        
+        return None
+
+    async def post_goal_celebration(self, channel, scorer_name, team_name, team_id, home_score, away_score):
+        celebrations = ["🔥🔥🔥 **GOOOOAAAALLL!!!** 🔥🔥🔥", "⚽⚽⚽ **WHAT A GOAL!!!** ⚽⚽⚽"]
+        embed = discord.Embed(
+            title=random.choice(celebrations),
+            description=f"## **{scorer_name}** scores for {team_name}!\n\n**{home_score} - {away_score}**",
+            color=discord.Color.gold()
+        )
+        team_crest = get_team_crest_url(team_id)
+        if team_crest:
+            embed.set_thumbnail(url=team_crest)
+        await channel.send(embed=embed)
+
+    async def post_halftime_summary(self, channel, home_team, away_team, home_score, away_score, participants, match_id):
+        embed = discord.Embed(
+            title="⸻ HALF-TIME",
+            description=f"## {home_team['team_name']} {home_score} - {away_score} {away_team['team_name']}",
+            color=discord.Color.orange()
+        )
+        await channel.send(embed=embed)
+        await asyncio.sleep(3)
+
+    async def end_match(self, match_id, fixture, channel, home_score, away_score, participants):
+        home_team = await db.get_team(fixture['home_team_id'])
+        away_team = await db.get_team(fixture['away_team_id'])
+        
+        async with db.pool.acquire() as conn:
+            await conn.execute(
+                'UPDATE fixtures SET home_score = $1, away_score = $2, played = TRUE, playable = FALSE WHERE fixture_id = $3',
+                home_score, away_score, fixture['fixture_id']
+            )
+        
+        await self.update_team_stats(fixture['home_team_id'], home_score, away_score)
+        await self.update_team_stats(fixture['away_team_id'], away_score, home_score)
+        
+        embed = discord.Embed(
+            title="🏁 FULL TIME!",
+            description=f"## {home_team['team_name']} {home_score} - {away_score} {away_team['team_name']}",
+            color=discord.Color.gold()
+        )
+        
+        # Add crest to final embed
+        home_crest = get_team_crest_url(fixture['home_team_id'])
+        if home_crest:
+            embed.set_thumbnail(url=home_crest)
+        
+        # POST RESULT TO match-results CHANNEL
+        try:
+            from utils.event_poster import post_match_result_to_channel
+            await post_match_result_to_channel(self.bot, channel.guild, fixture, home_score, away_score)
+        except Exception as e:
+            print(f"❌ Could not post match result: {e}")
+        
+        embed.set_footer(text="Channel deletes in 60 seconds")
+        await channel.send(embed=embed)
+        
+        await asyncio.sleep(60)
+        try:
+            await channel.delete()
+        except:
+            pass
+
+    async def update_team_stats(self, team_id, goals_for, goals_against):
+        if goals_for > goals_against:
+            won, drawn, lost, points = 1, 0, 0, 3
+        elif goals_for == goals_against:
+            won, drawn, lost, points = 0, 1, 0, 1
+        else:
+            won, drawn, lost, points = 0, 0, 1, 0
+        async with db.pool.acquire() as conn:
+            await conn.execute(
+                'UPDATE teams SET played = played + 1, won = won + $1, drawn = drawn + $2, lost = lost + $3, goals_for = goals_for + $4, goals_against = goals_against + $5, points = points + $6 WHERE team_id = $7',
+                won, drawn, lost, goals_for, goals_against, points, team_id
+            )
+
+
+class EnhancedActionView(discord.ui.View):
+    def __init__(self, available_actions, timeout=30):
+        super().__init__(timeout=timeout)
+        self.chosen_action = None
+        
+        # Emoji map
+        emoji_map = {
+            'shoot': '🎯', 'pass': '🎪', 'dribble': '🪄', 'tackle': '🛡️', 'cross': '📤',
+            'clearance': '🚀', 'through_ball': '⚡', 'save': '🧤', 'interception': '👀', 
+            'block': '🧱', 'cut_inside': '↩️', 'key_pass': '🔑', 'long_ball': '📡',
+            'overlap': '🏃', 'claim_cross': '✊', 'distribution': '🎯', 'hold_up_play': '💪',
+            'run_in_behind': '🏃', 'press_defender': '⚡', 'track_back': '🔙',
+            'press': '⚡', 'cover': '🛡️', 'track_runner': '🏃', 'sweep': '🧹'
+        }
+        
+        # Create buttons for ONLY the available actions (max 5)
+        for action in available_actions[:5]:
+            button = ActionButton(action, emoji_map.get(action, '⚽'))
+            self.add_item(button)
+
+    async def on_timeout(self):
+        for item in self.children:
+            item.disabled = True
+
+
+class ActionButton(discord.ui.Button):
+    def __init__(self, action, emoji):
+        label = action.replace('_', ' ').title()
+        super().__init__(
+            label=label, 
+            emoji=emoji,
+            style=discord.ButtonStyle.primary
+        )
+        self.action = action
+
+    async def callback(self, interaction: discord.Interaction):
+        self.view.chosen_action = self.action
+        for item in self.view.children:
+            item.disabled = True
+        await interaction.response.edit_message(view=self.view)
+        self.view.stop()
+
+
+match_engine = None
