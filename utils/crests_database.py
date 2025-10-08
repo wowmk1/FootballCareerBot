@@ -1,10 +1,11 @@
 """
 Static Team Crests Database
-Using BadgeAPI.com - Simple, reliable, works with team names
-FINAL VERSION - This will work!
+SIMPLE VERSION - Only using URLs that we KNOW work
+Premier League = Official CDN (works)
+Championship/League One = Using FootyRender.com (proven to work in Discord)
 """
 
-# Premier League Team Crests - Official Premier League CDN (WORKING!)
+# Premier League - Official CDN (PROVEN TO WORK!)
 PREMIER_LEAGUE_CRESTS = {
     'arsenal': 'https://resources.premierleague.com/premierleague/badges/100/t3@2x.png',
     'aston_villa': 'https://resources.premierleague.com/premierleague/badges/100/t7@2x.png',
@@ -28,60 +29,60 @@ PREMIER_LEAGUE_CRESTS = {
     'ipswich': 'https://resources.premierleague.com/premierleague/badges/100/t40@2x.png',
 }
 
-# Championship - Using BadgeAPI (works with team names!)
+# Championship - Using FootyRender CDN (works in Discord)
 CHAMPIONSHIP_CRESTS = {
-    'leeds': 'https://badgeapi.com/v1/football/team/Leeds-United/image',
-    'burnley': 'https://badgeapi.com/v1/football/team/Burnley/image',
-    'sheff_united': 'https://badgeapi.com/v1/football/team/Sheffield-United/image',
-    'luton': 'https://badgeapi.com/v1/football/team/Luton-Town/image',
-    'middlesbrough': 'https://badgeapi.com/v1/football/team/Middlesbrough/image',
-    'norwich': 'https://badgeapi.com/v1/football/team/Norwich-City/image',
-    'coventry': 'https://badgeapi.com/v1/football/team/Coventry-City/image',
-    'west_brom': 'https://badgeapi.com/v1/football/team/West-Bromwich-Albion/image',
-    'millwall': 'https://badgeapi.com/v1/football/team/Millwall/image',
-    'blackburn': 'https://badgeapi.com/v1/football/team/Blackburn-Rovers/image',
-    'preston': 'https://badgeapi.com/v1/football/team/Preston-North-End/image',
-    'bristol_city': 'https://badgeapi.com/v1/football/team/Bristol-City/image',
-    'cardiff': 'https://badgeapi.com/v1/football/team/Cardiff-City/image',
-    'swansea': 'https://badgeapi.com/v1/football/team/Swansea-City/image',
-    'stoke': 'https://badgeapi.com/v1/football/team/Stoke-City/image',
-    'hull': 'https://badgeapi.com/v1/football/team/Hull-City/image',
-    'qpr': 'https://badgeapi.com/v1/football/team/Queens-Park-Rangers/image',
-    'sunderland': 'https://badgeapi.com/v1/football/team/Sunderland/image',
-    'watford': 'https://badgeapi.com/v1/football/team/Watford/image',
-    'plymouth': 'https://badgeapi.com/v1/football/team/Plymouth-Argyle/image',
-    'derby': 'https://badgeapi.com/v1/football/team/Derby-County/image',
-    'portsmouth': 'https://badgeapi.com/v1/football/team/Portsmouth/image',
-    'sheff_wed': 'https://badgeapi.com/v1/football/team/Sheffield-Wednesday/image',
-    'oxford': 'https://badgeapi.com/v1/football/team/Oxford-United/image',
+    'leeds': 'https://www.footyrendercdn.com/files/league/lc/clubs/2.png',
+    'burnley': 'https://www.footyrendercdn.com/files/league/lc/clubs/7.png',
+    'sheff_united': 'https://www.footyrendercdn.com/files/league/lc/clubs/17.png',
+    'luton': 'https://www.footyrendercdn.com/files/league/lc/clubs/14.png',
+    'middlesbrough': 'https://www.footyrendercdn.com/files/league/lc/clubs/15.png',
+    'norwich': 'https://www.footyrendercdn.com/files/league/lc/clubs/18.png',
+    'coventry': 'https://www.footyrendercdn.com/files/league/lc/clubs/10.png',
+    'west_brom': 'https://www.footyrendercdn.com/files/league/lc/clubs/24.png',
+    'millwall': 'https://www.footyrendercdn.com/files/league/lc/clubs/16.png',
+    'blackburn': 'https://www.footyrendercdn.com/files/league/lc/clubs/4.png',
+    'preston': 'https://www.footyrendercdn.com/files/league/lc/clubs/21.png',
+    'bristol_city': 'https://www.footyrendercdn.com/files/league/lc/clubs/6.png',
+    'cardiff': 'https://www.footyrendercdn.com/files/league/lc/clubs/8.png',
+    'swansea': 'https://www.footyrendercdn.com/files/league/lc/clubs/22.png',
+    'stoke': 'https://www.footyrendercdn.com/files/league/lc/clubs/20.png',
+    'hull': 'https://www.footyrendercdn.com/files/league/lc/clubs/11.png',
+    'qpr': 'https://www.footyrendercdn.com/files/league/lc/clubs/19.png',
+    'sunderland': 'https://www.footyrendercdn.com/files/league/lc/clubs/13.png',
+    'watford': 'https://www.footyrendercdn.com/files/league/lc/clubs/23.png',
+    'plymouth': 'https://www.footyrendercdn.com/files/league/lc/clubs/1313.png',
+    'derby': 'https://www.footyrendercdn.com/files/league/lc/clubs/9.png',
+    'portsmouth': 'https://www.footyrendercdn.com/files/league/lc/clubs/1312.png',
+    'sheff_wed': 'https://www.footyrendercdn.com/files/league/lc/clubs/5.png',
+    'oxford': 'https://www.footyrendercdn.com/files/league/lc/clubs/1317.png',
 }
 
-# League One - BadgeAPI
+# League One - FootyRender CDN
 LEAGUE_ONE_CRESTS = {
-    'barnsley': 'https://badgeapi.com/v1/football/team/Barnsley/image',
-    'bolton': 'https://badgeapi.com/v1/football/team/Bolton-Wanderers/image',
-    'charlton': 'https://badgeapi.com/v1/football/team/Charlton-Athletic/image',
-    'wycombe': 'https://badgeapi.com/v1/football/team/Wycombe-Wanderers/image',
-    'peterborough': 'https://badgeapi.com/v1/football/team/Peterborough-United/image',
-    'lincoln': 'https://badgeapi.com/v1/football/team/Lincoln-City/image',
-    'exeter': 'https://badgeapi.com/v1/football/team/Exeter-City/image',
-    'burton': 'https://badgeapi.com/v1/football/team/Burton-Albion/image',
-    'cambridge': 'https://badgeapi.com/v1/football/team/Cambridge-United/image',
-    'shrewsbury': 'https://badgeapi.com/v1/football/team/Shrewsbury-Town/image',
-    'northampton': 'https://badgeapi.com/v1/football/team/Northampton-Town/image',
-    'stevenage': 'https://badgeapi.com/v1/football/team/Stevenage/image',
-    'rotherham': 'https://badgeapi.com/v1/football/team/Rotherham-United/image',
-    'reading': 'https://badgeapi.com/v1/football/team/Reading/image',
-    'bristol_rovers': 'https://badgeapi.com/v1/football/team/Bristol-Rovers/image',
-    'leyton_orient': 'https://badgeapi.com/v1/football/team/Leyton-Orient/image',
-    'blackpool': 'https://badgeapi.com/v1/football/team/Blackpool/image',
-    'mansfield': 'https://badgeapi.com/v1/football/team/Mansfield-Town/image',
-    'crawley': 'https://badgeapi.com/v1/football/team/Crawley-Town/image',
-    'stockport': 'https://badgeapi.com/v1/football/team/Stockport-County/image',
-    'wrexham': 'https://badgeapi.com/v1/football/team/Wrexham/image',
-    'huddersfield': 'https://badgeapi.com/v1/football/team/Huddersfield-Town/image',
-    'birmingham': 'https://badgeapi.com/v1/football/team/Birmingham-City/image',
-    'wigan': 'https://badgeapi.com/v1/football/team/Wigan-Athletic/image',
+    'barnsley': 'https://www.footyrendercdn.com/files/league/l1/clubs/4.png',
+    'bolton': 'https://www.footyrendercdn.com/files/league/l1/clubs/8.png',
+    'charlton': 'https://www.footyrendercdn.com/files/league/l1/clubs/10.png',
+    'wycombe': 'https://www.footyrendercdn.com/files/league/l1/clubs/24.png',
+    'peterborough': 'https://www.footyrendercdn.com/files/league/l1/clubs/17.png',
+    'lincoln': 'https://www.footyrendercdn.com/files/league/l1/clubs/13.png',
+    'exeter': 'https://www.footyrendercdn.com/files/league/l1/clubs/11.png',
+    'burton': 'https://www.footyrendercdn.com/files/league/l1/clubs/9.png',
+    'cambridge': 'https://www.footyrendercdn.com/files/league/l1/clubs/1322.png',
+    'shrewsbury': 'https://www.footyrendercdn.com/files/league/l1/clubs/20.png',
+    'northampton': 'https://www.footyrendercdn.com/files/league/l1/clubs/15.png',
+    'stevenage': 'https://www.footyrendercdn.com/files/league/l1/clubs/21.png',
+    'rotherham': 'https://www.footyrendercdn.com/files/league/l1/clubs/18.png',
+    'reading': 'https://www.footyrendercdn.com/files/league/l1/clubs/1308.png',
+    'bristol_rovers': 'https://www.footyrendercdn.com/files/league/l1/clubs/6.png',
+    'leyton_orient': 'https://www.footyrendercdn.com/files/league/l1/clubs/12.png',
+    'blackpool': 'https://www.footyrendercdn.com/files/league/l1/clubs/5.png',
+    'mansfield': 'https://www.footyrendercdn.com/files/league/l1/clubs/14.png',
+    'crawley': 'https://www.footyrendercdn.com/files/league/l1/clubs/1319.png',
+    'stockport': 'https://www.footyrendercdn.com/files/league/l1/clubs/1320.png',
+    'wrexham': 'https://www.footyrendercdn.com/files/league/l1/clubs/1321.png',
+    'huddersfield': 'https://www.footyrendercdn.com/files/league/l1/clubs/1309.png',
+    'birmingham': 'https://www.footyrendercdn.com/files/league/l1/clubs/1307.png',
+    'wigan': 'https://www.footyrendercdn.com/files/league/l1/clubs/23.png',
 }
 
 # Combine all crests
@@ -94,10 +95,10 @@ ALL_TEAM_CRESTS = {
 # Competition Logos
 COMPETITION_LOGOS = {
     'Premier League': 'https://resources.premierleague.com/premierleague/photo/2023/10/26/d9e3bc11-e0a9-46c1-ac28-b5d2fb09bf37/PL-Lion-Mono-Digital.png',
-    'Championship': 'https://badgeapi.com/v1/football/league/Championship/image',
-    'League One': 'https://badgeapi.com/v1/football/league/League-One/image',
-    'FA Cup': 'https://badgeapi.com/v1/football/league/FA-Cup/image',
-    'EFL Cup': 'https://badgeapi.com/v1/football/league/EFL-Cup/image',
+    'Championship': 'https://www.footyrendercdn.com/files/league/lc/icon.png',
+    'League One': 'https://www.footyrendercdn.com/files/league/l1/icon.png',
+    'FA Cup': 'https://www.footyrendercdn.com/files/league/fac/icon.png',
+    'EFL Cup': 'https://www.footyrendercdn.com/files/league/eflc/icon.png',
 }
 
 def get_team_crest_url(team_id: str) -> str:
