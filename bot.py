@@ -907,6 +907,88 @@ class ConfirmWipeView(discord.ui.View):
         await interaction.response.defer()
 
 
+# ========== CREST TEST COMMANDS - ADD THESE BEFORE if __name__ == "__main__": ==========
+
+@bot.tree.command(name="test_simple_crest", description="[ADMIN] Simple crest test")
+async def test_simple_crest(interaction: discord.Interaction, team_id: str = "oxford"):
+    """Simple test to verify crest system works"""
+    if not interaction.user.guild_permissions.administrator:
+        await interaction.response.send_message("❌ Admin only!", ephemeral=True)
+        return
+
+    from utils.football_data_api import get_team_crest_url, get_competition_logo
+
+    # Get URL
+    crest_url = get_team_crest_url(team_id)
+    logo_url = get_competition_logo("Premier League")
+
+    print(f"🔍 Test - Team: {team_id}")
+    print(f"🔍 Test - Crest URL: '{crest_url}'")
+    print(f"🔍 Test - Logo URL: '{logo_url}'")
+
+    # Create simple embed
+    embed = discord.Embed(
+        title=f"🔍 Crest Test: {team_id}",
+        description=f"Testing crest system",
+        color=discord.Color.blue()
+    )
+
+    if crest_url:
+        embed.set_thumbnail(url=crest_url)
+        embed.add_field(name="✅ Crest URL", value=f"`{crest_url}`", inline=False)
+    else:
+        embed.add_field(name="❌ No Crest", value=f"No URL found for: {team_id}", inline=False)
+
+    if logo_url:
+        embed.set_footer(text="Premier League", icon_url=logo_url)
+        embed.add_field(name="✅ Logo URL", value=f"`{logo_url}`", inline=False)
+
+    await interaction.response.send_message(embed=embed)
+
+
+@bot.tree.command(name="test_all_crests", description="[ADMIN] Test multiple team crests")
+async def test_all_crests(interaction: discord.Interaction):
+    """Test crests for multiple teams"""
+    if not interaction.user.guild_permissions.administrator:
+        await interaction.response.send_message("❌ Admin only!", ephemeral=True)
+        return
+
+    from utils.football_data_api import get_team_crest_url
+
+    test_teams = [
+        ('oxford', 'Oxford United'),
+        ('man_city', 'Manchester City'),
+        ('arsenal', 'Arsenal'),
+        ('liverpool', 'Liverpool'),
+        ('leeds', 'Leeds United')
+    ]
+
+    embed = discord.Embed(
+        title="🔍 Multi-Team Crest Test",
+        description="Testing crests for 5 teams",
+        color=discord.Color.green()
+    )
+
+    results = []
+    for team_id, team_name in test_teams:
+        crest_url = get_team_crest_url(team_id)
+        if crest_url:
+            results.append(f"✅ {team_name}: Found")
+        else:
+            results.append(f"❌ {team_name}: NOT FOUND")
+
+    embed.add_field(name="Results", value="\n".join(results), inline=False)
+
+    # Set Oxford crest as example
+    oxford_crest = get_team_crest_url('oxford')
+    if oxford_crest:
+        embed.set_thumbnail(url=oxford_crest)
+
+    await interaction.response.send_message(embed=embed)
+
+
+# ========== END OF TEST COMMANDS ==========
+
 # Run bot
 if __name__ == "__main__":
     try:
