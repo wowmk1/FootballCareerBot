@@ -1,5 +1,3 @@
-# Add this to bot.py or create a new utils/event_poster.py file
-
 import discord
 from database import db
 
@@ -39,7 +37,6 @@ async def post_match_result_to_channel(bot, guild, fixture, home_score, away_sco
         # Add team crests
         from utils.football_data_api import get_team_crest_url
         home_crest = get_team_crest_url(fixture['home_team_id'])
-        away_crest = get_team_crest_url(fixture['away_team_id'])
         
         if home_crest:
             embed.set_thumbnail(url=home_crest)
@@ -79,11 +76,8 @@ async def post_transfer_news_to_channel(bot, guild, transfer_info):
         if not transfer_channel:
             return
         
-        from_team = await db.get_team(transfer_info['from_team']) if transfer_info['from_team'] != 'free_agent' else None
-        to_team = await db.get_team(transfer_info['to_team'])
-        
-        from_name = from_team['team_name'] if from_team else "Free Agency"
-        to_name = to_team['team_name'] if to_team else "Unknown"
+        from_team_name = transfer_info['from_team']
+        to_team_name = transfer_info['to_team']
         
         # Determine transfer type
         if transfer_info['fee'] > 0:
@@ -95,7 +89,7 @@ async def post_transfer_news_to_channel(bot, guild, transfer_info):
         
         embed = discord.Embed(
             title=f"{transfer_type} CONFIRMED",
-            description=f"## {transfer_info['player_name']}\n**{from_name}** ➡️ **{to_name}**",
+            description=f"## {transfer_info['player_name']}\n**{from_team_name}** ➡️ **{to_team_name}**",
             color=color
         )
         
@@ -110,12 +104,22 @@ async def post_transfer_news_to_channel(bot, guild, transfer_info):
         
         # Add team crest
         from utils.football_data_api import get_team_crest_url
-        to_crest = get_team_crest_url(transfer_info['to_team'])
-        if to_crest:
-            embed.set_thumbnail(url=to_crest)
+        from data.teams import ALL_TEAMS
+        
+        # Find the team_id from team name
+        to_team_id = None
+        for team in ALL_TEAMS:
+            if team['team_name'] == to_team_name:
+                to_team_id = team['team_id']
+                break
+        
+        if to_team_id:
+            to_crest = get_team_crest_url(to_team_id)
+            if to_crest:
+                embed.set_thumbnail(url=to_crest)
         
         await transfer_channel.send(embed=embed)
-        print(f"✅ Posted transfer: {transfer_info['player_name']} to {to_name}")
+        print(f"✅ Posted transfer: {transfer_info['player_name']} to {to_team_name}")
         
     except Exception as e:
         print(f"❌ Error posting transfer news: {e}")
@@ -179,70 +183,3 @@ async def post_weekly_news_digest(bot, guild):
         
     except Exception as e:
         print(f"❌ Error posting news digest: {e}")
-
-
-# Modify the match engine's end_match function to auto-post results
-# Add this at the end of end_match in match_engine.py:
-
-async def end_match_with_posting(self, match_id, fixture, channel, home_score, away_score, participants):
-    """End match and post results to all servers"""
-    # ... existing end_match code ...
-    
-    # After all the existing code, add:
-    
-    # Post to all guilds
-    for guild in self.bot.guilds:
-        try:
-            await post_match_result_to_channel(self.bot, guild, fixture, home_score, away_score)
-        except Exception as e:
-            print(f"Could not post result to {guild.name}: {e}")
-
-
-# Modify accept_transfer_offer in transfer_window_manager.py
-# After successful transfer, add:
-
-async def accept_transfer_with_posting(user_id, offer_id, bot):
-    """Accept transfer and post to channels"""
-    # ... existing accept logic ...
-    
-    # After successful transfer:
-    transfer_info = {
-        'player_name': result['player_name'],
-        'from_team': result['old_team_id'],
-        'to_team': result['new_team_id'],
-        'fee': result['fee'],
-        'wage': result['wage'],
-        'contract_length': result['contract_length']
-    }
-    
-    # Post to all guilds
-    for guild in bot.guilds:
-        try:
-            await post_transfer_news_to_channel(bot, guild, transfer_info)
-        except Exception as e:
-            print(f"Could not post transfer to {guild.name}: {e}")
-
-
-# Add this to season_manager.py in the open_match_window function
-# Replace the existing weekly news posting with:
-
-async def open_match_window(bot=None):
-    """Open match window for current week"""
-    # ... existing code ...
-    
-    # POST WEEKLY NEWS TO CHANNELS
-    if bot:
-        try:
-            for guild in bot.guilds:
-                await post_weekly_news_digest(bot, guild)
-            print(f"✅ Posted weekly news to all servers")
-        except Exception as e:
-            print(f"⚠️ Could not post weekly news: {e}")
-
-
-# INTEGRATION INSTRUCTIONS:
-# 1. Add this file as utils/event_poster.py
-# 2. Import in match_engine.py: from utils.event_poster import post_match_result_to_channel
-# 3. Import in transfer_window_manager.py: from utils.event_poster import post_transfer_news_to_channel
-# 4. Import in season_manager.py: from utils.event_poster import post_weekly_news_digest
-# 5. Call the functions in the appropriate places as shown above
