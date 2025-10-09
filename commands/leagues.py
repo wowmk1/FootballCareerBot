@@ -8,15 +8,8 @@ class LeagueCommands(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
     
-    @app_commands.command(name="league", description="View league table")
-    @app_commands.describe(league="Which league to view")
-    @app_commands.choices(league=[
-        app_commands.Choice(name="Premier League", value="Premier League"),
-        app_commands.Choice(name="Championship", value="Championship"),
-        app_commands.Choice(name="League One", value="League One"),
-    ])
     async def league(self, interaction: discord.Interaction, league: str = "Premier League"):
-        """View league standings"""
+        """View league standings (called by /league_info command)"""
         
         table = await db.get_league_table(league)
         
@@ -89,9 +82,8 @@ class LeagueCommands(commands.Cog):
         
         await interaction.response.send_message(embed=embed)
     
-    @app_commands.command(name="top_scorers", description="View top scorers in your league")
     async def top_scorers(self, interaction: discord.Interaction):
-        """View top scorers"""
+        """View top scorers (called by /league_info command)"""
         
         player = await db.get_player(interaction.user.id)
         
