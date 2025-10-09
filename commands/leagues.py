@@ -32,22 +32,26 @@ class LeagueCommands(commands.Cog):
             color=discord.Color.blue()
         )
         
-        # ADD COMPETITION LOGO AS THUMBNAIL
+        # ADD COMPETITION LOGO AS THUMBNAIL (NOT team crest)
         comp_logo = get_competition_logo(league)
         if comp_logo:
             embed.set_thumbnail(url=comp_logo)
             print(f"✅ League table - Set competition logo: {league}")
         
+        # FIXED TABLE FORMATTING - Proper spacing
         table_text = "```\n"
-        table_text += "Pos Team                 Pld  W  D  L  GF  GA  GD  Pts\n"
-        table_text += "─" * 60 + "\n"
+        # Header with proper column widths
+        table_text += "Pos Team                  Pld  W  D  L  GF  GA  GD Pts\n"
+        table_text += "─" * 64 + "\n"
         
         for pos, team in enumerate(table, 1):
             gd = team['goals_for'] - team['goals_against']
             gd_str = f"+{gd}" if gd > 0 else str(gd)
             
+            # Truncate team name to 20 chars and pad with spaces
             team_name = team['team_name'][:20].ljust(20)
             
+            # Position indicators
             if pos <= 4:
                 prefix = "🟢"
             elif pos <= 6:
@@ -57,7 +61,8 @@ class LeagueCommands(commands.Cog):
             else:
                 prefix = "  "
             
-            table_text += f"{prefix} {pos:2d} {team_name} {team['played']:3d} {team['won']:2d} {team['drawn']:2d} {team['lost']:2d} {team['goals_for']:3d} {team['goals_against']:3d} {gd_str:4s} {team['points']:3d}\n"
+            # Format each column with fixed width
+            table_text += f"{prefix}{pos:2d} {team_name} {team['played']:3d} {team['won']:2d} {team['drawn']:2d} {team['lost']:2d} {team['goals_for']:3d} {team['goals_against']:3d} {gd_str:>3} {team['points']:3d}\n"
         
         table_text += "```"
         
@@ -71,16 +76,10 @@ class LeagueCommands(commands.Cog):
         
         state = await db.get_game_state()
         
-        # ADD LEADER'S CREST AS IMAGE
-        if table:
-            leader_crest = get_team_crest_url(table[0]['team_id'])
-            if leader_crest:
-                embed.set_image(url=leader_crest)
-                print(f"✅ League table - Set leader crest: {table[0]['team_id']}")
-            
-            embed.set_footer(text=f"Season {state['current_season']} • Week {state['current_week']} • Leaders: {table[0]['team_name']}")
-        else:
-            embed.set_footer(text=f"Season {state['current_season']} • Week {state['current_week']}")
+        # REMOVED: Leader's crest as image (was causing confusion)
+        # Only show competition logo in thumbnail
+        
+        embed.set_footer(text=f"Season {state['current_season']} • Week {state['current_week']} • Leaders: {table[0]['team_name']}")
         
         await interaction.response.send_message(embed=embed)
     
