@@ -62,12 +62,6 @@ async def generate_league_fixtures(league: str):
             'week_number': fixture['week_number'] + (num_teams - 1)
         })
     
-    random.shuffle(fixtures)
-    
-    fixtures_per_week = len([t for t in teams if t['team_id'] is not None]) // 2
-    for idx, fixture in enumerate(fixtures):
-        fixture['week_number'] = (idx // fixtures_per_week) + 1
-    
     async with db.pool.acquire() as conn:
         for fixture in fixtures:
             await conn.execute('''
