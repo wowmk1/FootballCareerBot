@@ -53,7 +53,7 @@ CHAMPIONSHIP_CRESTS = {
     'derby': 'https://media.api-sports.io/football/teams/1352.png',
     'portsmouth': 'https://media.api-sports.io/football/teams/1348.png',
     'sheff_wed': 'https://media.api-sports.io/football/teams/1351.png',
-    'oxford': 'https://media.api-sports.io/football/teams/1367.png',
+    'oxford': 'https://r2.thesportsdb.com/images/media/team/badge/la34wg1601726102.png/tiny',
 }
 
 # League One - API-Football CDN
