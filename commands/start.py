@@ -101,30 +101,26 @@ class ClubSelectionView(discord.ui.View):
             self.add_item(button)
     
     def generate_club_options(self):
-        """Generate 3 club offers from different leagues"""
+        """Generate 3 club offers - ALL FROM CHAMPIONSHIP for balanced start"""
         from data.teams import ALL_TEAMS
         import random
         
-        # Get teams from each league
-        league_one_teams = [t for t in ALL_TEAMS if t['league'] == 'League One']
+        # Get Championship teams only for fair starts
         championship_teams = [t for t in ALL_TEAMS if t['league'] == 'Championship']
-        premier_league_teams = [t for t in ALL_TEAMS if t['league'] == 'Premier League']
         
-        # Select one from each
-        clubs = [
-            random.choice(league_one_teams).copy(),
-            random.choice(championship_teams).copy(),
-            random.choice(premier_league_teams).copy()
-        ]
+        # Select 3 random Championship teams
+        selected_teams = random.sample(championship_teams, 3)
+        clubs = [team.copy() for team in selected_teams]
         
-        # Add wage info
-        for club in clubs:
-            if club['league'] == 'Premier League':
-                club['wage'] = random.randint(15000, 25000)
-            elif club['league'] == 'Championship':
-                club['wage'] = random.randint(8000, 12000)
-            else:  # League One
-                club['wage'] = random.randint(3000, 6000)
+        # Add varied wage offers (£8k-£15k range for Championship)
+        for i, club in enumerate(clubs):
+            # Vary wages to make choices interesting
+            if i == 0:
+                club['wage'] = random.randint(8000, 10000)  # Lower offer
+            elif i == 1:
+                club['wage'] = random.randint(10000, 12000)  # Medium offer
+            else:
+                club['wage'] = random.randint(12000, 15000)  # Higher offer
         
         return clubs
 
