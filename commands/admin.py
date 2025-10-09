@@ -1,6 +1,7 @@
 """
 Admin Commands - Simple Group (No Cog)
 Loaded directly in bot.py
+GUILD-SPECIFIC version for instant updates
 """
 import discord
 from discord import app_commands
@@ -9,7 +10,7 @@ import config
 import asyncio
 
 
-# Create the admin group
+# Create the admin group - NO GUILD SPECIFIED HERE, we'll add it per-server in bot.py
 admin_group = app_commands.Group(name="admin", description="Administrator commands")
 
 
@@ -67,7 +68,6 @@ async def open_window(interaction: discord.Interaction):
     await interaction.response.defer()
     
     from utils.season_manager import open_match_window
-    # Get bot from interaction
     bot = interaction.client
     await open_match_window(bot=bot)
     
