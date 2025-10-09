@@ -328,6 +328,104 @@ async def game_state(interaction: discord.Interaction):
     await interaction.response.send_message(embed=embed)
 
 
+@admin_group.command(name="debug_commands", description="🔍 See all registered commands")
+@app_commands.checks.has_permissions(administrator=True)
+async def debug_commands_admin(interaction: discord.Interaction):
+    """Debug what commands are registered"""
+    await interaction.response.defer(ephemeral=True)
+    
+    try:
+        from discord import app_commands as ac
+        
+        # Check what's in the bot's tree
+        bot = interaction.client
+        local_commands = bot.tree.get_commands()
+        
+        # Check what Discord knows about
+        global_commands = await bot.tree.fetch_commands()
+        
+        local_list = "**Local (in bot code):**\n"
+        for cmd in local_commands:
+            if isinstance(cmd, ac.Group):
+                local_list += f"📁 `/{cmd.name}` (GROUP with {len(cmd.commands)} subcommands)\n"
+                for subcmd in cmd.commands:
+                    local_list += f"  └─ `{subcmd.name}`\n"
+            else:
+                local_list += f"📄 `/{cmd.name}`\n"
+        
+        global_list = "**Global (registered with Discord):**\n"
+        for cmd in global_commands:
+            global_list += f"• `/{cmd.name}`\n"
+        
+        await interaction.followup.send(
+            f"🔍 **Command Registry Debug**\n\n"
+            f"{local_list}\n"
+            f"{global_list}\n"
+            f"📊 Local: {len(local_commands)} | Global: {len(global_commands)}",
+            ephemeral=True
+        )
+    except Exception as e:
+        await interaction.followup.send(f"❌ Error: {e}", ephemeral=True)
+
+
+@admin_group.command(name="rebuild_commands", description="🔧 Completely rebuild all slash commands")
+@app_commands.checks.has_permissions(administrator=True)
+async def rebuild_commands_admin(interaction: discord.Interaction):
+    """Completely wipe and rebuild all commands"""
+    await interaction.response.defer(ephemeral=True)
+    
+    try:
+        bot = interaction.client
+        
+        # Step 1: Clear the local tree
+        bot.tree.clear_commands(guild=None)
+        await interaction.followup.send(f"🧹 Step 1: Cleared local command tree", ephemeral=True)
+        
+        # Step 2: Sync empty tree to remove all commands from Discord
+        await bot.tree.sync()
+        await interaction.followup.send(f"🗑️ Step 2: Synced empty tree (removed all commands from Discord)", ephemeral=True)
+        
+        # Step 3: Reload all cogs to re-register commands
+        await interaction.followup.send(f"🔄 Step 3: Reloading all command modules...", ephemeral=True)
+        
+        # Reload cogs
+        cogs = [
+            'commands.player',
+            'commands.training',
+            'commands.season',
+            'commands.matches',
+            'commands.leagues',
+            'commands.transfers',
+            'commands.news',
+            'commands.interactive_match',
+        ]
+        
+        for cog in cogs:
+            try:
+                await bot.reload_extension(cog)
+            except:
+                await bot.load_extension(cog)
+        
+        # Re-add admin group
+        from commands.admin import admin_group
+        bot.tree.add_command(admin_group)
+        
+        await interaction.followup.send(f"✅ Step 4: Reloaded all modules", ephemeral=True)
+        
+        # Step 4: Sync everything fresh
+        synced = await bot.tree.sync()
+        
+        result_msg = f"✅ **REBUILD COMPLETE!**\n\n"
+        result_msg += f"🎯 Registered {len(synced)} commands with Discord\n"
+        result_msg += f"\n⚠️ **FULLY CLOSE AND REOPEN DISCORD** to see changes!"
+        
+        await interaction.followup.send(result_msg, ephemeral=True)
+        
+    except Exception as e:
+        import traceback
+        await interaction.followup.send(f"❌ Error: {e}\n```{traceback.format_exc()[:1000]}```", ephemeral=True)
+
+
 class ConfirmWipeView(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=30)
