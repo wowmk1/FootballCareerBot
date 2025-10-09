@@ -32,15 +32,15 @@ class LeagueCommands(commands.Cog):
             color=discord.Color.blue()
         )
         
-        # ADD COMPETITION LOGO AS THUMBNAIL
+        # ADD COMPETITION LOGO - but use set_author to keep it out of the way
         comp_logo = get_competition_logo(league)
         if comp_logo:
-            embed.set_thumbnail(url=comp_logo)
+            embed.set_author(name=league, icon_url=comp_logo)
         
-        # Build table with FIXED spacing - single header line
+        # Build table with FIXED spacing
         lines = []
         lines.append("```")
-        # Single-line header that matches data columns
+        # Header
         lines.append("Pos Team                 Pld  W  D  L   GF  GA  GD Pts")
         lines.append("─" * 62)
         
@@ -71,13 +71,8 @@ class LeagueCommands(commands.Cog):
                 emoji = "  "
             
             # Build line with exact spacing
-            # Emoji(2) Pos(2) Space Team(20) Space Pld(3) W(2) D(2) L(2) GF(3) GA(3) GD(3) Pts(3)
             line = f"{emoji}{pos:2} {team_name} {team['played']:3} {team['won']:2} {team['drawn']:2} {team['lost']:2} {team['goals_for']:3} {team['goals_against']:3} {gd_str} {team['points']:3}"
             lines.append(line)
-        
-        lines.append("```")
-        
-        embed.description = "\n".join(lines)
         
         lines.append("```")
         
@@ -147,10 +142,10 @@ class LeagueCommands(commands.Cog):
             color=discord.Color.gold()
         )
         
-        # ADD LEAGUE LOGO
+        # ADD LEAGUE LOGO using set_author instead of thumbnail
         comp_logo = get_competition_logo(league)
         if comp_logo:
-            embed.set_thumbnail(url=comp_logo)
+            embed.set_author(name=f"{league} Top Scorers", icon_url=comp_logo)
         
         scorers_text = ""
         for i, scorer in enumerate(all_scorers, 1):
