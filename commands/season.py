@@ -107,9 +107,9 @@ class SeasonCommands(commands.Cog):
         
         await interaction.response.send_message(embed=embed)
     
-    @app_commands.command(name="fixtures", description="View your upcoming matches")
+    # Keep as method for /league_info to call
     async def fixtures(self, interaction: discord.Interaction):
-        """View player's fixtures"""
+        """View player's fixtures (called by /league_info command)"""
         
         player = await db.get_player(interaction.user.id)
         
@@ -172,9 +172,9 @@ class SeasonCommands(commands.Cog):
         
         await interaction.response.send_message(embed=embed)
     
-    @app_commands.command(name="results", description="View recent match results")
+    # Keep as method for /league_info to call
     async def results(self, interaction: discord.Interaction):
-        """View recent results"""
+        """View recent results (called by /league_info command)"""
         
         player = await db.get_player(interaction.user.id)
         
@@ -244,17 +244,17 @@ class SeasonCommands(commands.Cog):
             away_score = fixture['away_score'] or 0
             
             if home_score > away_score:
-                result_emoji = "" if player and player['team_id'] == fixture['home_team_id'] else ""
+                result_emoji = "✅" if player and player['team_id'] == fixture['home_team_id'] else "❌"
             elif away_score > home_score:
-                result_emoji = "" if player and player['team_id'] == fixture['away_team_id'] else ""
+                result_emoji = "✅" if player and player['team_id'] == fixture['away_team_id'] else "❌"
             else:
-                result_emoji = ""
+                result_emoji = "🟰"
             
             if player and player['team_id'] not in ['free_agent'] and player['team_id'] in [fixture['home_team_id'], fixture['away_team_id']]:
                 result_text = result_emoji
             else:
-                result_emoji = ""
-                result_text = ""
+                result_emoji = "⚽"
+                result_text = "⚽"
             
             embed.add_field(
                 name=f"{result_text} Week {fixture['week_number']}",
@@ -301,13 +301,13 @@ class SeasonCommands(commands.Cog):
             champions_text += f"**League One**: {champ['team_name']} ({champ['points']} pts)\n"
         
         if champions_text:
-            embed.add_field(name="Champions", value=champions_text, inline=False)
+            embed.add_field(name="🏆 Champions", value=champions_text, inline=False)
         
         # Promotion and Relegation
         if pl_table and len(pl_table) >= 3:
             relegated = [t['team_name'] for t in pl_table[-3:]]
             embed.add_field(
-                name="Relegated from Premier League",
+                name="⬇️ Relegated from Premier League",
                 value="\n".join(relegated),
                 inline=True
             )
@@ -315,7 +315,7 @@ class SeasonCommands(commands.Cog):
         if champ_table and len(champ_table) >= 2:
             promoted = [t['team_name'] for t in champ_table[:2]]
             embed.add_field(
-                name="Promoted to Premier League",
+                name="⬆️ Promoted to Premier League",
                 value="\n".join(promoted),
                 inline=True
             )
@@ -349,11 +349,11 @@ class SeasonCommands(commands.Cog):
             top_5 = all_scorers[:5]
             scorers_text = ""
             for i, scorer in enumerate(top_5, 1):
-                emoji = "1." if i == 1 else "2." if i == 2 else "3." if i == 3 else f"{i}."
+                emoji = "🥇" if i == 1 else "🥈" if i == 2 else "🥉" if i == 3 else f"{i}."
                 team = scorer['team_name'] if scorer['team_name'] else 'Free Agent'
                 scorers_text += f"{emoji} {scorer['player_name']} - **{scorer['season_goals']}** goals ({team})\n"
             
-            embed.add_field(name="Top Scorers", value=scorers_text, inline=False)
+            embed.add_field(name="👟 Top Scorers", value=scorers_text, inline=False)
         
         # Your achievements (if user has a player)
         player = await db.get_player(interaction.user.id)
@@ -361,13 +361,13 @@ class SeasonCommands(commands.Cog):
             achievements = []
             
             if player['season_goals'] > 0:
-                achievements.append(f"Goals: **{player['season_goals']}**")
+                achievements.append(f"⚽ Goals: **{player['season_goals']}**")
             if player['season_assists'] > 0:
-                achievements.append(f"Assists: **{player['season_assists']}**")
+                achievements.append(f"🅰️ Assists: **{player['season_assists']}**")
             if player['season_apps'] > 0:
-                achievements.append(f"Appearances: **{player['season_apps']}**")
+                achievements.append(f"👕 Appearances: **{player['season_apps']}**")
                 avg_rating = f"{player['season_rating']:.1f}"
-                achievements.append(f"Avg Rating: **{avg_rating}/10**")
+                achievements.append(f"⭐ Avg Rating: **{avg_rating}/10**")
             
             # Check if player's team got promoted/relegated
             if player['team_id'] != 'free_agent':
@@ -377,20 +377,20 @@ class SeasonCommands(commands.Cog):
                     team_position = next((i+1 for i, t in enumerate(table) if t['team_id'] == team['team_id']), None)
                     
                     if team_position:
-                        achievements.append(f"Team Finish: **{team_position}** in {team['league']}")
+                        achievements.append(f"📊 Team Finish: **{team_position}** in {team['league']}")
                         
                         if team['league'] == 'Championship' and team_position <= 2:
-                            achievements.append("**PROMOTED TO PREMIER LEAGUE!**")
+                            achievements.append("🎉 **PROMOTED TO PREMIER LEAGUE!**")
                         elif team['league'] == 'League One' and team_position <= 2:
-                            achievements.append("**PROMOTED TO CHAMPIONSHIP!**")
+                            achievements.append("🎉 **PROMOTED TO CHAMPIONSHIP!**")
                         elif team['league'] == 'Premier League' and team_position >= len(pl_table) - 2:
-                            achievements.append("**Relegated to Championship**")
+                            achievements.append("⬇️ **Relegated to Championship**")
                         elif team['league'] == 'Championship' and team_position >= len(champ_table) - 2:
-                            achievements.append("**Relegated to League One**")
+                            achievements.append("⬇️ **Relegated to League One**")
             
             if achievements:
                 embed.add_field(
-                    name=f"Your Season - {player['player_name']}",
+                    name=f"📈 Your Season - {player['player_name']}",
                     value="\n".join(achievements),
                     inline=False
                 )
