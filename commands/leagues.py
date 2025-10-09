@@ -40,17 +40,22 @@ class LeagueCommands(commands.Cog):
         # Build table with FIXED spacing
         lines = []
         lines.append("```")
-        # Header - exact spacing
-        lines.append("Pos Team                 Pld  W  D  L  GF GA  GD Pts")
-        lines.append("─" * 60)
+        # Header - adjusted for wider GF/GA columns
+        lines.append("Pos Team                 Pld  W  D  L   GF  GA  GD Pts")
+        lines.append("─" * 62)
         
         for pos, team in enumerate(table, 1):
             gd = team['goals_for'] - team['goals_against']
-            # Format GD with sign
+            # Format GD with sign and pad to 3 chars
             if gd > 0:
                 gd_str = f"+{gd}"
+            elif gd == 0:
+                gd_str = " 0"
             else:
                 gd_str = str(gd)
+            
+            # Pad GD to 3 characters
+            gd_str = gd_str.rjust(3)
             
             # Truncate and pad team name to exactly 20 characters
             team_name = team['team_name'][:20]
@@ -67,8 +72,8 @@ class LeagueCommands(commands.Cog):
                 emoji = "  "
             
             # Build line with exact spacing
-            # Format: Emoji Pos(2) Team(20) Pld(3) W(2) D(2) L(2) GF(2) GA(2) GD(3) Pts(3)
-            line = f"{emoji}{pos:2} {team_name} {team['played']:3} {team['won']:2} {team['drawn']:2} {team['lost']:2} {team['goals_for']:2} {team['goals_against']:2} {gd_str:>3} {team['points']:3}"
+            # Format: Emoji Pos(2) Team(20) Pld(3) W(2) D(2) L(2) GF(3) GA(3) GD(3) Pts(3)
+            line = f"{emoji}{pos:2} {team_name} {team['played']:3} {team['won']:2} {team['drawn']:2} {team['lost']:2} {team['goals_for']:3} {team['goals_against']:3} {gd_str} {team['points']:3}"
             lines.append(line)
         
         lines.append("```")
