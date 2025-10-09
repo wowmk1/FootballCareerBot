@@ -331,27 +331,64 @@ class FootballBot(commands.Bot):
 bot = FootballBot()
 
 
-# TEMPORARY: Force clear and re-sync commands
+# ADMIN: Force clear and re-sync commands
 @bot.command()
-@commands.is_owner()
+@commands.has_permissions(administrator=True)
 async def sync(ctx):
     """Force sync slash commands - removes old cached commands"""
     await ctx.send("🔄 Clearing and syncing commands...")
     
-    # Clear globally
-    bot.tree.clear_commands(guild=None)
+    try:
+        # Clear globally
+        bot.tree.clear_commands(guild=None)
+        
+        # Also clear for this guild specifically
+        bot.tree.clear_commands(guild=ctx.guild)
+        
+        # Sync globally (this will push the changes to Discord)
+        synced_global = await bot.tree.sync()
+        
+        # Also sync to this guild for instant update
+        synced_guild = await bot.tree.sync(guild=ctx.guild)
+        
+        await ctx.send(f"✅ Commands synced!\n"
+                       f"📊 Global: {len(synced_global)} commands\n"
+                       f"📊 This server: {len(synced_guild)} commands\n\n"
+                       f"⚠️ **IMPORTANT:** Completely close and reopen Discord (not just Ctrl+R) to see changes!")
+    except Exception as e:
+        await ctx.send(f"❌ Error syncing: {e}")
+
+
+# Slash command version for easier access
+@bot.tree.command(name="sync_commands", description="🔧 [ADMIN] Force sync slash commands")
+@app_commands.checks.has_permissions(administrator=True)
+async def sync_commands(interaction: discord.Interaction):
+    """Force sync slash commands"""
+    await interaction.response.defer(ephemeral=True)
     
-    # Also clear for this guild specifically
-    bot.tree.clear_commands(guild=ctx.guild)
-    
-    # Sync globally (this will push the changes to Discord)
-    await bot.tree.sync()
-    
-    # Also sync to this guild for instant update
-    await bot.tree.sync(guild=ctx.guild)
-    
-    await ctx.send("✅ Commands synced! Changes may take up to 1 hour globally, but should be instant in this server.\n"
-                   "💡 Tip: Restart your Discord client or use Ctrl+R to refresh and see changes immediately.")
+    try:
+        # Clear globally
+        bot.tree.clear_commands(guild=None)
+        
+        # Also clear for this guild specifically
+        bot.tree.clear_commands(guild=interaction.guild)
+        
+        # Sync globally
+        synced_global = await bot.tree.sync()
+        
+        # Sync to this guild
+        synced_guild = await bot.tree.sync(guild=interaction.guild)
+        
+        await interaction.followup.send(
+            f"✅ **Commands Synced!**\n\n"
+            f"📊 Global: {len(synced_global)} commands\n"
+            f"📊 This server: {len(synced_guild)} commands\n\n"
+            f"⚠️ **IMPORTANT:** Completely close and reopen Discord to see changes!\n"
+            f"(Ctrl+R won't work - you need to fully restart Discord)",
+            ephemeral=True
+        )
+    except Exception as e:
+        await interaction.followup.send(f"❌ Error syncing: {e}", ephemeral=True)
 
 
 # Help command (ONLY ONE DEFINITION)
