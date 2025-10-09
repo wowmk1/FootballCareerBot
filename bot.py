@@ -63,7 +63,7 @@ class FootballBot(commands.Bot):
             'commands.transfers',
             'commands.news',
             'commands.interactive_match',
-            # DON'T load admin.py as cog - we add the group manually below
+            'commands.adm',  # Load admin as a regular cog now
         ]
 
         for cog in cogs:
@@ -72,16 +72,6 @@ class FootballBot(commands.Bot):
                 print(f"✅ Loaded {cog}")
             except Exception as e:
                 print(f"❌ Failed to load {cog}: {e}")
-        
-        # Load admin commands group from adm.py (not admin.py!)
-        try:
-            from commands.adm import admin_group
-            self.tree.add_command(admin_group)
-            print(f"✅ Loaded admin command group as /{admin_group.name}")
-        except Exception as e:
-            print(f"❌ Failed to load admin group: {e}")
-            import traceback
-            traceback.print_exc()
 
     async def initialize_data(self):
         """Initialize database with teams and complete squads"""
