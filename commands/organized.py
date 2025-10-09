@@ -1,5 +1,6 @@
 """
 Organized commands - Player and League grouped commands
+FIXED VERSION - Commands will now appear in Discord
 """
 import discord
 from discord import app_commands
@@ -11,10 +12,10 @@ class OrganizedCommands(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
     
-    @app_commands.command(name="player", description="👤 Player information")
+    @app_commands.command(name="player", description="👤 View player information and stats")
     @app_commands.describe(
-        action="What to view",
-        user="User to compare with or view"
+        action="Choose what to view",
+        user="Select a user (for compare/view profile)"
     )
     @app_commands.choices(action=[
         app_commands.Choice(name="📊 My Profile", value="profile"),
@@ -42,10 +43,10 @@ class OrganizedCommands(commands.Cog):
         elif action == "history":
             await self._show_history(interaction)
     
-    @app_commands.command(name="league_info", description="🏆 League information")
+    @app_commands.command(name="league_info", description="🏆 View league tables, fixtures, and stats")
     @app_commands.describe(
-        action="What to view",
-        league="Which league"
+        action="Choose what to view",
+        league="Select which league (for tables/scorers)"
     )
     @app_commands.choices(
         action=[
@@ -79,11 +80,10 @@ class OrganizedCommands(commands.Cog):
     
     async def _show_profile(self, interaction: discord.Interaction, user: discord.User):
         """Show player profile"""
-        # Import here to avoid circular imports
         from commands.player import PlayerCommands
         player_cog = self.bot.get_cog('PlayerCommands')
         if player_cog:
-            await player_cog.profile.callback(player_cog, interaction, user)
+            await player_cog.profile(interaction, user)
         else:
             await interaction.response.send_message("❌ Profile command not available", ephemeral=True)
     
@@ -92,7 +92,7 @@ class OrganizedCommands(commands.Cog):
         from commands.player import PlayerCommands
         player_cog = self.bot.get_cog('PlayerCommands')
         if player_cog:
-            await player_cog.compare.callback(player_cog, interaction, user)
+            await player_cog.compare(interaction, user)
         else:
             await interaction.response.send_message("❌ Compare command not available", ephemeral=True)
     
@@ -101,7 +101,7 @@ class OrganizedCommands(commands.Cog):
         from commands.transfers import TransferCommands
         transfer_cog = self.bot.get_cog('TransferCommands')
         if transfer_cog:
-            await transfer_cog.my_contract.callback(transfer_cog, interaction)
+            await transfer_cog.my_contract(interaction)
         else:
             await interaction.response.send_message("❌ Contract command not available", ephemeral=True)
     
@@ -110,7 +110,7 @@ class OrganizedCommands(commands.Cog):
         from commands.transfers import TransferCommands
         transfer_cog = self.bot.get_cog('TransferCommands')
         if transfer_cog:
-            await transfer_cog.transfer_history.callback(transfer_cog, interaction)
+            await transfer_cog.transfer_history(interaction)
         else:
             await interaction.response.send_message("❌ History command not available", ephemeral=True)
     
@@ -119,7 +119,7 @@ class OrganizedCommands(commands.Cog):
         from commands.leagues import LeagueCommands
         league_cog = self.bot.get_cog('LeagueCommands')
         if league_cog:
-            await league_cog.league.callback(league_cog, interaction, league)
+            await league_cog.league(interaction, league)
         else:
             await interaction.response.send_message("❌ League command not available", ephemeral=True)
     
@@ -128,7 +128,7 @@ class OrganizedCommands(commands.Cog):
         from commands.leagues import LeagueCommands
         league_cog = self.bot.get_cog('LeagueCommands')
         if league_cog:
-            await league_cog.top_scorers.callback(league_cog, interaction)
+            await league_cog.top_scorers(interaction)
         else:
             await interaction.response.send_message("❌ Scorers command not available", ephemeral=True)
     
@@ -137,7 +137,7 @@ class OrganizedCommands(commands.Cog):
         from commands.season import SeasonCommands
         season_cog = self.bot.get_cog('SeasonCommands')
         if season_cog:
-            await season_cog.fixtures.callback(season_cog, interaction)
+            await season_cog.fixtures(interaction)
         else:
             await interaction.response.send_message("❌ Fixtures command not available", ephemeral=True)
     
@@ -146,7 +146,7 @@ class OrganizedCommands(commands.Cog):
         from commands.season import SeasonCommands
         season_cog = self.bot.get_cog('SeasonCommands')
         if season_cog:
-            await season_cog.results.callback(season_cog, interaction)
+            await season_cog.results(interaction)
         else:
             await interaction.response.send_message("❌ Results command not available", ephemeral=True)
 
