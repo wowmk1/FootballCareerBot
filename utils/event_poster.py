@@ -125,6 +125,69 @@ async def post_transfer_news_to_channel(bot, guild, transfer_info):
         print(f"❌ Error posting transfer news: {e}")
 
 
+async def post_new_player_announcement(bot, guild, player_info):
+    """Post new player joining announcement to transfer-news channel"""
+    try:
+        transfer_channel = discord.utils.get(guild.text_channels, name="transfer-news")
+        if not transfer_channel:
+            return
+        
+        embed = discord.Embed(
+            title="🆕 NEW PLAYER DEBUT!",
+            description=f"## {player_info['player_name']}\n**{player_info['user'].display_name}** joins **{player_info['to_team']}**",
+            color=discord.Color.green()
+        )
+        
+        # Player stats
+        embed.add_field(
+            name="📊 Player Profile",
+            value=f"**Position:** {player_info['position']}\n"
+                  f"**Age:** {player_info['age']}\n"
+                  f"**Rating:** {player_info['overall']} OVR\n"
+                  f"**Potential:** ⭐ {player_info['potential']} POT",
+            inline=True
+        )
+        
+        # Contract details
+        embed.add_field(
+            name="💼 Contract",
+            value=f"**£{player_info['wage']:,}/week**\n"
+                  f"**{player_info['contract_length']} years**\n"
+                  f"*Free transfer*",
+            inline=True
+        )
+        
+        # Add team crest
+        from utils.football_data_api import get_team_crest_url
+        from data.teams import ALL_TEAMS
+        
+        # Find the team_id from team name
+        to_team_id = None
+        for team in ALL_TEAMS:
+            if team['team_name'] == player_info['to_team']:
+                to_team_id = team['team_id']
+                break
+        
+        if to_team_id:
+            to_crest = get_team_crest_url(to_team_id)
+            if to_crest:
+                embed.set_thumbnail(url=to_crest)
+        
+        # Add user avatar
+        embed.set_author(
+            name=f"{player_info['user'].display_name} creates their player!",
+            icon_url=player_info['user'].display_avatar.url if player_info['user'].display_avatar else None
+        )
+        
+        embed.set_footer(text=f"🎮 Use /start to create your own player!")
+        
+        await transfer_channel.send(embed=embed)
+        print(f"✅ Posted new player announcement: {player_info['player_name']} to {transfer_channel.guild.name}")
+        
+    except Exception as e:
+        print(f"❌ Error posting new player announcement: {e}")
+
+
 async def post_weekly_news_digest(bot, guild):
     """Post weekly news digest to news-feed channel"""
     try:
