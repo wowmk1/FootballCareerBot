@@ -1,5 +1,5 @@
 """
-Admin Command - Single command with action parameter
+Admin Command - Single command with all admin actions in dropdown
 """
 import discord
 from discord import app_commands
@@ -33,8 +33,9 @@ class AdminCommands(commands.Cog):
         app_commands.Choice(name="🔍 Debug Crests", value="debug_crests"),
         app_commands.Choice(name="🗂️ Setup Channels", value="setup_channels"),
         app_commands.Choice(name="🎮 View Game State", value="game_state"),
+        app_commands.Choice(name="🔧 Sync to This Server", value="sync_guild"),
         app_commands.Choice(name="🔍 Debug Commands", value="debug_commands"),
-        app_commands.Choice(name="🔧 Rebuild Commands", value="rebuild_commands"),
+        app_commands.Choice(name="🔄 Rebuild All Commands", value="rebuild_commands"),
         app_commands.Choice(name="🔄 Restart Bot", value="restart"),
     ])
     @app_commands.checks.has_permissions(administrator=True)
@@ -72,6 +73,8 @@ class AdminCommands(commands.Cog):
             await self._setup_channels(interaction)
         elif action == "game_state":
             await self._game_state(interaction)
+        elif action == "sync_guild":
+            await self._sync_guild(interaction)
         elif action == "debug_commands":
             await self._debug_commands(interaction)
         elif action == "rebuild_commands":
@@ -359,6 +362,21 @@ class AdminCommands(commands.Cog):
         
         await interaction.response.send_message(embed=embed)
     
+    async def _sync_guild(self, interaction: discord.Interaction):
+        """Sync commands to this guild only"""
+        await interaction.response.defer(ephemeral=True)
+        
+        try:
+            synced = await self.bot.tree.sync(guild=interaction.guild)
+            await interaction.followup.send(
+                f"✅ **Synced {len(synced)} commands to {interaction.guild.name}!**\n\n"
+                f"Commands should appear immediately (no restart needed).\n"
+                f"This bypasses Discord's global rate limit.",
+                ephemeral=True
+            )
+        except Exception as e:
+            await interaction.followup.send(f"❌ Error: {e}", ephemeral=True)
+    
     async def _debug_commands(self, interaction: discord.Interaction):
         """Debug commands"""
         await interaction.response.defer(ephemeral=True)
@@ -387,9 +405,9 @@ class AdminCommands(commands.Cog):
             await self.bot.tree.sync()
             await interaction.followup.send("🧹 Cleared commands", ephemeral=True)
             
-            cogs = ['commands.player', 'commands.training', 'commands.season', 
+            cogs = ['commands.start', 'commands.player', 'commands.training', 'commands.season', 
                    'commands.matches', 'commands.leagues', 'commands.transfers', 
-                   'commands.news', 'commands.interactive_match', 'commands.adm']
+                   'commands.news', 'commands.interactive_match', 'commands.adm', 'commands.organized']
             
             for cog in cogs:
                 try:
