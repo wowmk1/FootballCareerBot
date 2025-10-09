@@ -42,22 +42,45 @@ class StartCommands(commands.Cog):
             )
             return
         
-        # Step 1: Show club selection view
+        # Step 1: Create the view first to get club data
         view = ClubSelectionView(name, position, interaction.user)
         
         embed = discord.Embed(
             title="🏟️ Choose Your Starting Club",
-            description=f"**{name}** ({position})\n\nSelect from 3 available clubs:",
+            description=f"**{name}** ({position})\n\nYou have **3 contract offers** from different leagues:",
             color=discord.Color.blue()
         )
+        
+        # Show all 3 offers with full details
+        for i, club in enumerate(view.clubs, 1):
+            if club['league'] == 'Premier League':
+                league_emoji = "🔴"
+                difficulty = "⭐⭐⭐ Very Hard"
+            elif club['league'] == 'Championship':
+                league_emoji = "🔵"
+                difficulty = "⭐⭐ Medium"
+            else:
+                league_emoji = "🟢"
+                difficulty = "⭐ Easier"
+            
+            embed.add_field(
+                name=f"{league_emoji} Option {i}: {club['team_name']}",
+                value=f"**League:** {club['league']}\n"
+                      f"**Wage:** £{club['wage']:,}/week (~£{club['wage']*52:,}/year)\n"
+                      f"**Contract:** 3 years\n"
+                      f"**Difficulty:** {difficulty}",
+                inline=False
+            )
+        
         embed.add_field(
             name="💡 Tips",
-            value="• League One: Easier competition, faster development\n"
-                  "• Championship: Balanced challenge\n"
-                  "• Premier League: Harder games, better wages",
+            value="🟢 **League One:** Easier competition, faster development\n"
+                  "🔵 **Championship:** Balanced challenge\n"
+                  "🔴 **Premier League:** Harder games, better wages",
             inline=False
         )
-        embed.set_footer(text="Select a club using the buttons below")
+        
+        embed.set_footer(text="Click a button below to sign with that club")
         
         await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
 
@@ -79,8 +102,8 @@ class ClubSelectionView(discord.ui.View):
     
     def generate_club_options(self):
         """Generate 3 club offers from different leagues"""
-        import asyncio
         from data.teams import ALL_TEAMS
+        import random
         
         # Get teams from each league
         league_one_teams = [t for t in ALL_TEAMS if t['league'] == 'League One']
@@ -89,9 +112,9 @@ class ClubSelectionView(discord.ui.View):
         
         # Select one from each
         clubs = [
-            random.choice(league_one_teams),
-            random.choice(championship_teams),
-            random.choice(premier_league_teams)
+            random.choice(league_one_teams).copy(),
+            random.choice(championship_teams).copy(),
+            random.choice(premier_league_teams).copy()
         ]
         
         # Add wage info
