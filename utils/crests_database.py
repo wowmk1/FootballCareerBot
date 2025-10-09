@@ -1,8 +1,11 @@
 """
 Static Team Crests Database
-Using DIRECT image URLs (no redirects, no Wikipedia thumbs)
-These URLs are verified to work in Discord
+Using GitHub CDN (luukhopman/football-logos) - Discord-compatible
+These are official team logos hosted on GitHub
 """
+
+# Base URL for GitHub raw content
+GITHUB_BASE = "https://raw.githubusercontent.com/luukhopman/football-logos/main/logos"
 
 # Premier League Team Crests - Official Premier League CDN
 PREMIER_LEAGUE_CRESTS = {
@@ -28,60 +31,60 @@ PREMIER_LEAGUE_CRESTS = {
     'ipswich': 'https://resources.premierleague.com/premierleague/badges/100/t40@2x.png',
 }
 
-# Championship - Using API-Football CDN (reliable, used by many Discord bots)
+# Championship - Using GitHub CDN (luukhopman/football-logos)
 CHAMPIONSHIP_CRESTS = {
-    'leeds': 'https://media.api-sports.io/football/teams/1346.png',
-    'burnley': 'https://media.api-sports.io/football/teams/44.png',
-    'sheff_united': 'https://media.api-sports.io/football/teams/62.png',
-    'luton': 'https://media.api-sports.io/football/teams/1356.png',
-    'middlesbrough': 'https://media.api-sports.io/football/teams/1355.png',
-    'norwich': 'https://media.api-sports.io/football/teams/71.png',
-    'coventry': 'https://media.api-sports.io/football/teams/1345.png',
-    'west_brom': 'https://media.api-sports.io/football/teams/60.png',
-    'millwall': 'https://media.api-sports.io/football/teams/1357.png',
-    'blackburn': 'https://media.api-sports.io/football/teams/1359.png',
-    'preston': 'https://media.api-sports.io/football/teams/1358.png',
-    'bristol_city': 'https://media.api-sports.io/football/teams/1354.png',
-    'cardiff': 'https://media.api-sports.io/football/teams/1353.png',
-    'swansea': 'https://media.api-sports.io/football/teams/1339.png',
-    'stoke': 'https://media.api-sports.io/football/teams/70.png',
-    'hull': 'https://media.api-sports.io/football/teams/1360.png',
-    'qpr': 'https://media.api-sports.io/football/teams/63.png',
-    'sunderland': 'https://media.api-sports.io/football/teams/1349.png',
-    'watford': 'https://media.api-sports.io/football/teams/38.png',
-    'plymouth': 'https://media.api-sports.io/football/teams/1350.png',
-    'derby': 'https://media.api-sports.io/football/teams/1352.png',
-    'portsmouth': 'https://media.api-sports.io/football/teams/1348.png',
-    'sheff_wed': 'https://media.api-sports.io/football/teams/1351.png',
-    'oxford': 'https://www.footballcrests.com/OxfordUCrest1.gif',
+    'leeds': f'{GITHUB_BASE}/england-championship/Leeds%20United.png',
+    'burnley': f'{GITHUB_BASE}/england-championship/Burnley.png',
+    'sheff_united': f'{GITHUB_BASE}/england-championship/Sheffield%20United.png',
+    'luton': f'{GITHUB_BASE}/england-championship/Luton%20Town.png',
+    'middlesbrough': f'{GITHUB_BASE}/england-championship/Middlesbrough.png',
+    'norwich': f'{GITHUB_BASE}/england-championship/Norwich%20City.png',
+    'coventry': f'{GITHUB_BASE}/england-championship/Coventry%20City.png',
+    'west_brom': f'{GITHUB_BASE}/england-championship/West%20Bromwich%20Albion.png',
+    'millwall': f'{GITHUB_BASE}/england-championship/Millwall.png',
+    'blackburn': f'{GITHUB_BASE}/england-championship/Blackburn%20Rovers.png',
+    'preston': f'{GITHUB_BASE}/england-championship/Preston%20North%20End.png',
+    'bristol_city': f'{GITHUB_BASE}/england-championship/Bristol%20City.png',
+    'cardiff': f'{GITHUB_BASE}/england-championship/Cardiff%20City.png',
+    'swansea': f'{GITHUB_BASE}/england-championship/Swansea%20City.png',
+    'stoke': f'{GITHUB_BASE}/england-championship/Stoke%20City.png',
+    'hull': f'{GITHUB_BASE}/england-championship/Hull%20City.png',
+    'qpr': f'{GITHUB_BASE}/england-championship/Queens%20Park%20Rangers.png',
+    'sunderland': f'{GITHUB_BASE}/england-championship/Sunderland.png',
+    'watford': f'{GITHUB_BASE}/england-championship/Watford.png',
+    'plymouth': f'{GITHUB_BASE}/england-championship/Plymouth%20Argyle.png',
+    'derby': f'{GITHUB_BASE}/england-championship/Derby%20County.png',
+    'portsmouth': f'{GITHUB_BASE}/england-championship/Portsmouth.png',
+    'sheff_wed': f'{GITHUB_BASE}/england-championship/Sheffield%20Wednesday.png',
+    'oxford': f'{GITHUB_BASE}/england-championship/Oxford%20United.png',
 }
 
-# League One - API-Football CDN
+# League One - Using GitHub CDN (luukhopman/football-logos)
 LEAGUE_ONE_CRESTS = {
-    'barnsley': 'https://media.api-sports.io/football/teams/1353.png',
-    'bolton': 'https://media.api-sports.io/football/teams/1361.png',
-    'charlton': 'https://media.api-sports.io/football/teams/1344.png',
-    'wycombe': 'https://media.api-sports.io/football/teams/1372.png',
-    'peterborough': 'https://media.api-sports.io/football/teams/1366.png',
-    'lincoln': 'https://media.api-sports.io/football/teams/1371.png',
-    'exeter': 'https://media.api-sports.io/football/teams/1370.png',
-    'burton': 'https://media.api-sports.io/football/teams/1362.png',
-    'cambridge': 'https://media.api-sports.io/football/teams/1373.png',
-    'shrewsbury': 'https://media.api-sports.io/football/teams/1369.png',
-    'northampton': 'https://media.api-sports.io/football/teams/1368.png',
-    'stevenage': 'https://media.api-sports.io/football/teams/4703.png',
-    'rotherham': 'https://media.api-sports.io/football/teams/1364.png',
-    'reading': 'https://media.api-sports.io/football/teams/53.png',
-    'bristol_rovers': 'https://media.api-sports.io/football/teams/1365.png',
-    'leyton_orient': 'https://media.api-sports.io/football/teams/1347.png',
-    'blackpool': 'https://media.api-sports.io/football/teams/1359.png',
-    'mansfield': 'https://media.api-sports.io/football/teams/1374.png',
-    'crawley': 'https://media.api-sports.io/football/teams/4696.png',
-    'stockport': 'https://media.api-sports.io/football/teams/1363.png',
-    'wrexham': 'https://media.api-sports.io/football/teams/8665.png',
-    'huddersfield': 'https://media.api-sports.io/football/teams/1356.png',
-    'birmingham': 'https://media.api-sports.io/football/teams/1354.png',
-    'wigan': 'https://media.api-sports.io/football/teams/1368.png',
+    'barnsley': f'{GITHUB_BASE}/england-league-one/Barnsley.png',
+    'bolton': f'{GITHUB_BASE}/england-league-one/Bolton%20Wanderers.png',
+    'charlton': f'{GITHUB_BASE}/england-league-one/Charlton%20Athletic.png',
+    'wycombe': f'{GITHUB_BASE}/england-league-one/Wycombe%20Wanderers.png',
+    'peterborough': f'{GITHUB_BASE}/england-league-one/Peterborough%20United.png',
+    'lincoln': f'{GITHUB_BASE}/england-league-one/Lincoln%20City.png',
+    'exeter': f'{GITHUB_BASE}/england-league-one/Exeter%20City.png',
+    'burton': f'{GITHUB_BASE}/england-league-one/Burton%20Albion.png',
+    'cambridge': f'{GITHUB_BASE}/england-league-one/Cambridge%20United.png',
+    'shrewsbury': f'{GITHUB_BASE}/england-league-one/Shrewsbury%20Town.png',
+    'northampton': f'{GITHUB_BASE}/england-league-one/Northampton%20Town.png',
+    'stevenage': f'{GITHUB_BASE}/england-league-one/Stevenage.png',
+    'rotherham': f'{GITHUB_BASE}/england-league-one/Rotherham%20United.png',
+    'reading': f'{GITHUB_BASE}/england-league-one/Reading.png',
+    'bristol_rovers': f'{GITHUB_BASE}/england-league-one/Bristol%20Rovers.png',
+    'leyton_orient': f'{GITHUB_BASE}/england-league-one/Leyton%20Orient.png',
+    'blackpool': f'{GITHUB_BASE}/england-league-one/Blackpool.png',
+    'mansfield': f'{GITHUB_BASE}/england-league-one/Mansfield%20Town.png',
+    'crawley': f'{GITHUB_BASE}/england-league-one/Crawley%20Town.png',
+    'stockport': f'{GITHUB_BASE}/england-league-one/Stockport%20County.png',
+    'wrexham': f'{GITHUB_BASE}/england-league-one/Wrexham.png',
+    'huddersfield': f'{GITHUB_BASE}/england-league-one/Huddersfield%20Town.png',
+    'birmingham': f'{GITHUB_BASE}/england-league-one/Birmingham%20City.png',
+    'wigan': f'{GITHUB_BASE}/england-league-one/Wigan%20Athletic.png',
 }
 
 # Combine all crests
