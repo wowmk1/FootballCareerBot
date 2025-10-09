@@ -32,41 +32,48 @@ class LeagueCommands(commands.Cog):
             color=discord.Color.blue()
         )
         
-        # ADD COMPETITION LOGO AS THUMBNAIL (NOT team crest)
+        # ADD COMPETITION LOGO AS THUMBNAIL
         comp_logo = get_competition_logo(league)
         if comp_logo:
             embed.set_thumbnail(url=comp_logo)
-            print(f"✅ League table - Set competition logo: {league}")
         
-        # FIXED TABLE FORMATTING - Proper spacing
-        table_text = "```\n"
-        # Header with proper column widths
-        table_text += "Pos Team                  Pld  W  D  L  GF  GA  GD Pts\n"
-        table_text += "─" * 64 + "\n"
+        # Build table with FIXED spacing
+        lines = []
+        lines.append("```")
+        # Header - exact spacing
+        lines.append("Pos Team                 Pld  W  D  L  GF GA  GD Pts")
+        lines.append("─" * 60)
         
         for pos, team in enumerate(table, 1):
             gd = team['goals_for'] - team['goals_against']
-            gd_str = f"+{gd}" if gd > 0 else str(gd)
-            
-            # Truncate team name to 20 chars and pad with spaces
-            team_name = team['team_name'][:20].ljust(20)
-            
-            # Position indicators
-            if pos <= 4:
-                prefix = "🟢"
-            elif pos <= 6:
-                prefix = "🔵"
-            elif pos >= len(table) - 2:
-                prefix = "🔴"
+            # Format GD with sign
+            if gd > 0:
+                gd_str = f"+{gd}"
             else:
-                prefix = "  "
+                gd_str = str(gd)
             
-            # Format each column with fixed width
-            table_text += f"{prefix}{pos:2d} {team_name} {team['played']:3d} {team['won']:2d} {team['drawn']:2d} {team['lost']:2d} {team['goals_for']:3d} {team['goals_against']:3d} {gd_str:>3} {team['points']:3d}\n"
+            # Truncate and pad team name to exactly 20 characters
+            team_name = team['team_name'][:20]
+            team_name = team_name.ljust(20)
+            
+            # Position emoji
+            if pos <= 4:
+                emoji = "🟢"
+            elif pos <= 6:
+                emoji = "🔵"
+            elif pos >= len(table) - 2:
+                emoji = "🔴"
+            else:
+                emoji = "  "
+            
+            # Build line with exact spacing
+            # Format: Emoji Pos(2) Team(20) Pld(3) W(2) D(2) L(2) GF(2) GA(2) GD(3) Pts(3)
+            line = f"{emoji}{pos:2} {team_name} {team['played']:3} {team['won']:2} {team['drawn']:2} {team['lost']:2} {team['goals_for']:2} {team['goals_against']:2} {gd_str:>3} {team['points']:3}"
+            lines.append(line)
         
-        table_text += "```"
+        lines.append("```")
         
-        embed.description = table_text
+        embed.description = "\n".join(lines)
         
         embed.add_field(
             name="🔑 Key",
@@ -75,10 +82,6 @@ class LeagueCommands(commands.Cog):
         )
         
         state = await db.get_game_state()
-        
-        # REMOVED: Leader's crest as image (was causing confusion)
-        # Only show competition logo in thumbnail
-        
         embed.set_footer(text=f"Season {state['current_season']} • Week {state['current_week']} • Leaders: {table[0]['team_name']}")
         
         await interaction.response.send_message(embed=embed)
@@ -136,11 +139,10 @@ class LeagueCommands(commands.Cog):
             color=discord.Color.gold()
         )
         
-        # ADD LEAGUE LOGO AS THUMBNAIL
+        # ADD LEAGUE LOGO
         comp_logo = get_competition_logo(league)
         if comp_logo:
             embed.set_thumbnail(url=comp_logo)
-            print(f"✅ Top scorers - Set competition logo: {league}")
         
         scorers_text = ""
         for i, scorer in enumerate(all_scorers, 1):
