@@ -75,11 +75,26 @@ class FootballBot(commands.Bot):
         
         # Load admin commands group (using 'adm' name to avoid Discord cache issues)
         try:
-            from commands.admin import admin_group
+            import sys
+            import os
+            # Add commands directory to path if needed
+            commands_dir = os.path.join(os.path.dirname(__file__), 'commands')
+            if commands_dir not in sys.path:
+                sys.path.insert(0, commands_dir)
+            
+            # Try importing from commands.admin first
+            try:
+                from commands.admin import admin_group
+            except ModuleNotFoundError:
+                # Fall back to direct import if commands is not a package
+                from admin import admin_group
+            
             self.tree.add_command(admin_group)
             print(f"✅ Loaded admin command group as /{admin_group.name}")
         except Exception as e:
             print(f"❌ Failed to load admin group: {e}")
+            import traceback
+            traceback.print_exc()
 
     async def initialize_data(self):
         """Initialize database with teams and complete squads"""
@@ -503,7 +518,7 @@ async def rebuild_commands(interaction: discord.Interaction):
                 await bot.load_extension(cog)
         
         # Re-add admin group
-        from commands.adm import admin_group
+        from commands.admin import admin_group
         bot.tree.add_command(admin_group)
         
         # Re-add utility commands
