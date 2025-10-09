@@ -41,8 +41,10 @@ class FootballBot(commands.Bot):
         await cache_all_crests()
         print("✅ Team crests cached")
 
-        await self.tree.sync()
-        print(f"✅ Synced {len(self.tree.get_commands())} slash commands")
+        # Sync commands
+        print("🔄 Syncing commands with Discord...")
+        synced = await self.tree.sync()
+        print(f"✅ Synced {len(synced)} slash commands globally")
 
         if not self.season_task_started:
             self.check_match_day.start()
@@ -338,6 +340,39 @@ async def restart(ctx):
     """Restart the bot to reload all commands"""
     await ctx.send("🔄 Restarting bot to reload commands...")
     await bot.close()
+
+
+# ADMIN: Clear old admin commands from Discord's global cache
+@bot.command()
+@commands.has_permissions(administrator=True)
+async def fix_admin(ctx):
+    """Remove old /admin_* commands and register /admin group properly"""
+    await ctx.send("🔄 Fixing admin commands...")
+    
+    old_commands = [
+        'admin_advance_week', 'admin_advance_weeks', 'admin_open_window',
+        'admin_close_window', 'admin_assign_team', 'admin_wipe_players',
+        'admin_check_retirements', 'admin_check_squads', 'admin_transfer_test',
+        'admin_debug_crests', 'admin_setup_channels', 'admin_game_state'
+    ]
+    
+    # Get current global commands from Discord
+    global_commands = await bot.tree.fetch_commands()
+    
+    removed = []
+    for cmd in global_commands:
+        if cmd.name in old_commands:
+            await bot.tree.delete_command(cmd.id)
+            removed.append(cmd.name)
+    
+    # Re-sync to push changes
+    await bot.tree.sync()
+    
+    if removed:
+        await ctx.send(f"✅ Removed {len(removed)} old admin commands: {', '.join(removed)}\n"
+                       f"🔄 Re-synced commands. Restart Discord to see changes!")
+    else:
+        await ctx.send("✅ No old admin commands found. Your commands are already correct!")
 
 
 # Help command (ONLY ONE DEFINITION)
