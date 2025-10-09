@@ -73,22 +73,9 @@ class FootballBot(commands.Bot):
             except Exception as e:
                 print(f"❌ Failed to load {cog}: {e}")
         
-        # Load admin commands group (using 'adm' name to avoid Discord cache issues)
+        # Load admin commands group from adm.py (not admin.py!)
         try:
-            import sys
-            import os
-            # Add commands directory to path if needed
-            commands_dir = os.path.join(os.path.dirname(__file__), 'commands')
-            if commands_dir not in sys.path:
-                sys.path.insert(0, commands_dir)
-            
-            # Try importing from commands.admin first
-            try:
-                from commands.admin import admin_group
-            except ModuleNotFoundError:
-                # Fall back to direct import if commands is not a package
-                from admin import admin_group
-            
+            from commands.adm import admin_group
             self.tree.add_command(admin_group)
             print(f"✅ Loaded admin command group as /{admin_group.name}")
         except Exception as e:
