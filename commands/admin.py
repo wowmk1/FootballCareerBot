@@ -1,16 +1,15 @@
 """
-Admin Commands - PROPER Group Implementation
-This creates ONE /admin command with subcommands in a dropdown
+Admin Commands - Simple Group (No Cog)
+Loaded directly in bot.py
 """
 import discord
 from discord import app_commands
-from discord.ext import commands
 from database import db
 import config
 import asyncio
 
 
-# Create the group OUTSIDE the cog
+# Create the admin group
 admin_group = app_commands.Group(name="admin", description="Administrator commands")
 
 
