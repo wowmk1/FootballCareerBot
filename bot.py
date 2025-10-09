@@ -41,10 +41,17 @@ class FootballBot(commands.Bot):
         await cache_all_crests()
         print("✅ Team crests cached")
 
-        # Sync commands
-        print("🔄 Syncing commands with Discord...")
-        synced = await self.tree.sync()
-        print(f"✅ Synced {len(synced)} slash commands globally")
+        # Sync commands (with rate limit protection)
+        try:
+            print("🔄 Syncing commands with Discord...")
+            synced = await self.tree.sync()
+            print(f"✅ Synced {len(synced)} slash commands globally")
+        except discord.HTTPException as e:
+            if e.status == 429:
+                print("⚠️ Rate limited by Discord. Commands will sync eventually.")
+                print("💡 Tip: Avoid frequent bot restarts to prevent rate limits.")
+            else:
+                print(f"❌ Error syncing commands: {e}")
 
         if not self.season_task_started:
             self.check_match_day.start()
@@ -602,6 +609,26 @@ async def rebuild_commands(interaction: discord.Interaction):
     except Exception as e:
         import traceback
         await interaction.followup.send(f"❌ Error: {e}\n```{traceback.format_exc()}```", ephemeral=True)
+
+
+# EMERGENCY: Guild-specific sync (bypasses rate limits)
+@bot.tree.command(name="sync_guild", description="🔧 [ADMIN] Sync commands to THIS server only")
+@app_commands.checks.has_permissions(administrator=True)
+async def sync_guild(interaction: discord.Interaction):
+    """Emergency sync to current guild only"""
+    await interaction.response.defer(ephemeral=True)
+    
+    try:
+        # Sync to THIS guild only (bypasses global rate limit)
+        synced = await bot.tree.sync(guild=interaction.guild)
+        await interaction.followup.send(
+            f"✅ **Synced {len(synced)} commands to {interaction.guild.name}!**\n\n"
+            f"Commands should appear immediately (no restart needed).\n"
+            f"This bypasses Discord's global rate limit.",
+            ephemeral=True
+        )
+    except Exception as e:
+        await interaction.followup.send(f"❌ Error: {e}", ephemeral=True)
 
 
 # Help command
