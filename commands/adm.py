@@ -10,8 +10,8 @@ import config
 import asyncio
 
 
-# Create the admin group - NO GUILD SPECIFIED HERE, we'll add it per-server in bot.py
-admin_group = app_commands.Group(name="admin", description="Administrator commands")
+# Create the admin group with a DIFFERENT name to avoid Discord's cache
+admin_group = app_commands.Group(name="adm", description="Administrator commands")
 
 
 @admin_group.command(name="advance_week", description="⏩ Advance to next week")
