@@ -75,19 +75,23 @@ class PlayerCommands(commands.Cog):
         )
         embed.add_field(name="📈 Attributes", value=stats_text, inline=True)
         
+        # Season stats (handle missing MOTM column gracefully)
+        season_motm = player.get('season_motm', 0)  # Default to 0 if missing
         season_text = (
             f"⚽ Goals: {player['season_goals']}\n"
             f"🅰️ Assists: {player['season_assists']}\n"
             f"👕 Appearances: {player['season_apps']}\n"
-            f"⭐ MOTM: {player['season_motm']}"
+            f"⭐ MOTM: {season_motm}"
         )
         embed.add_field(name="📊 Season Stats", value=season_text, inline=True)
         
+        # Career stats (handle missing MOTM column gracefully)
+        career_motm = player.get('career_motm', 0)  # Default to 0 if missing
         career_text = (
             f"⚽ {player['career_goals']} goals\n"
             f"🅰️ {player['career_assists']} assists\n"
             f"👕 {player['career_apps']} appearances\n"
-            f"⭐ {player['career_motm']} MOTM"
+            f"⭐ {career_motm} MOTM"
         )
         embed.add_field(name="🏆 Career Stats", value=career_text, inline=True)
         
