@@ -18,7 +18,7 @@ class AdminCommands(commands.Cog):
         action="What admin action to perform",
         weeks="Number of weeks (for advance_weeks)",
         user="User to target (for assign_team/transfer_test)",
-        team_id="Team ID (for assign_team)"
+        team_id="Team ID (for assign_team/debug_crests)"
     )
     @app_commands.choices(action=[
         app_commands.Choice(name="⏩ Advance Week", value="advance_week"),
@@ -35,6 +35,7 @@ class AdminCommands(commands.Cog):
         app_commands.Choice(name="🎮 View Game State", value="game_state"),
         app_commands.Choice(name="🔍 Debug Commands", value="debug_commands"),
         app_commands.Choice(name="🔧 Rebuild Commands", value="rebuild_commands"),
+        app_commands.Choice(name="🔄 Restart Bot", value="restart"),
     ])
     @app_commands.checks.has_permissions(administrator=True)
     async def adm(
@@ -75,6 +76,8 @@ class AdminCommands(commands.Cog):
             await self._debug_commands(interaction)
         elif action == "rebuild_commands":
             await self._rebuild_commands(interaction)
+        elif action == "restart":
+            await self._restart(interaction)
     
     async def _advance_week(self, interaction: discord.Interaction):
         """Advance to the next week"""
@@ -403,6 +406,11 @@ class AdminCommands(commands.Cog):
             )
         except Exception as e:
             await interaction.followup.send(f"❌ Error: {e}", ephemeral=True)
+    
+    async def _restart(self, interaction: discord.Interaction):
+        """Restart the bot"""
+        await interaction.response.send_message("🔄 Restarting bot...", ephemeral=True)
+        await self.bot.close()
 
 
 class ConfirmWipeView(discord.ui.View):
