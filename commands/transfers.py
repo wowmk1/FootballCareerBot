@@ -298,9 +298,9 @@ class TransferCommands(commands.Cog):
         view = TransferOfferView(interaction.user.id, offers, self.bot)
         await interaction.response.send_message(embed=embed, view=view)
     
-    @app_commands.command(name="my_contract", description="View your current contract details")
+    # Keep as method for /player to call
     async def my_contract(self, interaction: discord.Interaction):
-        """View contract details"""
+        """View contract details (called by /player command)"""
         
         player = await db.get_player(interaction.user.id)
         
@@ -356,9 +356,9 @@ class TransferCommands(commands.Cog):
         
         await interaction.response.send_message(embed=embed)
     
-    @app_commands.command(name="transfer_history", description="View your transfer history")
+    # Keep as method for /player to call
     async def transfer_history(self, interaction: discord.Interaction):
-        """View transfer history"""
+        """View transfer history (called by /player command)"""
         
         player = await db.get_player(interaction.user.id)
         
