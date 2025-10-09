@@ -32,10 +32,11 @@ class LeagueCommands(commands.Cog):
             color=discord.Color.blue()
         )
         
-        # ADD COMPETITION LOGO
+        # ADD COMPETITION LOGO AS THUMBNAIL
         comp_logo = get_competition_logo(league)
         if comp_logo:
             embed.set_thumbnail(url=comp_logo)
+            print(f"✅ League table - Set competition logo: {league}")
         
         table_text = "```\n"
         table_text += "Pos Team                 Pld  W  D  L  GF  GA  GD  Pts\n"
@@ -75,6 +76,8 @@ class LeagueCommands(commands.Cog):
             leader_crest = get_team_crest_url(table[0]['team_id'])
             if leader_crest:
                 embed.set_image(url=leader_crest)
+                print(f"✅ League table - Set leader crest: {table[0]['team_id']}")
+            
             embed.set_footer(text=f"Season {state['current_season']} • Week {state['current_week']} • Leaders: {table[0]['team_name']}")
         else:
             embed.set_footer(text=f"Season {state['current_season']} • Week {state['current_week']}")
@@ -134,10 +137,11 @@ class LeagueCommands(commands.Cog):
             color=discord.Color.gold()
         )
         
-        # ADD LEAGUE LOGO
+        # ADD LEAGUE LOGO AS THUMBNAIL
         comp_logo = get_competition_logo(league)
         if comp_logo:
             embed.set_thumbnail(url=comp_logo)
+            print(f"✅ Top scorers - Set competition logo: {league}")
         
         scorers_text = ""
         for i, scorer in enumerate(all_scorers, 1):
