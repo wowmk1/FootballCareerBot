@@ -71,7 +71,7 @@ class FootballBot(commands.Bot):
             except Exception as e:
                 print(f"❌ Failed to load {cog}: {e}")
         
-        # Load admin commands group
+        # Load admin commands group (must be loaded AFTER other cogs)
         try:
             from commands.admin import admin_group
             self.tree.add_command(admin_group)
@@ -336,24 +336,22 @@ bot = FootballBot()
 @commands.is_owner()
 async def sync(ctx):
     """Force sync slash commands - removes old cached commands"""
-    # Clear all commands first
+    await ctx.send("🔄 Clearing and syncing commands...")
+    
+    # Clear globally
     bot.tree.clear_commands(guild=None)
     
-    # Remove old admin commands if they exist
-    old_admin_commands = [
-        'admin_advance_week', 'admin_advance_weeks', 'admin_open_window',
-        'admin_close_window', 'admin_assign_team', 'admin_wipe_players',
-        'admin_check_retirements', 'admin_check_squads', 'admin_transfer_test',
-        'admin_debug_crests', 'admin_test_all_crests', 'admin_setup_channels',
-        'admin_game_state'
-    ]
+    # Also clear for this guild specifically
+    bot.tree.clear_commands(guild=ctx.guild)
     
-    for cmd_name in old_admin_commands:
-        bot.tree.remove_command(cmd_name)
-    
-    # Now sync
+    # Sync globally (this will push the changes to Discord)
     await bot.tree.sync()
-    await ctx.send("✅ Commands synced! Old admin commands cleared.")
+    
+    # Also sync to this guild for instant update
+    await bot.tree.sync(guild=ctx.guild)
+    
+    await ctx.send("✅ Commands synced! Changes may take up to 1 hour globally, but should be instant in this server.\n"
+                   "💡 Tip: Restart your Discord client or use Ctrl+R to refresh and see changes immediately.")
 
 
 # Help command (ONLY ONE DEFINITION)
