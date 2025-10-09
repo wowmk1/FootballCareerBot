@@ -503,7 +503,7 @@ async def rebuild_commands(interaction: discord.Interaction):
                 await bot.load_extension(cog)
         
         # Re-add admin group
-        from commands.admin import admin_group
+        from commands.adm import admin_group
         bot.tree.add_command(admin_group)
         
         # Re-add utility commands
