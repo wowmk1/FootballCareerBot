@@ -121,8 +121,11 @@ class ClubButton(discord.ui.Button):
             style = discord.ButtonStyle.success  # Green
             emoji = "🟢"
         
+        # Show league and wage in button label
+        label = f"{club['team_name']}"
+        
         super().__init__(
-            label=f"{club['team_name']}",
+            label=label,
             style=style,
             emoji=emoji,
             custom_id=f"club_{index}"
