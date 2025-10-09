@@ -247,8 +247,8 @@ class FootballBot(commands.Bot):
                     FROM players
                     WHERE retired = FALSE
                     AND last_training IS NOT NULL
-                    AND last_training < NOW() - INTERVAL '23 hours'
-                    AND last_training > NOW() - INTERVAL '24 hours'
+                    AND last_training::timestamp < NOW() - INTERVAL '23 hours'
+                    AND last_training::timestamp > NOW() - INTERVAL '24 hours'
                 """)
                 
                 for row in rows:
