@@ -49,12 +49,14 @@ class FootballBot(commands.Bot):
         if not self.season_task_started:
             self.check_match_day.start()
             self.check_retirements.start()
+            self.check_training_reminders.start()
             self.season_task_started = True
             print("✅ Background tasks started")
 
     async def load_cogs(self):
         """Load all command modules"""
         cogs = [
+            'commands.start',  # Player creation
             'commands.player',
             'commands.training',
             'commands.season',
@@ -219,6 +221,10 @@ class FootballBot(commands.Bot):
             triggered = await check_match_day_trigger(bot=self)
             if triggered:
                 print("⚽ Match window state changed")
+                # Notify all servers when match window opens
+                state = await db.get_game_state()
+                if state['match_window_open']:
+                    await self.notify_match_window_open()
         except Exception as e:
             print(f"❌ Error in match day check: {e}")
 
@@ -230,12 +236,90 @@ class FootballBot(commands.Bot):
         except Exception as e:
             print(f"❌ Error in retirement check: {e}")
 
+    @tasks.loop(hours=1)
+    async def check_training_reminders(self):
+        """Check for players whose training is ready and send reminders"""
+        try:
+            from datetime import timedelta
+            async with db.pool.acquire() as conn:
+                rows = await conn.fetch("""
+                    SELECT user_id, player_name, last_training
+                    FROM players
+                    WHERE retired = FALSE
+                    AND last_training IS NOT NULL
+                    AND last_training < NOW() - INTERVAL '23 hours'
+                    AND last_training > NOW() - INTERVAL '24 hours'
+                """)
+                
+                for row in rows:
+                    await self.send_training_reminder(row['user_id'])
+        except Exception as e:
+            print(f"❌ Error in training reminder check: {e}")
+
+    async def send_training_reminder(self, user_id: int):
+        """Send DM when training is available"""
+        try:
+            user = await self.fetch_user(user_id)
+            embed = discord.Embed(
+                title="💪 Training Available!",
+                description="Your training cooldown is over!\n\nUse `/train` to improve your stats.",
+                color=discord.Color.green()
+            )
+            embed.add_field(
+                name="🔥 Reminder",
+                value="Training daily maintains your streak!\n30-day streak = +5 potential",
+                inline=False
+            )
+            await user.send(embed=embed)
+            print(f"✅ Sent training reminder to user {user_id}")
+        except Exception as e:
+            print(f"⚠️ Could not send training reminder to {user_id}: {e}")
+
+    async def notify_match_window_open(self):
+        """Notify all servers when match window opens"""
+        state = await db.get_game_state()
+        
+        for guild in self.guilds:
+            try:
+                # Try to find bot-commands channel
+                channel = discord.utils.get(guild.text_channels, name="bot-commands")
+                if not channel:
+                    # Fallback to first text channel bot can send in
+                    channel = next((c for c in guild.text_channels if c.permissions_for(guild.me).send_messages), None)
+                
+                if not channel:
+                    continue
+                
+                embed = discord.Embed(
+                    title="🟢 MATCH WINDOW OPEN!",
+                    description=f"## Week {state['current_week']} matches are now playable!\n\n"
+                               f"⏰ Window closes in **{config.MATCH_WINDOW_HOURS} hours**",
+                    color=discord.Color.green()
+                )
+                embed.add_field(
+                    name="⚡ How to Play",
+                    value="1. Use `/play_match` to start your match\n"
+                          "2. Make decisions during key moments\n"
+                          "3. Earn ratings based on performance",
+                    inline=False
+                )
+                embed.set_footer(text="Use /fixtures to see your schedule")
+                
+                await channel.send(embed=embed)
+                print(f"✅ Notified {guild.name} of match window opening")
+            except Exception as e:
+                print(f"⚠️ Could not notify {guild.name}: {e}")
+
     @check_match_day.before_loop
     async def before_check_match_day(self):
         await self.wait_until_ready()
 
     @check_retirements.before_loop
     async def before_check_retirements(self):
+        await self.wait_until_ready()
+
+    @check_training_reminders.before_loop
+    async def before_check_training_reminders(self):
         await self.wait_until_ready()
 
     async def on_ready(self):
@@ -479,6 +563,7 @@ async def rebuild_commands(interaction: discord.Interaction):
         
         # Reload cogs
         cogs = [
+            'commands.start',
             'commands.player',
             'commands.training',
             'commands.season',
@@ -487,6 +572,8 @@ async def rebuild_commands(interaction: discord.Interaction):
             'commands.transfers',
             'commands.news',
             'commands.interactive_match',
+            'commands.adm',
+            'commands.organized',
         ]
         
         for cog in cogs:
@@ -494,10 +581,6 @@ async def rebuild_commands(interaction: discord.Interaction):
                 await bot.reload_extension(cog)
             except:
                 await bot.load_extension(cog)
-        
-        # Re-add admin group
-        from commands.admin import admin_group
-        bot.tree.add_command(admin_group)
         
         # Re-add utility commands
         bot.tree.add_command(help_command)
@@ -510,22 +593,9 @@ async def rebuild_commands(interaction: discord.Interaction):
         # Step 4: Sync everything fresh
         synced = await bot.tree.sync()
         
-        # Show what was registered
-        local_commands = bot.tree.get_commands()
-        admin_group_local = None
-        for cmd in local_commands:
-            if isinstance(cmd, app_commands.Group) and cmd.name == 'admin':
-                admin_group_local = cmd
-                break
-        
         result_msg = f"✅ **REBUILD COMPLETE!**\n\n"
         result_msg += f"🎯 Registered {len(synced)} commands with Discord\n"
-        
-        if admin_group_local:
-            result_msg += f"📁 `/admin` group has {len(admin_group_local.commands)} subcommands\n"
-        
         result_msg += f"\n⚠️ **FULLY CLOSE AND REOPEN DISCORD** to see changes!\n"
-        result_msg += f"The `/admin` command should now be a proper group."
         
         await interaction.followup.send(result_msg, ephemeral=True)
         
@@ -534,7 +604,7 @@ async def rebuild_commands(interaction: discord.Interaction):
         await interaction.followup.send(f"❌ Error: {e}\n```{traceback.format_exc()}```", ephemeral=True)
 
 
-# Help command (ONLY ONE DEFINITION)
+# Help command
 @bot.tree.command(name="help", description="View all available commands")
 async def help_command(interaction: discord.Interaction):
     """Show help information"""
@@ -547,19 +617,19 @@ async def help_command(interaction: discord.Interaction):
 
     embed.add_field(
         name="🎮 Getting Started",
-        value="`/start` - Create player\n`/profile` - View stats\n`/compare @user` - Compare players",
+        value="`/start` - Create player\n`/profile` - View stats\n`/player` - Player info menu",
         inline=False
     )
 
     embed.add_field(
         name="💼 Transfers",
-        value="`/offers` - View offers (transfer windows)\n`/my_contract` - Current deal\n`/transfer_history` - Past moves",
+        value="`/offers` - View offers (transfer windows)\n`/player contract` - Current deal\n`/player history` - Past moves",
         inline=False
     )
 
     embed.add_field(
         name="📈 Training",
-        value="`/train` - Train daily (6+ points per session!)\n30-day streak = +5 permanent potential!",
+        value="`/train` - Train daily (2+ points per session!)\n30-day streak = +3 permanent potential!",
         inline=False
     )
 
@@ -571,7 +641,7 @@ async def help_command(interaction: discord.Interaction):
 
     embed.add_field(
         name="📅 Season",
-        value="`/season` - Current week\n`/fixtures` - Your schedule\n`/league` - League tables",
+        value="`/season` - Current week\n`/league fixtures` - Your schedule\n`/league table` - League tables",
         inline=False
     )
 
@@ -579,7 +649,7 @@ async def help_command(interaction: discord.Interaction):
     if interaction.user.guild_permissions.administrator:
         embed.add_field(
             name="🔧 Admin Commands",
-            value="Type `/admin` to see all admin commands\nAll admin tools are in the `/admin` group",
+            value="Type `/adm` to see all admin commands\nAll admin tools are in the `/adm` dropdown menu",
             inline=False
         )
 
