@@ -36,6 +36,7 @@ class AdminCommands(commands.Cog):
         app_commands.Choice(name="🔧 Sync to This Server", value="sync_guild"),
         app_commands.Choice(name="🔍 Debug Commands", value="debug_commands"),
         app_commands.Choice(name="🔄 Rebuild All Commands", value="rebuild_commands"),
+        app_commands.Choice(name="🔧 Fix MOTM Columns", value="fix_motm"),
         app_commands.Choice(name="🔄 Restart Bot", value="restart"),
     ])
     @app_commands.checks.has_permissions(administrator=True)
