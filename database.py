@@ -633,6 +633,7 @@ class Database:
             await conn.execute("DELETE FROM notifications")
             await conn.execute("DELETE FROM user_settings")
             await conn.execute("DELETE FROM news WHERE user_id IS NOT NULL")
+            await conn.execute("DELETE FROM transfers")
             await conn.execute("DELETE FROM transfer_offers")
             
             await conn.execute("""
@@ -647,7 +648,7 @@ class Database:
                 transfer_window_active = FALSE
             """)
             
-            await conn.execute("UPDATE fixtures SET played = FALSE, playable = FALSE, home_score = NULL, away_score = NULL")
+            await conn.execute("DELETE FROM fixtures")
             
             await conn.execute("""
                 UPDATE teams SET
