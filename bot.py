@@ -427,6 +427,109 @@ async def fix_admin_commands(interaction: discord.Interaction):
         await interaction.followup.send(f"❌ Error: {e}", ephemeral=True)
 
 
+# DIAGNOSTIC: See what commands are actually registered
+@bot.tree.command(name="debug_commands", description="🔍 [ADMIN] See all registered commands")
+@app_commands.checks.has_permissions(administrator=True)
+async def debug_commands(interaction: discord.Interaction):
+    """Debug what commands are registered"""
+    await interaction.response.defer(ephemeral=True)
+    
+    try:
+        # Check what's in the bot's tree
+        local_commands = bot.tree.get_commands()
+        
+        # Check what Discord knows about
+        global_commands = await bot.tree.fetch_commands()
+        
+        local_list = "**Local (in bot code):**\n"
+        for cmd in local_commands:
+            if isinstance(cmd, app_commands.Group):
+                local_list += f"📁 `/{cmd.name}` (GROUP with {len(cmd.commands)} subcommands)\n"
+                for subcmd in cmd.commands:
+                    local_list += f"  └─ `{subcmd.name}`\n"
+            else:
+                local_list += f"📄 `/{cmd.name}`\n"
+        
+        global_list = "**Global (registered with Discord):**\n"
+        for cmd in global_commands:
+            global_list += f"• `/{cmd.name}`\n"
+        
+        await interaction.followup.send(
+            f"🔍 **Command Registry Debug**\n\n"
+            f"{local_list}\n"
+            f"{global_list}\n"
+            f"📊 Local: {len(local_commands)} | Global: {len(global_commands)}",
+            ephemeral=True
+        )
+    except Exception as e:
+        await interaction.followup.send(f"❌ Error: {e}", ephemeral=True)
+
+
+# NUCLEAR OPTION: Completely wipe and rebuild all commands
+@bot.tree.command(name="rebuild_commands", description="🔧 [ADMIN] Completely rebuild all slash commands")
+@app_commands.checks.has_permissions(administrator=True)
+async def rebuild_commands(interaction: discord.Interaction):
+    """Completely wipe and rebuild all commands"""
+    await interaction.response.defer(ephemeral=True)
+    
+    try:
+        # Step 1: Get all current commands
+        global_commands = await bot.tree.fetch_commands()
+        await interaction.followup.send(f"📊 Step 1: Found {len(global_commands)} commands to remove...", ephemeral=True)
+        
+        # Step 2: Delete ALL commands
+        for cmd in global_commands:
+            await bot.tree.delete_command(cmd.id)
+        
+        await interaction.followup.send(f"🗑️ Step 2: Deleted all {len(global_commands)} commands", ephemeral=True)
+        
+        # Step 3: Clear the tree completely
+        bot.tree.clear_commands(guild=None)
+        await interaction.followup.send(f"🧹 Step 3: Cleared command tree", ephemeral=True)
+        
+        # Step 4: Reload all cogs to re-register commands
+        await interaction.followup.send(f"🔄 Step 4: Reloading all command modules...", ephemeral=True)
+        
+        # Reload cogs
+        cogs = [
+            'commands.player',
+            'commands.training',
+            'commands.season',
+            'commands.matches',
+            'commands.leagues',
+            'commands.transfers',
+            'commands.news',
+            'commands.interactive_match',
+        ]
+        
+        for cog in cogs:
+            try:
+                await bot.reload_extension(cog)
+            except:
+                await bot.load_extension(cog)
+        
+        # Re-add admin group
+        bot.tree.remove_command('admin')  # Remove if exists
+        from commands.admin import admin_group
+        bot.tree.add_command(admin_group)
+        
+        await interaction.followup.send(f"✅ Step 5: Reloaded all modules", ephemeral=True)
+        
+        # Step 5: Sync everything fresh
+        synced = await bot.tree.sync()
+        
+        await interaction.followup.send(
+            f"✅ **REBUILD COMPLETE!**\n\n"
+            f"🎯 Registered {len(synced)} fresh commands\n"
+            f"⚠️ **FULLY CLOSE AND REOPEN DISCORD** to see changes!\n\n"
+            f"The `/admin` command should now be a proper group.",
+            ephemeral=True
+        )
+        
+    except Exception as e:
+        await interaction.followup.send(f"❌ Error: {e}", ephemeral=True)
+
+
 # Help command (ONLY ONE DEFINITION)
 @bot.tree.command(name="help", description="View all available commands")
 async def help_command(interaction: discord.Interaction):
