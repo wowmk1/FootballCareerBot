@@ -1,401 +1,164 @@
-"""
-Admin Commands Module - Organized as Command Group
-All admin commands under /admin with subcommands
-"""
 import discord
 from discord import app_commands
 from discord.ext import commands
 from database import db
-import config
-import asyncio
+from utils.football_data_api import get_team_crest_url, get_competition_logo
 
-
-class AdminCommands(commands.Cog):
+class LeagueCommands(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
     
-    # Create admin command group (this creates /admin with subcommands)
-    admin = app_commands.Group(name="admin", description="Administrator commands")
-    
-    # ========== SEASON MANAGEMENT ==========
-    
-    @admin.command(name="advance_week", description="⏩ Advance to next week")
-    @app_commands.checks.has_permissions(administrator=True)
-    async def advance_week(self, interaction: discord.Interaction):
-        """Advance to the next week"""
-        await interaction.response.defer()
+    @app_commands.command(name="league", description="View league table")
+    @app_commands.describe(league="Which league to view")
+    @app_commands.choices(league=[
+        app_commands.Choice(name="Premier League", value="Premier League"),
+        app_commands.Choice(name="Championship", value="Championship"),
+        app_commands.Choice(name="League One", value="League One"),
+    ])
+    async def league(self, interaction: discord.Interaction, league: str = "Premier League"):
+        """View league standings"""
         
-        from utils.season_manager import advance_week
-        await advance_week()
+        table = await db.get_league_table(league)
         
-        state = await db.get_game_state()
-        
-        embed = discord.Embed(
-            title="✅ Week Advanced",
-            description=f"Now on Week {state['current_week']}/{config.SEASON_TOTAL_WEEKS}",
-            color=discord.Color.green()
-        )
-        
-        await interaction.followup.send(embed=embed)
-    
-    @admin.command(name="advance_weeks", description="⏩ Advance multiple weeks")
-    @app_commands.describe(weeks="Number of weeks to advance")
-    @app_commands.checks.has_permissions(administrator=True)
-    async def advance_weeks(self, interaction: discord.Interaction, weeks: int):
-        """Advance multiple weeks"""
-        if weeks < 1 or weeks > 10:
-            await interaction.response.send_message("❌ Please advance between 1-10 weeks", ephemeral=True)
-            return
-        
-        await interaction.response.defer()
-        
-        from utils.season_manager import advance_week
-        for _ in range(weeks):
-            await advance_week()
-            await asyncio.sleep(1)
-        
-        state = await db.get_game_state()
-        
-        embed = discord.Embed(
-            title=f"✅ Advanced {weeks} Weeks",
-            description=f"Now on Week {state['current_week']}/{config.SEASON_TOTAL_WEEKS}",
-            color=discord.Color.green()
-        )
-        
-        await interaction.followup.send(embed=embed)
-    
-    @admin.command(name="open_window", description="🟢 Open match window")
-    @app_commands.checks.has_permissions(administrator=True)
-    async def open_window(self, interaction: discord.Interaction):
-        """Open match window"""
-        await interaction.response.defer()
-        
-        from utils.season_manager import open_match_window
-        await open_match_window(bot=self.bot)
-        
-        embed = discord.Embed(
-            title="✅ Match Window Opened",
-            description=f"Window open for {config.MATCH_WINDOW_HOURS} hours",
-            color=discord.Color.green()
-        )
-        
-        await interaction.followup.send(embed=embed)
-    
-    @admin.command(name="close_window", description="🔴 Close match window")
-    @app_commands.checks.has_permissions(administrator=True)
-    async def close_window(self, interaction: discord.Interaction):
-        """Close match window"""
-        await interaction.response.defer()
-        
-        from utils.season_manager import close_match_window
-        await close_match_window()
-        
-        embed = discord.Embed(
-            title="✅ Match Window Closed",
-            description="Unplayed matches auto-simulated",
-            color=discord.Color.green()
-        )
-        
-        await interaction.followup.send(embed=embed)
-    
-    # ========== PLAYER MANAGEMENT ==========
-    
-    @admin.command(name="assign_team", description="👤 Assign player to team")
-    @app_commands.describe(user="User to assign", team_id="Team ID (e.g., man_city)")
-    @app_commands.checks.has_permissions(administrator=True)
-    async def assign_team(self, interaction: discord.Interaction, user: discord.User, team_id: str):
-        """Assign player to team"""
-        player = await db.get_player(user.id)
-        if not player:
-            await interaction.response.send_message(f"❌ {user.mention} hasn't created a player!", ephemeral=True)
-            return
-        
-        team = await db.get_team(team_id)
-        if not team:
-            await interaction.response.send_message(f"❌ Team '{team_id}' not found!", ephemeral=True)
-            return
-        
-        wage = (player['overall_rating'] ** 2) * 10
-        
-        async with db.pool.acquire() as conn:
-            await conn.execute(
-                "UPDATE players SET team_id = $1, league = $2, contract_wage = $3, contract_years = $4 WHERE user_id = $5",
-                team_id, team['league'], wage, 3, user.id
+        if not table:
+            await interaction.response.send_message(
+                f"❌ No data found for {league}!",
+                ephemeral=True
             )
+            return
         
         embed = discord.Embed(
-            title="✅ Player Assigned",
-            description=f"{user.mention} → **{team['team_name']}**",
-            color=discord.Color.green()
-        )
-        
-        await interaction.response.send_message(embed=embed)
-    
-    @admin.command(name="wipe_players", description="🗑️ Delete all user players")
-    @app_commands.checks.has_permissions(administrator=True)
-    async def wipe_players(self, interaction: discord.Interaction):
-        """Wipe all user players"""
-        view = ConfirmWipeView()
-        await interaction.response.send_message(
-            "⚠️ **WARNING: DELETE ALL PLAYERS?**\nThis cannot be undone!",
-            view=view,
-            ephemeral=True
-        )
-        
-        await view.wait()
-        
-        if view.confirmed:
-            await db.wipe_all_user_players()
-            await interaction.followup.send("✅ All players wiped!", ephemeral=True)
-    
-    # ========== DEBUGGING ==========
-    
-    @admin.command(name="check_retirements", description="👴 Check retirement system")
-    @app_commands.checks.has_permissions(administrator=True)
-    async def check_retirements(self, interaction: discord.Interaction):
-        """Check retirements"""
-        await interaction.response.defer()
-        
-        retirements = await db.retire_old_players()
-        
-        embed = discord.Embed(
-            title="✅ Retirement Check Complete",
-            description=f"Processed {retirements} retirements",
-            color=discord.Color.green()
-        )
-        
-        await interaction.followup.send(embed=embed)
-    
-    @admin.command(name="check_squads", description="📊 Check squad counts")
-    @app_commands.checks.has_permissions(administrator=True)
-    async def check_squads(self, interaction: discord.Interaction):
-        """Check squad counts"""
-        await interaction.response.defer()
-        
-        async with db.pool.acquire() as conn:
-            rows = await conn.fetch("""
-                SELECT t.team_name, t.league, COUNT(n.npc_id) as players
-                FROM teams t
-                LEFT JOIN npc_players n ON t.team_id = n.team_id AND n.retired = FALSE
-                GROUP BY t.team_name, t.league
-                ORDER BY players DESC
-            """)
-        
-        teams = [dict(row) for row in rows]
-        
-        embed = discord.Embed(
-            title="NPC Squad Status",
-            description=f"Total teams: {len(teams)}",
+            title=f"🏆 {league} Table",
             color=discord.Color.blue()
         )
         
-        pl_teams = [t for t in teams if t['league'] == 'Premier League']
-        champ_teams = [t for t in teams if t['league'] == 'Championship']
+        # ADD COMPETITION LOGO AS THUMBNAIL
+        comp_logo = get_competition_logo(league)
+        if comp_logo:
+            embed.set_thumbnail(url=comp_logo)
         
-        if pl_teams:
-            pl_text = "\n".join([f"{t['team_name']}: {t['players']} players" for t in pl_teams[:10]])
-            embed.add_field(name="Premier League (sample)", value=pl_text, inline=False)
+        # Build table with FIXED spacing
+        lines = []
+        lines.append("```")
+        # Header - exact spacing
+        lines.append("Pos Team                 Pld  W  D  L  GF GA  GD Pts")
+        lines.append("─" * 60)
         
-        if champ_teams:
-            champ_text = "\n".join([f"{t['team_name']}: {t['players']} players" for t in champ_teams[:10]])
-            embed.add_field(name="Championship (sample)", value=champ_text, inline=False)
-        
-        total_npcs = sum(t['players'] for t in teams)
-        embed.set_footer(text=f"Total NPC players: {total_npcs}")
-        
-        await interaction.followup.send(embed=embed)
-    
-    @admin.command(name="transfer_test", description="💼 Test transfer system for user")
-    @app_commands.describe(user="User to generate test offers for")
-    @app_commands.checks.has_permissions(administrator=True)
-    async def transfer_test(self, interaction: discord.Interaction, user: discord.User):
-        """Test transfer system"""
-        await interaction.response.defer()
-        
-        player = await db.get_player(user.id)
-        if not player:
-            await interaction.followup.send(f"❌ {user.mention} hasn't created a player!", ephemeral=True)
-            return
-        
-        from utils.transfer_window_manager import generate_offers_for_player
-        state = await db.get_game_state()
-        
-        offers = await generate_offers_for_player(player, state['current_week'], num_offers=5)
-        
-        embed = discord.Embed(
-            title="✅ Test Offers Generated",
-            description=f"Created {len(offers)} offers for {player['player_name']}",
-            color=discord.Color.green()
-        )
-        
-        for i, offer in enumerate(offers[:5], 1):
-            embed.add_field(
-                name=f"Offer #{i}",
-                value=f"{offer['team_name']}\n£{offer['wage_offer']:,}/wk | {offer['contract_length']}y",
-                inline=True
-            )
-        
-        await interaction.followup.send(embed=embed)
-        
-        # Send DM to user
-        try:
-            dm_embed = discord.Embed(
-                title="📬 TEST: Transfer Offers",
-                description=f"Admin generated test offers for you!\nUse `/offers` to view.",
-                color=discord.Color.gold()
-            )
-            await user.send(embed=dm_embed)
-        except:
-            pass
-    
-    # ========== CREST DEBUGGING ==========
-    
-    @admin.command(name="debug_crests", description="🔍 Debug team crests system")
-    @app_commands.describe(team_id="Team ID to test (e.g., man_city)")
-    @app_commands.checks.has_permissions(administrator=True)
-    async def debug_crests(self, interaction: discord.Interaction, team_id: str = "man_city"):
-        """Debug crests"""
-        await interaction.response.defer()
-        
-        from utils.football_data_api import get_team_crest_url, get_competition_logo
-        
-        # Test URLs
-        crest_url = get_team_crest_url(team_id)
-        logo_url = get_competition_logo('Premier League')
-        
-        embed = discord.Embed(
-            title="🔍 Crest System Debug Report",
-            description=f"Testing team: `{team_id}`",
-            color=discord.Color.blue()
-        )
-        
-        # Test results
-        if crest_url:
-            embed.add_field(
-                name="✅ Crest URL Found",
-                value=f"```{crest_url}```",
-                inline=False
-            )
-            embed.set_thumbnail(url=crest_url)
-        else:
-            embed.add_field(
-                name="❌ Crest Not Found",
-                value=f"No URL for team_id: {team_id}",
-                inline=False
-            )
-        
-        if logo_url:
-            embed.set_footer(text="Premier League", icon_url=logo_url)
-        
-        await interaction.followup.send(embed=embed)
-    
-    @admin.command(name="test_all_crests", description="🔍 Test multiple team crests")
-    @app_commands.checks.has_permissions(administrator=True)
-    async def test_all_crests(self, interaction: discord.Interaction):
-        """Test multiple crests"""
-        from utils.football_data_api import get_team_crest_url
-        
-        test_teams = [
-            ('oxford', 'Oxford United'),
-            ('man_city', 'Manchester City'),
-            ('arsenal', 'Arsenal'),
-            ('liverpool', 'Liverpool'),
-            ('leeds', 'Leeds United')
-        ]
-        
-        embed = discord.Embed(
-            title="🔍 Multi-Team Crest Test",
-            description="Testing crests for 5 teams",
-            color=discord.Color.green()
-        )
-        
-        results = []
-        for team_id, team_name in test_teams:
-            crest_url = get_team_crest_url(team_id)
-            if crest_url:
-                results.append(f"✅ {team_name}: Found")
+        for pos, team in enumerate(table, 1):
+            gd = team['goals_for'] - team['goals_against']
+            # Format GD with sign
+            if gd > 0:
+                gd_str = f"+{gd}"
             else:
-                results.append(f"❌ {team_name}: NOT FOUND")
+                gd_str = str(gd)
+            
+            # Truncate and pad team name to exactly 20 characters
+            team_name = team['team_name'][:20]
+            team_name = team_name.ljust(20)
+            
+            # Position emoji
+            if pos <= 4:
+                emoji = "🟢"
+            elif pos <= 6:
+                emoji = "🔵"
+            elif pos >= len(table) - 2:
+                emoji = "🔴"
+            else:
+                emoji = "  "
+            
+            # Build line with exact spacing
+            # Format: Emoji Pos(2) Team(20) Pld(3) W(2) D(2) L(2) GF(2) GA(2) GD(3) Pts(3)
+            line = f"{emoji}{pos:2} {team_name} {team['played']:3} {team['won']:2} {team['drawn']:2} {team['lost']:2} {team['goals_for']:2} {team['goals_against']:2} {gd_str:>3} {team['points']:3}"
+            lines.append(line)
         
-        embed.add_field(name="Results", value="\n".join(results), inline=False)
+        lines.append("```")
         
-        # Set Oxford crest as example
-        oxford_crest = get_team_crest_url('oxford')
-        if oxford_crest:
-            embed.set_thumbnail(url=oxford_crest)
+        embed.description = "\n".join(lines)
         
-        await interaction.response.send_message(embed=embed)
-    
-    # ========== SERVER SETUP ==========
-    
-    @admin.command(name="setup_channels", description="🗂️ Setup organized channel structure")
-    @app_commands.checks.has_permissions(administrator=True)
-    async def setup_channels(self, interaction: discord.Interaction):
-        """Setup server channels"""
-        await interaction.response.defer()
-        
-        await self.bot.setup_server_channels(interaction.guild)
-        
-        embed = discord.Embed(
-            title="✅ Channels Setup Complete",
-            description="Created organized channel structure",
-            color=discord.Color.green()
+        embed.add_field(
+            name="🔑 Key",
+            value="🟢 Champions League\n🔵 Europa League\n🔴 Relegation",
+            inline=False
         )
         
-        await interaction.followup.send(embed=embed)
-    
-    @admin.command(name="game_state", description="🎮 View current game state")
-    @app_commands.checks.has_permissions(administrator=True)
-    async def game_state(self, interaction: discord.Interaction):
-        """View game state"""
         state = await db.get_game_state()
-        
-        embed = discord.Embed(
-            title="🎮 Game State",
-            color=discord.Color.blue()
-        )
-        
-        embed.add_field(
-            name="Season Info",
-            value=f"Started: {state['season_started']}\n"
-                  f"Season: {state['current_season']}\n"
-                  f"Week: {state['current_week']}/{config.SEASON_TOTAL_WEEKS}",
-            inline=False
-        )
-        
-        embed.add_field(
-            name="Match Window",
-            value=f"Open: {state['match_window_open']}\n"
-                  f"Closes: {state.get('match_window_closes', 'N/A')}",
-            inline=False
-        )
-        
-        embed.add_field(
-            name="Transfer Window",
-            value=f"Active: {state.get('transfer_window_active', False)}",
-            inline=False
-        )
+        embed.set_footer(text=f"Season {state['current_season']} • Week {state['current_week']} • Leaders: {table[0]['team_name']}")
         
         await interaction.response.send_message(embed=embed)
-
-
-class ConfirmWipeView(discord.ui.View):
-    def __init__(self):
-        super().__init__(timeout=30)
-        self.confirmed = False
     
-    @discord.ui.button(label="⚠️ YES, WIPE EVERYTHING", style=discord.ButtonStyle.danger)
-    async def confirm_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        self.confirmed = True
-        self.stop()
-        await interaction.response.defer()
-    
-    @discord.ui.button(label="❌ Cancel", style=discord.ButtonStyle.secondary)
-    async def cancel_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        self.confirmed = False
-        self.stop()
-        await interaction.response.defer()
-
+    @app_commands.command(name="top_scorers", description="View top scorers in your league")
+    async def top_scorers(self, interaction: discord.Interaction):
+        """View top scorers"""
+        
+        player = await db.get_player(interaction.user.id)
+        
+        if player and player['league']:
+            league = player['league']
+        else:
+            league = "Premier League"
+        
+        async with db.pool.acquire() as conn:
+            user_rows = await conn.fetch(
+                """SELECT p.player_name, p.season_goals, p.season_assists, p.season_apps, t.team_name
+                   FROM players p
+                   LEFT JOIN teams t ON p.team_id = t.team_id
+                   WHERE p.league = $1 AND p.retired = FALSE
+                   ORDER BY p.season_goals DESC
+                   LIMIT 10""",
+                league
+            )
+            
+            npc_rows = await conn.fetch(
+                """SELECT n.player_name, n.season_goals, n.season_assists, n.season_apps, t.team_name
+                   FROM npc_players n
+                   LEFT JOIN teams t ON n.team_id = t.team_id
+                   WHERE t.league = $1 AND n.retired = FALSE
+                   ORDER BY n.season_goals DESC
+                   LIMIT 10""",
+                league
+            )
+        
+        all_scorers = []
+        for row in user_rows:
+            all_scorers.append(dict(row))
+        for row in npc_rows:
+            all_scorers.append(dict(row))
+        
+        all_scorers.sort(key=lambda x: x['season_goals'], reverse=True)
+        all_scorers = all_scorers[:10]
+        
+        if not all_scorers:
+            await interaction.response.send_message(
+                f"📊 No goals scored yet in {league}!",
+                ephemeral=True
+            )
+            return
+        
+        embed = discord.Embed(
+            title=f"👟 {league} - Top Scorers",
+            color=discord.Color.gold()
+        )
+        
+        # ADD LEAGUE LOGO
+        comp_logo = get_competition_logo(league)
+        if comp_logo:
+            embed.set_thumbnail(url=comp_logo)
+        
+        scorers_text = ""
+        for i, scorer in enumerate(all_scorers, 1):
+            emoji = "🥇" if i == 1 else "🥈" if i == 2 else "🥉" if i == 3 else f"{i}."
+            
+            team_name = scorer['team_name'] if scorer['team_name'] else 'Free Agent'
+            
+            scorers_text += f"{emoji} **{scorer['player_name']}** ({team_name})\n"
+            scorers_text += f"   ⚽ {scorer['season_goals']} goals | 🅰️ {scorer['season_assists']} assists | 👕 {scorer['season_apps']} apps\n\n"
+        
+        embed.description = scorers_text
+        
+        state = await db.get_game_state()
+        embed.set_footer(text=f"Season {state['current_season']} • Week {state['current_week']}")
+        
+        await interaction.response.send_message(embed=embed)
 
 async def setup(bot):
-    await bot.add_cog(AdminCommands(bot))
+    await bot.add_cog(LeagueCommands(bot))
