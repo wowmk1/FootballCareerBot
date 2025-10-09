@@ -383,6 +383,83 @@ async def help_command(interaction: discord.Interaction):
     await interaction.response.send_message(embed=embed)
 
 
+# TEMPORARY: Force clear and re-sync commands
+@bot.command()
+@commands.is_owner()
+async def sync(ctx):
+    """Force sync slash commands - removes old cached commands"""
+    # Clear all commands first
+    bot.tree.clear_commands(guild=None)
+    
+    # Remove old admin commands if they exist
+    old_admin_commands = [
+        'admin_advance_week', 'admin_advance_weeks', 'admin_open_window',
+        'admin_close_window', 'admin_assign_team', 'admin_wipe_players',
+        'admin_check_retirements', 'admin_check_squads', 'admin_transfer_test',
+        'admin_debug_crests', 'admin_test_all_crests', 'admin_setup_channels',
+        'admin_game_state'
+    ]
+    
+    for cmd_name in old_admin_commands:
+        bot.tree.remove_command(cmd_name)
+    
+    # Now sync
+    await bot.tree.sync()
+    await ctx.send("✅ Commands synced! Old admin commands cleared.")
+
+
+# Help command
+@bot.tree.command(name="help", description="View all available commands")
+async def help_command(interaction: discord.Interaction):
+    """Show help information"""
+
+    embed = discord.Embed(
+        title="⚽ Football Career Bot - Guide",
+        description="Build your player from 18 to 38 with interactive matches!",
+        color=discord.Color.blue()
+    )
+
+    embed.add_field(
+        name="🎮 Getting Started",
+        value="`/start` - Create player\n`/profile` - View stats\n`/compare @user` - Compare players",
+        inline=False
+    )
+
+    embed.add_field(
+        name="💼 Transfers",
+        value="`/offers` - View offers (transfer windows)\n`/my_contract` - Current deal\n`/transfer_history` - Past moves",
+        inline=False
+    )
+
+    embed.add_field(
+        name="📈 Training",
+        value="`/train` - Train daily (6+ points per session!)\n30-day streak = +5 permanent potential!",
+        inline=False
+    )
+
+    embed.add_field(
+        name="🎲 Matches",
+        value="`/play_match` - Play your match!\nPosition-specific events\nD20 duels vs opponents",
+        inline=False
+    )
+
+    embed.add_field(
+        name="📅 Season",
+        value="`/season` - Current week\n`/fixtures` - Your schedule\n`/league` - League tables",
+        inline=False
+    )
+
+    # Only show admin info to administrators
+    if interaction.user.guild_permissions.administrator:
+        embed.add_field(
+            name="🔧 Admin Commands",
+            value="Type `/admin` to see all admin commands\nAll admin tools are prefixed with `admin_`",
+            inline=False
+        )
+
+    await interaction.response.send_message(embed=embed)
+
+
 # Run bot
 if __name__ == "__main__":
     try:
