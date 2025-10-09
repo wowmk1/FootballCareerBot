@@ -473,22 +473,16 @@ async def rebuild_commands(interaction: discord.Interaction):
     await interaction.response.defer(ephemeral=True)
     
     try:
-        # Step 1: Get all current commands
-        global_commands = await bot.tree.fetch_commands()
-        await interaction.followup.send(f"📊 Step 1: Found {len(global_commands)} commands to remove...", ephemeral=True)
-        
-        # Step 2: Delete ALL commands
-        for cmd in global_commands:
-            await bot.tree.delete_command(cmd.id)
-        
-        await interaction.followup.send(f"🗑️ Step 2: Deleted all {len(global_commands)} commands", ephemeral=True)
-        
-        # Step 3: Clear the tree completely
+        # Step 1: Clear the local tree
         bot.tree.clear_commands(guild=None)
-        await interaction.followup.send(f"🧹 Step 3: Cleared command tree", ephemeral=True)
+        await interaction.followup.send(f"🧹 Step 1: Cleared local command tree", ephemeral=True)
         
-        # Step 4: Reload all cogs to re-register commands
-        await interaction.followup.send(f"🔄 Step 4: Reloading all command modules...", ephemeral=True)
+        # Step 2: Sync empty tree to remove all commands from Discord
+        await bot.tree.sync()
+        await interaction.followup.send(f"🗑️ Step 2: Synced empty tree (removed all commands from Discord)", ephemeral=True)
+        
+        # Step 3: Reload all cogs to re-register commands
+        await interaction.followup.send(f"🔄 Step 3: Reloading all command modules...", ephemeral=True)
         
         # Reload cogs
         cogs = [
@@ -509,25 +503,42 @@ async def rebuild_commands(interaction: discord.Interaction):
                 await bot.load_extension(cog)
         
         # Re-add admin group
-        bot.tree.remove_command('admin')  # Remove if exists
         from commands.admin import admin_group
         bot.tree.add_command(admin_group)
         
-        await interaction.followup.send(f"✅ Step 5: Reloaded all modules", ephemeral=True)
+        # Re-add utility commands
+        bot.tree.add_command(help_command)
+        bot.tree.add_command(fix_admin_commands)
+        bot.tree.add_command(debug_commands)
+        bot.tree.add_command(rebuild_commands)
         
-        # Step 5: Sync everything fresh
+        await interaction.followup.send(f"✅ Step 4: Reloaded all modules", ephemeral=True)
+        
+        # Step 4: Sync everything fresh
         synced = await bot.tree.sync()
         
-        await interaction.followup.send(
-            f"✅ **REBUILD COMPLETE!**\n\n"
-            f"🎯 Registered {len(synced)} fresh commands\n"
-            f"⚠️ **FULLY CLOSE AND REOPEN DISCORD** to see changes!\n\n"
-            f"The `/admin` command should now be a proper group.",
-            ephemeral=True
-        )
+        # Show what was registered
+        local_commands = bot.tree.get_commands()
+        admin_group_local = None
+        for cmd in local_commands:
+            if isinstance(cmd, app_commands.Group) and cmd.name == 'admin':
+                admin_group_local = cmd
+                break
+        
+        result_msg = f"✅ **REBUILD COMPLETE!**\n\n"
+        result_msg += f"🎯 Registered {len(synced)} commands with Discord\n"
+        
+        if admin_group_local:
+            result_msg += f"📁 `/admin` group has {len(admin_group_local.commands)} subcommands\n"
+        
+        result_msg += f"\n⚠️ **FULLY CLOSE AND REOPEN DISCORD** to see changes!\n"
+        result_msg += f"The `/admin` command should now be a proper group."
+        
+        await interaction.followup.send(result_msg, ephemeral=True)
         
     except Exception as e:
-        await interaction.followup.send(f"❌ Error: {e}", ephemeral=True)
+        import traceback
+        await interaction.followup.send(f"❌ Error: {e}\n```{traceback.format_exc()}```", ephemeral=True)
 
 
 # Help command (ONLY ONE DEFINITION)
