@@ -346,16 +346,4 @@ class ConfirmWipeView(discord.ui.View):
         await interaction.response.defer()
 
 
-class AdminCommands(commands.Cog):
-    def __init__(self, bot):
-        self.bot = bot
-        # Add the group to the tree
-        self.bot.tree.add_command(admin_group)
-    
-    async def cog_unload(self):
-        # Remove the group when cog unloads
-        self.bot.tree.remove_command(admin_group.name)
-
-
-async def setup(bot):
-    await bot.add_cog(AdminCommands(bot))
+# NO setup function - this is loaded directly in bot.py
