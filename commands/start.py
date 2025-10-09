@@ -68,9 +68,9 @@ class StartCommands(commands.Cog):
         
         embed.add_field(
             name="💡 Choose Your Path",
-            value="**High Potential:** Start lower but reach higher peaks\n"
-                  "**Balanced:** Good mix of current ability and growth\n"
-                  "**Ready Now:** Join the first team immediately",
+            value="**All 3 options are Championship-ready!**\n"
+                  "Each offer is unique - pick the club and stats you like best!\n"
+                  "Everyone gets different random offers for variety.",
             inline=False
         )
         
@@ -95,7 +95,7 @@ class ClubSelectionView(discord.ui.View):
             self.add_item(button)
     
     def generate_club_options(self):
-        """Generate 3 club offers - ALL FROM CHAMPIONSHIP for balanced start"""
+        """Generate 3 club offers - ALL FROM CHAMPIONSHIP with random but viable stats"""
         from data.teams import ALL_TEAMS
         import random
         
@@ -106,26 +106,26 @@ class ClubSelectionView(discord.ui.View):
         selected_teams = random.sample(championship_teams, 3)
         clubs = [team.copy() for team in selected_teams]
         
-        # Add varied wage offers AND player stats (£8k-£15k range for Championship)
-        for i, club in enumerate(clubs):
-            # Option 1: Lower current ability, highest potential
-            if i == 0:
-                club['wage'] = random.randint(8000, 10000)
-                club['starting_overall'] = random.randint(60, 64)
-                club['starting_potential'] = random.randint(85, 92)
-                club['offer_type'] = "🌟 High Potential"
-            # Option 2: Balanced current ability and potential
-            elif i == 1:
-                club['wage'] = random.randint(10000, 12000)
-                club['starting_overall'] = random.randint(64, 68)
-                club['starting_potential'] = random.randint(80, 87)
-                club['offer_type'] = "⚖️ Balanced"
-            # Option 3: Higher current ability, lower potential
+        # Each player gets 3 RANDOM but viable options
+        # All are Championship-ready with ELITE potential
+        for club in clubs:
+            # Random wages (Championship range)
+            club['wage'] = random.randint(9000, 14000)
+            
+            # Random starting overall (Championship-ready: 62-70)
+            club['starting_overall'] = random.randint(62, 70)
+            
+            # Random ELITE potential (future superstars: 82-98)
+            club['starting_potential'] = random.randint(82, 98)
+            
+            # Determine offer type based on stats
+            stat_diff = club['starting_potential'] - club['starting_overall']
+            if stat_diff >= 25:
+                club['offer_type'] = "🌟 Superstar Path"
+            elif stat_diff >= 18:
+                club['offer_type'] = "⚖️ Elite Growth"
             else:
-                club['wage'] = random.randint(12000, 15000)
-                club['starting_overall'] = random.randint(68, 72)
-                club['starting_potential'] = random.randint(75, 83)
-                club['offer_type'] = "💪 Ready Now"
+                club['offer_type'] = "💪 Strong Foundation"
         
         return clubs
 
