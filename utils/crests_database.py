@@ -21,7 +21,7 @@ PREMIER_LEAGUE_CRESTS = {
     'newcastle': 'https://resources.premierleague.com/premierleague/badges/100/t4@2x.png',
     'nottm_forest': 'https://resources.premierleague.com/premierleague/badges/100/t17@2x.png',
     'tottenham': 'https://resources.premierleague.com/premierleague/badges/100/t6@2x.png',
-    'west_ham': 'https://r2.thesportsdb.com/images/media/team/badge/yutyxs1467459956.png/tiny',
+    'west_ham': 'https://resources.premierleague.com/premierleague/badges/100/t21@2x.png',
     'wolves': 'https://resources.premierleague.com/premierleague/badges/100/t39@2x.png',
     'leicester': 'https://resources.premierleague.com/premierleague/badges/100/t13@2x.png',
     'southampton': 'https://resources.premierleague.com/premierleague/badges/100/t20@2x.png',
@@ -53,7 +53,7 @@ CHAMPIONSHIP_CRESTS = {
     'derby': 'https://media.api-sports.io/football/teams/1352.png',
     'portsmouth': 'https://media.api-sports.io/football/teams/1348.png',
     'sheff_wed': 'https://media.api-sports.io/football/teams/1351.png',
-    'oxford': 'https://r2.thesportsdb.com/images/media/team/badge/la34wg1601726102.png',
+    'oxford': 'https://media.api-sports.io/football/teams/1367.png',
 }
 
 # League One - API-Football CDN
@@ -93,44 +93,40 @@ ALL_TEAM_CRESTS = {
 
 # Competition Logos
 COMPETITION_LOGOS = {
-    'Premier League': 'https://r2.thesportsdb.com/images/media/league/badge/gasy9d1737743125.png/tiny',
+    'Premier League': 'https://resources.premierleague.com/premierleague/photo/2023/10/26/d9e3bc11-e0a9-46c1-ac28-b5d2fb09bf37/PL-Lion-Mono-Digital.png',
     'Championship': 'https://media.api-sports.io/football/leagues/40.png',
     'League One': 'https://media.api-sports.io/football/leagues/41.png',
     'FA Cup': 'https://media.api-sports.io/football/leagues/45.png',
     'EFL Cup': 'https://media.api-sports.io/football/leagues/48.png',
 }
 
-
 def get_team_crest_url(team_id: str) -> str:
     """
     Get crest URL for a team
-
+    
     Args:
         team_id: Team identifier (e.g., 'man_city', 'arsenal')
-
+    
     Returns:
         Direct URL to team crest image, or empty string if not found
     """
     return ALL_TEAM_CRESTS.get(team_id, '')
 
-
 def get_competition_logo_url(competition: str) -> str:
     """
     Get logo URL for a competition
-
+    
     Args:
         competition: Competition name (e.g., 'Premier League')
-
+    
     Returns:
         Direct URL to competition logo, or empty string if not found
     """
     return COMPETITION_LOGOS.get(competition, '')
 
-
 def get_all_available_teams():
     """Get list of all teams with available crests"""
     return list(ALL_TEAM_CRESTS.keys())
-
 
 def get_crest_stats():
     """Get statistics about available crests"""
@@ -141,7 +137,6 @@ def get_crest_stats():
         'league_one': len(LEAGUE_ONE_CRESTS),
         'competitions': len(COMPETITION_LOGOS)
     }
-
 
 # Print stats on import
 if __name__ == '__main__':
