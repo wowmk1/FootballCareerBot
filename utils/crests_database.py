@@ -21,7 +21,7 @@ PREMIER_LEAGUE_CRESTS = {
     'newcastle': 'https://resources.premierleague.com/premierleague/badges/100/t4@2x.png',
     'nottm_forest': 'https://resources.premierleague.com/premierleague/badges/100/t17@2x.png',
     'tottenham': 'https://resources.premierleague.com/premierleague/badges/100/t6@2x.png',
-    'west_ham': 'https://resources.premierleague.com/premierleague/badges/100/t21@2x.png',
+    'west_ham': 'https://r2.thesportsdb.com/images/media/team/badge/yutyxs1467459956.png/tiny',
     'wolves': 'https://resources.premierleague.com/premierleague/badges/100/t39@2x.png',
     'leicester': 'https://resources.premierleague.com/premierleague/badges/100/t13@2x.png',
     'southampton': 'https://resources.premierleague.com/premierleague/badges/100/t20@2x.png',
