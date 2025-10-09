@@ -73,11 +73,11 @@ class FootballBot(commands.Bot):
             except Exception as e:
                 print(f"❌ Failed to load {cog}: {e}")
         
-        # Load admin commands group (must be loaded AFTER other cogs)
+        # Load admin commands group (using 'adm' name to avoid Discord cache issues)
         try:
             from commands.admin import admin_group
             self.tree.add_command(admin_group)
-            print("✅ Loaded admin command group")
+            print(f"✅ Loaded admin command group as /{admin_group.name}")
         except Exception as e:
             print(f"❌ Failed to load admin group: {e}")
 
