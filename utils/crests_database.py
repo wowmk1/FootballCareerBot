@@ -21,7 +21,7 @@ PREMIER_LEAGUE_CRESTS = {
     'newcastle': 'https://resources.premierleague.com/premierleague/badges/100/t4@2x.png',
     'nottm_forest': 'https://resources.premierleague.com/premierleague/badges/100/t17@2x.png',
     'tottenham': 'https://resources.premierleague.com/premierleague/badges/100/t6@2x.png',
-    'west_ham': 'https://resources.premierleague.com/premierleague/badges/100/t21@2x.png',
+    'west_ham': 'https://r2.thesportsdb.com/images/media/team/badge/yutyxs1467459956.png/medium',
     'wolves': 'https://resources.premierleague.com/premierleague/badges/100/t39@2x.png',
     'leicester': 'https://resources.premierleague.com/premierleague/badges/100/t13@2x.png',
     'southampton': 'https://resources.premierleague.com/premierleague/badges/100/t20@2x.png',
@@ -93,7 +93,7 @@ ALL_TEAM_CRESTS = {
 
 # Competition Logos
 COMPETITION_LOGOS = {
-    'Premier League': 'https://resources.premierleague.com/premierleague/photo/2023/10/26/d9e3bc11-e0a9-46c1-ac28-b5d2fb09bf37/PL-Lion-Mono-Digital.png',
+    'Premier League': 'https://r2.thesportsdb.com/images/media/league/badge/gasy9d1737743125.png/medium',
     'Championship': 'https://media.api-sports.io/football/leagues/40.png',
     'League One': 'https://media.api-sports.io/football/leagues/41.png',
     'FA Cup': 'https://media.api-sports.io/football/leagues/45.png',
