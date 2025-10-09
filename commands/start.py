@@ -56,27 +56,21 @@ class StartCommands(commands.Cog):
             # All Championship clubs
             league_emoji = "🔵"
             
-            # Determine offer quality based on wage
-            if club['wage'] >= 12000:
-                quality = "💰 Best Offer"
-            elif club['wage'] >= 10000:
-                quality = "📊 Good Offer"
-            else:
-                quality = "💼 Standard Offer"
-            
             embed.add_field(
                 name=f"{league_emoji} Option {i}: {club['team_name']}",
                 value=f"**League:** {club['league']}\n"
+                      f"**Your Stats:** {club['starting_overall']} OVR → ⭐ {club['starting_potential']} POT\n"
                       f"**Wage:** £{club['wage']:,}/week (~£{club['wage']*52:,}/year)\n"
                       f"**Contract:** 3 years\n"
-                      f"**Quality:** {quality}",
+                      f"**Style:** {club['offer_type']}",
                 inline=False
             )
         
         embed.add_field(
-            name="💡 Fair Start",
-            value="All players start in the Championship for balanced competition!\n"
-                  "Higher wages = better team facilities and support",
+            name="💡 Choose Your Path",
+            value="**High Potential:** Start lower but reach higher peaks\n"
+                  "**Balanced:** Good mix of current ability and growth\n"
+                  "**Ready Now:** Join the first team immediately",
             inline=False
         )
         
@@ -112,15 +106,26 @@ class ClubSelectionView(discord.ui.View):
         selected_teams = random.sample(championship_teams, 3)
         clubs = [team.copy() for team in selected_teams]
         
-        # Add varied wage offers (£8k-£15k range for Championship)
+        # Add varied wage offers AND player stats (£8k-£15k range for Championship)
         for i, club in enumerate(clubs):
-            # Vary wages to make choices interesting
+            # Option 1: Lower current ability, highest potential
             if i == 0:
-                club['wage'] = random.randint(8000, 10000)  # Lower offer
+                club['wage'] = random.randint(8000, 10000)
+                club['starting_overall'] = random.randint(60, 64)
+                club['starting_potential'] = random.randint(85, 92)
+                club['offer_type'] = "🌟 High Potential"
+            # Option 2: Balanced current ability and potential
             elif i == 1:
-                club['wage'] = random.randint(10000, 12000)  # Medium offer
+                club['wage'] = random.randint(10000, 12000)
+                club['starting_overall'] = random.randint(64, 68)
+                club['starting_potential'] = random.randint(80, 87)
+                club['offer_type'] = "⚖️ Balanced"
+            # Option 3: Higher current ability, lower potential
             else:
-                club['wage'] = random.randint(12000, 15000)  # Higher offer
+                club['wage'] = random.randint(12000, 15000)
+                club['starting_overall'] = random.randint(68, 72)
+                club['starting_potential'] = random.randint(75, 83)
+                club['offer_type'] = "💪 Ready Now"
         
         return clubs
 
@@ -162,15 +167,15 @@ class ClubButton(discord.ui.Button):
     async def create_player(self, interaction: discord.Interaction):
         """Create the player with selected club"""
         
-        # Base stats (adjusted by position)
-        base_stats = self.calculate_starting_stats(self.view.position)
+        # Base stats (adjusted by position) - use club's predetermined values
+        base_stats = self.calculate_starting_stats(
+            self.view.position, 
+            self.club['starting_overall']
+        )
         
-        # Calculate starting overall
-        overall = (base_stats['pace'] + base_stats['shooting'] + base_stats['passing'] + 
-                  base_stats['dribbling'] + base_stats['defending'] + base_stats['physical']) // 6
-        
-        # Potential (60-75 for new players)
-        potential = random.randint(65, 78)
+        # Use the club's predetermined overall and potential
+        overall = self.club['starting_overall']
+        potential = self.club['starting_potential']
         
         # Create player in database
         async with db.pool.acquire() as conn:
@@ -265,53 +270,75 @@ class ClubButton(discord.ui.Button):
         
         await interaction.response.edit_message(embed=embed, view=self.view)
     
-    def calculate_starting_stats(self, position: str):
-        """Calculate starting stats based on position"""
+    def calculate_starting_stats(self, position: str, target_overall: int):
+        """Calculate starting stats based on position and target overall"""
+        # Position-based stat distributions
         if position == 'GK':
-            return {
-                'pace': random.randint(45, 55),
-                'shooting': random.randint(40, 50),
-                'passing': random.randint(50, 60),
-                'dribbling': random.randint(45, 55),
-                'defending': random.randint(55, 65),
-                'physical': random.randint(55, 65)
+            weights = {
+                'pace': 0.08,
+                'shooting': 0.08,
+                'passing': 0.12,
+                'dribbling': 0.10,
+                'defending': 0.30,
+                'physical': 0.32
             }
         elif position in ['ST', 'W']:
-            return {
-                'pace': random.randint(60, 70),
-                'shooting': random.randint(55, 65),
-                'passing': random.randint(50, 60),
-                'dribbling': random.randint(55, 65),
-                'defending': random.randint(35, 45),
-                'physical': random.randint(50, 60)
+            weights = {
+                'pace': 0.22,
+                'shooting': 0.25,
+                'passing': 0.12,
+                'dribbling': 0.20,
+                'defending': 0.06,
+                'physical': 0.15
             }
         elif position in ['CAM', 'CM']:
-            return {
-                'pace': random.randint(55, 65),
-                'shooting': random.randint(50, 60),
-                'passing': random.randint(60, 70),
-                'dribbling': random.randint(55, 65),
-                'defending': random.randint(45, 55),
-                'physical': random.randint(50, 60)
+            weights = {
+                'pace': 0.15,
+                'shooting': 0.15,
+                'passing': 0.25,
+                'dribbling': 0.20,
+                'defending': 0.10,
+                'physical': 0.15
             }
         elif position == 'CDM':
-            return {
-                'pace': random.randint(50, 60),
-                'shooting': random.randint(45, 55),
-                'passing': random.randint(55, 65),
-                'dribbling': random.randint(50, 60),
-                'defending': random.randint(55, 65),
-                'physical': random.randint(60, 70)
+            weights = {
+                'pace': 0.12,
+                'shooting': 0.08,
+                'passing': 0.18,
+                'dribbling': 0.12,
+                'defending': 0.28,
+                'physical': 0.22
             }
         else:  # CB, FB
-            return {
-                'pace': random.randint(55, 65) if position == 'FB' else random.randint(45, 55),
-                'shooting': random.randint(35, 45),
-                'passing': random.randint(50, 60),
-                'dribbling': random.randint(45, 55),
-                'defending': random.randint(60, 70),
-                'physical': random.randint(60, 70)
-            }
+            if position == 'FB':
+                weights = {
+                    'pace': 0.20,
+                    'shooting': 0.05,
+                    'passing': 0.15,
+                    'dribbling': 0.12,
+                    'defending': 0.28,
+                    'physical': 0.20
+                }
+            else:
+                weights = {
+                    'pace': 0.10,
+                    'shooting': 0.05,
+                    'passing': 0.12,
+                    'dribbling': 0.08,
+                    'defending': 0.35,
+                    'physical': 0.30
+                }
+        
+        # Generate stats around the target overall with position weights
+        stats = {}
+        variance = random.randint(-3, 3)  # Small variance for realism
+        
+        for stat, weight in weights.items():
+            # Calculate stat value based on target overall and weight
+            base = target_overall + (weight * 20)  # High-weight stats get bonus
+            stats[stat] = max(30, min(90, int(base + random.randint(-5, 5))))
+        
+        return stats
 
 
 async def setup(bot):
