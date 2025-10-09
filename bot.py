@@ -63,7 +63,8 @@ class FootballBot(commands.Bot):
             'commands.transfers',
             'commands.news',
             'commands.interactive_match',
-            'commands.adm',  # Load admin as a regular cog now
+            'commands.adm',  # Admin commands
+            'commands.organized',  # Organized player/league commands
         ]
 
         for cog in cogs:
