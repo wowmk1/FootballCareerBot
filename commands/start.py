@@ -25,7 +25,7 @@ class StartCommands(commands.Cog):
         app_commands.Choice(name="🎯 Attacking Mid (CAM)", value="CAM"),
         app_commands.Choice(name="⚙️ Central Mid (CM)", value="CM"),
         app_commands.Choice(name="🛡️ Defensive Mid (CDM)", value="CDM"),
-        app_commands.Choice(name="🔙 Full Back (FB)", value="FB"),
+        app_commands.Choice(name="📙 Full Back (FB)", value="FB"),
         app_commands.Choice(name="🧱 Center Back (CB)", value="CB"),
         app_commands.Choice(name="🧤 Goalkeeper (GK)", value="GK"),
     ])
@@ -43,7 +43,7 @@ class StartCommands(commands.Cog):
             return
         
         # Step 1: Create the view first to get club data
-        view = ClubSelectionView(name, position, interaction.user)
+        view = ClubSelectionView(name, position, interaction.user, self.bot)
         
         embed = discord.Embed(
             title="🏟️ Choose Your Starting Club",
@@ -80,18 +80,19 @@ class StartCommands(commands.Cog):
 
 
 class ClubSelectionView(discord.ui.View):
-    def __init__(self, player_name: str, position: str, user: discord.User):
+    def __init__(self, player_name: str, position: str, user: discord.User, bot):
         super().__init__(timeout=180)
         self.player_name = player_name
         self.position = position
         self.user = user
+        self.bot = bot
         
         # Generate 3 club options from different leagues
         self.clubs = self.generate_club_options()
         
         # Create buttons for each club
         for i, club in enumerate(self.clubs):
-            button = ClubButton(club, i)
+            button = ClubButton(club, i, self)
             self.add_item(button)
     
     def generate_club_options(self):
@@ -131,19 +132,13 @@ class ClubSelectionView(discord.ui.View):
 
 
 class ClubButton(discord.ui.Button):
-    def __init__(self, club: dict, index: int):
+    def __init__(self, club: dict, index: int, parent_view):
         self.club = club
+        self.parent_view = parent_view
         
         # Color based on league
-        if club['league'] == 'Premier League':
-            style = discord.ButtonStyle.danger  # Red
-            emoji = "🔴"
-        elif club['league'] == 'Championship':
-            style = discord.ButtonStyle.primary  # Blue
-            emoji = "🔵"
-        else:
-            style = discord.ButtonStyle.success  # Green
-            emoji = "🟢"
+        style = discord.ButtonStyle.primary  # Blue
+        emoji = "🔵"
         
         # Show league and wage in button label
         label = f"{club['team_name']}"
@@ -157,7 +152,7 @@ class ClubButton(discord.ui.Button):
     
     async def callback(self, interaction: discord.Interaction):
         # Verify it's the correct user
-        if interaction.user.id != self.view.user.id:
+        if interaction.user.id != self.parent_view.user.id:
             await interaction.response.send_message("❌ This isn't your player creation!", ephemeral=True)
             return
         
@@ -169,7 +164,7 @@ class ClubButton(discord.ui.Button):
         
         # Base stats (adjusted by position) - use club's predetermined values
         base_stats = self.calculate_starting_stats(
-            self.view.position, 
+            self.parent_view.position, 
             self.club['starting_overall']
         )
         
@@ -189,8 +184,8 @@ class ClubButton(discord.ui.Button):
             ''',
                 interaction.user.id,
                 interaction.user.name,
-                self.view.player_name,
-                self.view.position,
+                self.parent_view.player_name,
+                self.parent_view.position,
                 18,  # Starting age
                 overall,
                 base_stats['pace'],
@@ -211,13 +206,36 @@ class ClubButton(discord.ui.Button):
         
         # Add news
         await db.add_news(
-            f"NEW SIGNING: {self.view.player_name} joins {self.club['team_name']}",
-            f"18-year-old {self.view.position} {self.view.player_name} has signed with {self.club['team_name']} "
+            f"NEW SIGNING: {self.parent_view.player_name} joins {self.club['team_name']}",
+            f"18-year-old {self.parent_view.position} {self.parent_view.player_name} has signed with {self.club['team_name']} "
             f"on a 3-year deal worth £{self.club['wage']:,} per week.",
             "player_news",
             interaction.user.id,
             7
         )
+        
+        # POST TO transfer-news CHANNEL IN ALL SERVERS
+        transfer_info = {
+            'player_name': self.parent_view.player_name,
+            'from_team': 'Free Agent',
+            'to_team': self.club['team_name'],
+            'fee': 0,
+            'wage': self.club['wage'],
+            'contract_length': 3,
+            'is_new_player': True,
+            'user': interaction.user,
+            'position': self.parent_view.position,
+            'age': 18,
+            'overall': overall,
+            'potential': potential
+        }
+        
+        from utils.event_poster import post_new_player_announcement
+        for guild in self.parent_view.bot.guilds:
+            try:
+                await post_new_player_announcement(self.parent_view.bot, guild, transfer_info)
+            except Exception as e:
+                print(f"Could not post new player announcement to {guild.name}: {e}")
         
         # AUTO-START SEASON if this is the first player
         state = await db.get_game_state()
@@ -232,7 +250,7 @@ class ClubButton(discord.ui.Button):
         
         embed = discord.Embed(
             title="✅ CAREER STARTED!",
-            description=f"## {self.view.player_name}\n**{self.club['team_name']}** • {self.club['league']}",
+            description=f"## {self.parent_view.player_name}\n**{self.club['team_name']}** • {self.club['league']}",
             color=discord.Color.green()
         )
         
@@ -243,7 +261,7 @@ class ClubButton(discord.ui.Button):
         embed.add_field(
             name="📊 Starting Stats",
             value=f"**{overall} OVR** • ⭐ {potential} POT\n"
-                  f"Age: **18** • Position: **{self.view.position}**\n\n"
+                  f"Age: **18** • Position: **{self.parent_view.position}**\n\n"
                   f"*Championship-ready player!*",
             inline=False
         )
@@ -265,10 +283,10 @@ class ClubButton(discord.ui.Button):
         embed.set_footer(text="Welcome to your football career! 🎉")
         
         # Disable all buttons
-        for item in self.view.children:
+        for item in self.parent_view.children:
             item.disabled = True
         
-        await interaction.response.edit_message(embed=embed, view=self.view)
+        await interaction.response.edit_message(embed=embed, view=self.parent_view)
     
     def calculate_starting_stats(self, position: str, target_overall: int):
         """Calculate starting stats based on position and target overall"""
