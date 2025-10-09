@@ -1,6 +1,6 @@
 """
 Organized commands - Player and League commands with dropdown menus
-SAME PATTERN AS /adm - Uses choices, not subcommands
+FIXED VERSION - No syntax errors
 """
 import discord
 from discord import app_commands
