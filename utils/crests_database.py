@@ -93,7 +93,7 @@ ALL_TEAM_CRESTS = {
 
 # Competition Logos
 COMPETITION_LOGOS = {
-    'Premier League': 'https://r2.thesportsdb.com/images/media/league/badge/gasy9d1737743125.png/medium',
+    'Premier League': 'https://r2.thesportsdb.com/images/media/league/badge/gasy9d1737743125.png/tiny',
     'Championship': 'https://media.api-sports.io/football/leagues/40.png',
     'League One': 'https://media.api-sports.io/football/leagues/41.png',
     'FA Cup': 'https://media.api-sports.io/football/leagues/45.png',
