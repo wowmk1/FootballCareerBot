@@ -331,58 +331,6 @@ class FootballBot(commands.Bot):
 bot = FootballBot()
 
 
-# Help command
-@bot.tree.command(name="help", description="View all available commands")
-async def help_command(interaction: discord.Interaction):
-    """Show help information"""
-
-    embed = discord.Embed(
-        title="⚽ Football Career Bot - Guide",
-        description="Build your player from 18 to 38 with interactive matches!",
-        color=discord.Color.blue()
-    )
-
-    embed.add_field(
-        name="🎮 Getting Started",
-        value="`/start` - Create player\n`/profile` - View stats\n`/compare @user` - Compare players",
-        inline=False
-    )
-
-    embed.add_field(
-        name="💼 Transfers",
-        value="`/offers` - View offers (transfer windows)\n`/my_contract` - Current deal\n`/transfer_history` - Past moves",
-        inline=False
-    )
-
-    embed.add_field(
-        name="📈 Training",
-        value="`/train` - Train daily (6+ points per session!)\n30-day streak = +5 permanent potential!",
-        inline=False
-    )
-
-    embed.add_field(
-        name="🎲 Matches",
-        value="`/play_match` - Play your match!\nPosition-specific events\nD20 duels vs opponents",
-        inline=False
-    )
-
-    embed.add_field(
-        name="📅 Season",
-        value="`/season` - Current week\n`/fixtures` - Your schedule\n`/league` - League tables",
-        inline=False
-    )
-
-    # Only show admin info to administrators
-    if interaction.user.guild_permissions.administrator:
-        embed.add_field(
-            name="🔧 Admin Commands",
-            value="Type `/admin` to see all admin commands\nAll admin tools are prefixed with `admin_`",
-            inline=False
-        )
-
-    await interaction.response.send_message(embed=embed)
-
-
 # TEMPORARY: Force clear and re-sync commands
 @bot.command()
 @commands.is_owner()
@@ -408,7 +356,7 @@ async def sync(ctx):
     await ctx.send("✅ Commands synced! Old admin commands cleared.")
 
 
-# Help command
+# Help command (ONLY ONE DEFINITION)
 @bot.tree.command(name="help", description="View all available commands")
 async def help_command(interaction: discord.Interaction):
     """Show help information"""
@@ -453,7 +401,7 @@ async def help_command(interaction: discord.Interaction):
     if interaction.user.guild_permissions.administrator:
         embed.add_field(
             name="🔧 Admin Commands",
-            value="Type `/admin` to see all admin commands\nAll admin tools are prefixed with `admin_`",
+            value="Type `/admin` to see all admin commands\nAll admin tools are in the `/admin` group",
             inline=False
         )
 
