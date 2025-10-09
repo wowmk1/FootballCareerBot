@@ -349,30 +349,82 @@ async def fix_admin(ctx):
     """Remove old /admin_* commands and register /admin group properly"""
     await ctx.send("🔄 Fixing admin commands...")
     
-    old_commands = [
-        'admin_advance_week', 'admin_advance_weeks', 'admin_open_window',
-        'admin_close_window', 'admin_assign_team', 'admin_wipe_players',
-        'admin_check_retirements', 'admin_check_squads', 'admin_transfer_test',
-        'admin_debug_crests', 'admin_setup_channels', 'admin_game_state'
-    ]
+    try:
+        old_commands = [
+            'admin_advance_week', 'admin_advance_weeks', 'admin_open_window',
+            'admin_close_window', 'admin_assign_team', 'admin_wipe_players',
+            'admin_check_retirements', 'admin_check_squads', 'admin_transfer_test',
+            'admin_debug_crests', 'admin_setup_channels', 'admin_game_state'
+        ]
+        
+        # Get current global commands from Discord
+        global_commands = await bot.tree.fetch_commands()
+        
+        removed = []
+        for cmd in global_commands:
+            if cmd.name in old_commands:
+                await bot.tree.delete_command(cmd.id)
+                removed.append(cmd.name)
+        
+        # Re-sync to push changes
+        await bot.tree.sync()
+        
+        if removed:
+            await ctx.send(f"✅ Removed {len(removed)} old admin commands: {', '.join(removed)}\n"
+                           f"🔄 Re-synced commands. Restart Discord to see changes!")
+        else:
+            await ctx.send("✅ No old admin commands found. Your commands are already correct!")
+    except Exception as e:
+        await ctx.send(f"❌ Error: {e}")
+
+
+# SLASH COMMAND VERSION - This one will definitely work
+@bot.tree.command(name="fix_admin_commands", description="🔧 [ADMIN] Remove old /admin_* commands")
+@app_commands.checks.has_permissions(administrator=True)
+async def fix_admin_commands(interaction: discord.Interaction):
+    """Remove old /admin_* commands and register /admin group properly"""
+    await interaction.response.defer(ephemeral=True)
     
-    # Get current global commands from Discord
-    global_commands = await bot.tree.fetch_commands()
-    
-    removed = []
-    for cmd in global_commands:
-        if cmd.name in old_commands:
-            await bot.tree.delete_command(cmd.id)
-            removed.append(cmd.name)
-    
-    # Re-sync to push changes
-    await bot.tree.sync()
-    
-    if removed:
-        await ctx.send(f"✅ Removed {len(removed)} old admin commands: {', '.join(removed)}\n"
-                       f"🔄 Re-synced commands. Restart Discord to see changes!")
-    else:
-        await ctx.send("✅ No old admin commands found. Your commands are already correct!")
+    try:
+        old_commands = [
+            'admin_advance_week', 'admin_advance_weeks', 'admin_open_window',
+            'admin_close_window', 'admin_assign_team', 'admin_wipe_players',
+            'admin_check_retirements', 'admin_check_squads', 'admin_transfer_test',
+            'admin_debug_crests', 'admin_setup_channels', 'admin_game_state'
+        ]
+        
+        # Get current global commands from Discord
+        global_commands = await bot.tree.fetch_commands()
+        
+        await interaction.followup.send(f"📊 Found {len(global_commands)} total global commands\n🔍 Checking for old admin commands...", ephemeral=True)
+        
+        removed = []
+        for cmd in global_commands:
+            if cmd.name in old_commands:
+                await bot.tree.delete_command(cmd.id)
+                removed.append(cmd.name)
+        
+        # Re-sync to push changes
+        synced = await bot.tree.sync()
+        
+        if removed:
+            await interaction.followup.send(
+                f"✅ **Fixed Admin Commands!**\n\n"
+                f"**Removed {len(removed)} old commands:**\n" + 
+                "\n".join([f"• `/{cmd}`" for cmd in removed]) +
+                f"\n\n**Total commands now:** {len(synced)}\n"
+                f"⚠️ **Fully restart Discord to see changes!**",
+                ephemeral=True
+            )
+        else:
+            await interaction.followup.send(
+                f"✅ No old admin commands found!\n"
+                f"📊 Total global commands: {len(synced)}\n\n"
+                f"Your `/admin` group should already be working correctly.",
+                ephemeral=True
+            )
+    except Exception as e:
+        await interaction.followup.send(f"❌ Error: {e}", ephemeral=True)
 
 
 # Help command (ONLY ONE DEFINITION)
