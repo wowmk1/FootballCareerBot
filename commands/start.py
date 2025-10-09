@@ -47,36 +47,36 @@ class StartCommands(commands.Cog):
         
         embed = discord.Embed(
             title="🏟️ Choose Your Starting Club",
-            description=f"**{name}** ({position})\n\nYou have **3 contract offers** from different leagues:",
+            description=f"**{name}** ({position})\n\nYou have **3 contract offers** from Championship clubs:",
             color=discord.Color.blue()
         )
         
         # Show all 3 offers with full details
         for i, club in enumerate(view.clubs, 1):
-            if club['league'] == 'Premier League':
-                league_emoji = "🔴"
-                difficulty = "⭐⭐⭐ Very Hard"
-            elif club['league'] == 'Championship':
-                league_emoji = "🔵"
-                difficulty = "⭐⭐ Medium"
+            # All Championship clubs
+            league_emoji = "🔵"
+            
+            # Determine offer quality based on wage
+            if club['wage'] >= 12000:
+                quality = "💰 Best Offer"
+            elif club['wage'] >= 10000:
+                quality = "📊 Good Offer"
             else:
-                league_emoji = "🟢"
-                difficulty = "⭐ Easier"
+                quality = "💼 Standard Offer"
             
             embed.add_field(
                 name=f"{league_emoji} Option {i}: {club['team_name']}",
                 value=f"**League:** {club['league']}\n"
                       f"**Wage:** £{club['wage']:,}/week (~£{club['wage']*52:,}/year)\n"
                       f"**Contract:** 3 years\n"
-                      f"**Difficulty:** {difficulty}",
+                      f"**Quality:** {quality}",
                 inline=False
             )
         
         embed.add_field(
-            name="💡 Tips",
-            value="🟢 **League One:** Easier competition, faster development\n"
-                  "🔵 **Championship:** Balanced challenge\n"
-                  "🔴 **Premier League:** Harder games, better wages",
+            name="💡 Fair Start",
+            value="All players start in the Championship for balanced competition!\n"
+                  "Higher wages = better team facilities and support",
             inline=False
         )
         
@@ -214,6 +214,14 @@ class ClubButton(discord.ui.Button):
             7
         )
         
+        # AUTO-START SEASON if this is the first player
+        state = await db.get_game_state()
+        if not state['season_started']:
+            print(f"🎬 First player created! Auto-starting season...")
+            from utils.season_manager import start_season
+            await start_season()
+            print(f"✅ Season auto-started for first player")
+        
         # Success embed
         from utils.football_data_api import get_team_crest_url
         
@@ -230,7 +238,8 @@ class ClubButton(discord.ui.Button):
         embed.add_field(
             name="📊 Starting Stats",
             value=f"**{overall} OVR** • ⭐ {potential} POT\n"
-                  f"Age: **18** • Position: **{self.view.position}**",
+                  f"Age: **18** • Position: **{self.view.position}**\n\n"
+                  f"*Championship-ready player!*",
             inline=False
         )
         
