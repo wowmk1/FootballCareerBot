@@ -1,6 +1,6 @@
 """
-Centralized Admin Commands Module
-All admin, debug, and testing commands in one place
+Admin Commands Module - Organized as Command Group
+All admin commands under /admin with subcommands
 """
 import discord
 from discord import app_commands
@@ -13,22 +13,14 @@ import asyncio
 class AdminCommands(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        
-        # Create admin command group
-        self.admin_group = app_commands.Group(
-            name="admin",
-            description="Administrator commands",
-            guild_only=True
-        )
     
-    def is_admin(interaction: discord.Interaction) -> bool:
-        """Check if user has admin permissions"""
-        return interaction.user.guild_permissions.administrator
+    # Create admin command group (this creates /admin with subcommands)
+    admin = app_commands.Group(name="admin", description="Administrator commands")
     
     # ========== SEASON MANAGEMENT ==========
     
-    @app_commands.command(name="admin_advance_week", description="[ADMIN] Advance to next week")
-    @app_commands.check(is_admin)
+    @admin.command(name="advance_week", description="⏩ Advance to next week")
+    @app_commands.checks.has_permissions(administrator=True)
     async def advance_week(self, interaction: discord.Interaction):
         """Advance to the next week"""
         await interaction.response.defer()
@@ -46,9 +38,9 @@ class AdminCommands(commands.Cog):
         
         await interaction.followup.send(embed=embed)
     
-    @app_commands.command(name="admin_advance_weeks", description="[ADMIN] Advance multiple weeks")
+    @admin.command(name="advance_weeks", description="⏩ Advance multiple weeks")
     @app_commands.describe(weeks="Number of weeks to advance")
-    @app_commands.check(is_admin)
+    @app_commands.checks.has_permissions(administrator=True)
     async def advance_weeks(self, interaction: discord.Interaction, weeks: int):
         """Advance multiple weeks"""
         if weeks < 1 or weeks > 10:
@@ -72,8 +64,8 @@ class AdminCommands(commands.Cog):
         
         await interaction.followup.send(embed=embed)
     
-    @app_commands.command(name="admin_open_window", description="[ADMIN] Open match window")
-    @app_commands.check(is_admin)
+    @admin.command(name="open_window", description="🟢 Open match window")
+    @app_commands.checks.has_permissions(administrator=True)
     async def open_window(self, interaction: discord.Interaction):
         """Open match window"""
         await interaction.response.defer()
@@ -89,8 +81,8 @@ class AdminCommands(commands.Cog):
         
         await interaction.followup.send(embed=embed)
     
-    @app_commands.command(name="admin_close_window", description="[ADMIN] Close match window")
-    @app_commands.check(is_admin)
+    @admin.command(name="close_window", description="🔴 Close match window")
+    @app_commands.checks.has_permissions(administrator=True)
     async def close_window(self, interaction: discord.Interaction):
         """Close match window"""
         await interaction.response.defer()
@@ -108,9 +100,9 @@ class AdminCommands(commands.Cog):
     
     # ========== PLAYER MANAGEMENT ==========
     
-    @app_commands.command(name="admin_assign_team", description="[ADMIN] Assign player to team")
+    @admin.command(name="assign_team", description="👤 Assign player to team")
     @app_commands.describe(user="User to assign", team_id="Team ID (e.g., man_city)")
-    @app_commands.check(is_admin)
+    @app_commands.checks.has_permissions(administrator=True)
     async def assign_team(self, interaction: discord.Interaction, user: discord.User, team_id: str):
         """Assign player to team"""
         player = await db.get_player(user.id)
@@ -139,8 +131,8 @@ class AdminCommands(commands.Cog):
         
         await interaction.response.send_message(embed=embed)
     
-    @app_commands.command(name="admin_wipe_players", description="[ADMIN] Delete all user players")
-    @app_commands.check(is_admin)
+    @admin.command(name="wipe_players", description="🗑️ Delete all user players")
+    @app_commands.checks.has_permissions(administrator=True)
     async def wipe_players(self, interaction: discord.Interaction):
         """Wipe all user players"""
         view = ConfirmWipeView()
@@ -158,8 +150,8 @@ class AdminCommands(commands.Cog):
     
     # ========== DEBUGGING ==========
     
-    @app_commands.command(name="admin_check_retirements", description="[ADMIN] Check retirement system")
-    @app_commands.check(is_admin)
+    @admin.command(name="check_retirements", description="👴 Check retirement system")
+    @app_commands.checks.has_permissions(administrator=True)
     async def check_retirements(self, interaction: discord.Interaction):
         """Check retirements"""
         await interaction.response.defer()
@@ -174,8 +166,8 @@ class AdminCommands(commands.Cog):
         
         await interaction.followup.send(embed=embed)
     
-    @app_commands.command(name="admin_check_squads", description="[ADMIN] Check squad counts")
-    @app_commands.check(is_admin)
+    @admin.command(name="check_squads", description="📊 Check squad counts")
+    @app_commands.checks.has_permissions(administrator=True)
     async def check_squads(self, interaction: discord.Interaction):
         """Check squad counts"""
         await interaction.response.defer()
@@ -213,9 +205,9 @@ class AdminCommands(commands.Cog):
         
         await interaction.followup.send(embed=embed)
     
-    @app_commands.command(name="admin_transfer_test", description="[ADMIN] Test transfer system for user")
+    @admin.command(name="transfer_test", description="💼 Test transfer system for user")
     @app_commands.describe(user="User to generate test offers for")
-    @app_commands.check(is_admin)
+    @app_commands.checks.has_permissions(administrator=True)
     async def transfer_test(self, interaction: discord.Interaction, user: discord.User):
         """Test transfer system"""
         await interaction.response.defer()
@@ -258,9 +250,9 @@ class AdminCommands(commands.Cog):
     
     # ========== CREST DEBUGGING ==========
     
-    @app_commands.command(name="admin_debug_crests", description="[ADMIN] Debug team crests system")
+    @admin.command(name="debug_crests", description="🔍 Debug team crests system")
     @app_commands.describe(team_id="Team ID to test (e.g., man_city)")
-    @app_commands.check(is_admin)
+    @app_commands.checks.has_permissions(administrator=True)
     async def debug_crests(self, interaction: discord.Interaction, team_id: str = "man_city"):
         """Debug crests"""
         await interaction.response.defer()
@@ -297,8 +289,8 @@ class AdminCommands(commands.Cog):
         
         await interaction.followup.send(embed=embed)
     
-    @app_commands.command(name="admin_test_all_crests", description="[ADMIN] Test multiple team crests")
-    @app_commands.check(is_admin)
+    @admin.command(name="test_all_crests", description="🔍 Test multiple team crests")
+    @app_commands.checks.has_permissions(administrator=True)
     async def test_all_crests(self, interaction: discord.Interaction):
         """Test multiple crests"""
         from utils.football_data_api import get_team_crest_url
@@ -336,8 +328,8 @@ class AdminCommands(commands.Cog):
     
     # ========== SERVER SETUP ==========
     
-    @app_commands.command(name="admin_setup_channels", description="[ADMIN] Setup organized channel structure")
-    @app_commands.check(is_admin)
+    @admin.command(name="setup_channels", description="🗂️ Setup organized channel structure")
+    @app_commands.checks.has_permissions(administrator=True)
     async def setup_channels(self, interaction: discord.Interaction):
         """Setup server channels"""
         await interaction.response.defer()
@@ -352,8 +344,8 @@ class AdminCommands(commands.Cog):
         
         await interaction.followup.send(embed=embed)
     
-    @app_commands.command(name="admin_game_state", description="[ADMIN] View current game state")
-    @app_commands.check(is_admin)
+    @admin.command(name="game_state", description="🎮 View current game state")
+    @app_commands.checks.has_permissions(administrator=True)
     async def game_state(self, interaction: discord.Interaction):
         """View game state"""
         state = await db.get_game_state()
