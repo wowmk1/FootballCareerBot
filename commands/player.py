@@ -213,5 +213,154 @@ class PlayerCommands(commands.Cog):
         
         await interaction.response.send_message(embed=embed)
 
+    @app_commands.command(name="squad", description="View your team's squad")
+    async def squad(self, interaction: discord.Interaction):
+        """View your team's full squad"""
+        
+        await interaction.response.defer()
+        
+        player = await db.get_player(interaction.user.id)
+        
+        if not player:
+            await interaction.followup.send(
+                "You haven't created a player yet! Use `/start` to begin.",
+                ephemeral=True
+            )
+            return
+        
+        if player['retired']:
+            await interaction.followup.send(
+                "Your player has retired!",
+                ephemeral=True
+            )
+            return
+        
+        if player['team_id'] == 'free_agent':
+            await interaction.followup.send(
+                "You're a free agent! Sign with a team to see their squad.",
+                ephemeral=True
+            )
+            return
+        
+        # Get team info
+        team = await db.get_team(player['team_id'])
+        
+        if not team:
+            await interaction.followup.send(
+                "Team not found!",
+                ephemeral=True
+            )
+            return
+        
+        # Get all user players on this team
+        async with db.pool.acquire() as conn:
+            user_players = await conn.fetch("""
+                SELECT player_name, position, overall_rating, age, user_id
+                FROM players
+                WHERE team_id = $1 AND retired = FALSE
+                ORDER BY overall_rating DESC
+            """, player['team_id'])
+            
+            # Get all NPC players on this team
+            npc_players = await conn.fetch("""
+                SELECT player_name, position, overall_rating, age
+                FROM npc_players
+                WHERE team_id = $1 AND retired = FALSE
+                ORDER BY overall_rating DESC
+            """, player['team_id'])
+        
+        # Combine all players
+        all_players = []
+        
+        for p in user_players:
+            all_players.append({
+                'name': p['player_name'],
+                'position': p['position'],
+                'rating': p['overall_rating'],
+                'age': p['age'],
+                'is_user': True,
+                'is_you': p['user_id'] == interaction.user.id
+            })
+        
+        for p in npc_players:
+            all_players.append({
+                'name': p['player_name'],
+                'position': p['position'],
+                'rating': p['overall_rating'],
+                'age': p['age'],
+                'is_user': False,
+                'is_you': False
+            })
+        
+        # Sort by position order
+        position_order = ['GK', 'CB', 'FB', 'CDM', 'CM', 'CAM', 'W', 'ST']
+        all_players.sort(key=lambda x: (position_order.index(x['position']) if x['position'] in position_order else 99, -x['rating']))
+        
+        # Build embed
+        embed = discord.Embed(
+            title=f"{team['team_name']} Squad",
+            description=f"**{team['league']}** • {len(all_players)} players",
+            color=discord.Color.blue()
+        )
+        
+        crest = get_team_crest_url(team['team_id'])
+        if crest:
+            embed.set_thumbnail(url=crest)
+        
+        # Group by position
+        positions = {}
+        for p in all_players:
+            pos = p['position']
+            if pos not in positions:
+                positions[pos] = []
+            positions[pos].append(p)
+        
+        # Display by position
+        for pos in position_order:
+            if pos not in positions:
+                continue
+            
+            players_text = ""
+            for p in positions[pos]:
+                # Highlight user
+                if p['is_you']:
+                    marker = "👤 **YOU** • "
+                elif p['is_user']:
+                    marker = "👤 "
+                else:
+                    marker = ""
+                
+                players_text += f"{marker}{p['name']} - **{p['rating']}** OVR (Age {p['age']})\n"
+            
+            if players_text:
+                # Position emoji
+                pos_emoji = {
+                    'GK': '🧤', 'CB': '🧱', 'FB': '🔙',
+                    'CDM': '🛡️', 'CM': '⚙️', 'CAM': '🎯',
+                    'W': '🏃', 'ST': '⚽'
+                }
+                
+                embed.add_field(
+                    name=f"{pos_emoji.get(pos, '⚽')} {pos}",
+                    value=players_text,
+                    inline=False
+                )
+        
+        # Squad stats
+        avg_rating = sum(p['rating'] for p in all_players) / len(all_players)
+        avg_age = sum(p['age'] for p in all_players) / len(all_players)
+        
+        embed.add_field(
+            name="📊 Squad Stats",
+            value=f"**Avg Rating:** {avg_rating:.1f}\n"
+                  f"**Avg Age:** {avg_age:.1f}\n"
+                  f"**Total Players:** {len(all_players)}",
+            inline=False
+        )
+        
+        embed.set_footer(text="👤 = User-controlled player")
+        
+        await interaction.followup.send(embed=embed)
+
 async def setup(bot):
     await bot.add_cog(PlayerCommands(bot))
