@@ -47,6 +47,9 @@ class TransferOfferView(discord.ui.View):
             await interaction.response.send_message("❌ These aren't your offers!", ephemeral=True)
             return
 
+        # CRITICAL: Defer immediately
+        await interaction.response.defer()
+
         self.selected_offer_id = int(self.offer_select.values[0])
 
         # Find the selected offer
@@ -174,6 +177,9 @@ class TransferOfferView(discord.ui.View):
             await interaction.response.send_message("❌ Please select an offer first!", ephemeral=True)
             return
 
+        # CRITICAL: Defer immediately
+        await interaction.response.defer()
+
         success = await reject_transfer_offer(self.user_id, self.selected_offer_id)
 
         if success:
@@ -181,7 +187,7 @@ class TransferOfferView(discord.ui.View):
             self.offers = [o for o in self.offers if o['offer_id'] != self.selected_offer_id]
 
             if not self.offers:
-                await interaction.response.edit_message(
+                await interaction.edit_original_response(
                     content="✅ All offers rejected!",
                     embed=None,
                     view=None
@@ -201,10 +207,10 @@ class TransferOfferView(discord.ui.View):
                 color=discord.Color.gold()
             )
 
-            await interaction.response.edit_message(embed=embed, view=new_view)
+            await interaction.edit_original_response(embed=embed, view=new_view)
             self.stop()
         else:
-            await interaction.response.send_message("❌ Could not reject offer.", ephemeral=True)
+            await interaction.followup.send("❌ Could not reject offer.", ephemeral=True)
 
     @discord.ui.button(label="🗑️ Reject All", style=discord.ButtonStyle.secondary, row=2)
     async def reject_all_button(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -236,7 +242,9 @@ class TransferOfferView(discord.ui.View):
                 color=discord.Color.red()
             )
 
-            await interaction.edit_original_response(embed=embed, view=self)
+            # Get the original message from the interaction
+            original_response = await interaction.original_response()
+            await original_response.edit(embed=embed, view=self)
             self.stop()
 
 
