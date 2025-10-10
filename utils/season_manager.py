@@ -41,7 +41,7 @@ async def start_season():
 
 
 async def advance_week():
-    """Advance to the next week - SCHEDULES 3 MATCHES PER WEEK"""
+    """Advance to the next week - 1 REAL DAY = 1 GAME WEEK"""
     state = await db.get_game_state()
 
     if not state['season_started']:
@@ -65,31 +65,33 @@ async def advance_week():
     print(f"{'=' * 60}")
 
     # ============================================
-    # SCHEDULE NEXT 3 MATCHES (Mon/Wed/Sat pattern)
+    # SCHEDULE NEXT MATCH DAY (Mon/Wed/Sat pattern)
     # ============================================
     now = datetime.now()
+    current_day = now.weekday()  # 0=Monday, 2=Wednesday, 5=Saturday
 
-    # Find next Monday at MATCH_START_HOUR
-    days_until_monday = (7 - now.weekday()) % 7  # 0 = Monday
-    if days_until_monday == 0 and now.hour >= config.MATCH_START_HOUR:
-        days_until_monday = 7  # If it's Monday but past match time, go to next Monday
+    # Determine next match day
+    if current_day < 2:  # Before Wednesday
+        # Next match is Wednesday
+        days_until_next = 2 - current_day
+    elif current_day < 5:  # Before Saturday
+        # Next match is Saturday
+        days_until_next = 5 - current_day
+    else:  # Saturday or Sunday
+        # Next match is Monday
+        days_until_next = (7 - current_day) % 7
+        if days_until_next == 0:
+            days_until_next = 2  # If Monday, go to Wednesday
 
-    next_monday = now + timedelta(days=days_until_monday)
-    next_monday = next_monday.replace(hour=config.MATCH_START_HOUR, minute=0, second=0, microsecond=0)
+    next_match = now + timedelta(days=days_until_next)
+    next_match = next_match.replace(hour=config.MATCH_START_HOUR, minute=0, second=0, microsecond=0)
 
-    # Store when the 3 matches will be
-    match_1 = next_monday  # Monday
-    match_2 = next_monday + timedelta(days=2)  # Wednesday
-    match_3 = next_monday + timedelta(days=5)  # Saturday
-
-    print(f"📅 Week {new_week} Schedule:")
-    print(f"   Match 1: {match_1.strftime('%A, %B %d at %I:%M %p')}")
-    print(f"   Match 2: {match_2.strftime('%A, %B %d at %I:%M %p')}")
-    print(f"   Match 3: {match_3.strftime('%A, %B %d at %I:%M %p')}")
+    print(f"📅 Week {new_week} scheduled for:")
+    print(f"   {next_match.strftime('%A, %B %d at %I:%M %p')}")
 
     await db.update_game_state(
         current_week=new_week,
-        next_match_day=match_1.isoformat()  # Schedule first of 3 matches
+        next_match_day=next_match.isoformat()
     )
     # ============================================
 
@@ -121,17 +123,15 @@ async def advance_week():
 
 
 async def open_match_window(bot=None):
-    """Open match window for current week - KEEPS FIXTURES PLAYABLE ALL WEEK"""
+    """Open match window for current week - ALL FIXTURES PLAYABLE"""
     state = await db.get_game_state()
 
     if not state['season_started']:
         return
 
     current_week = state['current_week']
-    current_match = state.get('current_match_of_week', 0)
 
-    # IMPORTANT: Make ALL unplayed fixtures for this week playable
-    # They stay playable across all 3 match windows until played
+    # Make ALL fixtures for this week playable
     async with db.pool.acquire() as conn:
         await conn.execute('''
             UPDATE fixtures
@@ -155,12 +155,12 @@ async def open_match_window(bot=None):
         match_window_closes=window_closes.isoformat()
     )
 
-    print(f"✅ Match window {current_match + 1}/3 opened for Week {current_week}")
+    print(f"✅ Match window opened for Week {current_week}")
     print(f"⚽ {playable_count} fixtures available to play")
     print(f"⏰ Window closes at {window_closes.strftime('%Y-%m-%d %H:%M')}")
 
-    # POST WEEKLY NEWS TO CHANNELS (only on first window of the week)
-    if bot and current_match == 0:
+    # POST WEEKLY NEWS TO CHANNELS
+    if bot:
         try:
             for guild in bot.guilds:
                 await post_weekly_news_digest(bot, guild)
@@ -168,45 +168,38 @@ async def open_match_window(bot=None):
         except Exception as e:
             print(f"⚠️ Could not post weekly news: {e}")
 
-)
+    # NOTIFY MATCH WINDOW OPEN
+    if bot:
+        await bot.notify_match_window_open()
 
 
-async
-
-def close_match_window():
-    """Close match window but KEEP fixtures playable until week ends"""
+async def close_match_window():
+    """Close match window and auto-simulate unplayed matches"""
     from utils.match_simulator import simulate_match
 
     state = await db.get_game_state()
     current_week = state['current_week']
-    current_match = state.get('current_match_of_week', 0)
 
-    # DON'T auto-simulate yet unless this is the LAST window of the week
-    if current_match + 1 >= 3:  # This is the 3rd/final window
-        # NOW we auto-simulate unplayed matches
-        async with db.pool.acquire() as conn:
-            rows = await conn.fetch(
-                "SELECT * FROM fixtures WHERE week_number = $1 AND played = FALSE AND playable = TRUE",
-                current_week
-            )
-            unplayed = [dict(row) for row in rows]
+    # Auto-simulate ALL unplayed matches
+    async with db.pool.acquire() as conn:
+        rows = await conn.fetch(
+            "SELECT * FROM fixtures WHERE week_number = $1 AND played = FALSE AND playable = TRUE",
+            current_week
+        )
+        unplayed = [dict(row) for row in rows]
 
-        if unplayed:
-            print(f"🤖 Final window - Auto-simulating {len(unplayed)} unplayed matches...")
-            for fixture in unplayed:
-                await simulate_match(fixture)
+    if unplayed:
+        print(f"🤖 Auto-simulating {len(unplayed)} unplayed matches...")
+        for fixture in unplayed:
+            await simulate_match(fixture)
 
-        # Mark all fixtures as unplayable since week is over
-        async with db.pool.acquire() as conn:
-            await conn.execute('''
-                UPDATE fixtures
-                SET playable = FALSE
-                WHERE week_number = $1
-            ''', current_week)
-    else:
-        # NOT the final window - just close this window
-        # Fixtures stay playable for next window
-        print(f"✅ Window {current_match + 1}/3 closed - fixtures remain playable for next window")
+    # Mark all fixtures as unplayable since week is over
+    async with db.pool.acquire() as conn:
+        await conn.execute('''
+            UPDATE fixtures
+            SET playable = FALSE
+            WHERE week_number = $1
+        ''', current_week)
 
     await db.update_game_state(
         match_window_open=False,
@@ -214,18 +207,15 @@ def close_match_window():
         last_match_day=datetime.now().isoformat()
     )
 
-    print(f"✅ Match window closed for Week {current_week} (Window {current_match + 1}/3)")
+    print(f"✅ Match window closed for Week {current_week}")
 
 
 async def check_match_day_trigger(bot=None):
-    """Check if it's time to open match window OR auto-advance week (3 MATCHES PER WEEK)"""
+    """Check if it's time to open/close match window"""
     state = await db.get_game_state()
 
     if not state['season_started']:
         return False
-
-    # Get current match counter (1, 2, or 3)
-    current_match = state.get('current_match_of_week', 0)
 
     # PRIORITY 1: Check if match window should close
     if state['match_window_open']:
@@ -234,33 +224,9 @@ async def check_match_day_trigger(bot=None):
             if datetime.now() >= closes:
                 await close_match_window()
 
-                # INCREMENT MATCH COUNTER
-                current_match += 1
-                await db.update_game_state(current_match_of_week=current_match)
-
-                print(f"✅ Match {current_match}/3 completed for Week {state['current_week']}")
-
-                # If we've played all 3 matches, advance to next week
-                if current_match >= 3:
-                    print(f"🏁 All 3 matches complete! Advancing to next week...")
-                    await db.update_game_state(current_match_of_week=0)  # Reset counter
-                    await advance_week()
-                else:
-                    # Schedule next match (Wednesday or Saturday)
-                    now = datetime.now()
-
-                    if current_match == 1:
-                        # Just finished Monday → Schedule Wednesday (2 days later)
-                        next_match = now + timedelta(days=2)
-                    elif current_match == 2:
-                        # Just finished Wednesday → Schedule Saturday (3 days later)
-                        next_match = now + timedelta(days=3)
-
-                    next_match = next_match.replace(hour=config.MATCH_START_HOUR, minute=0, second=0, microsecond=0)
-
-                    await db.update_game_state(next_match_day=next_match.isoformat())
-
-                    print(f"📅 Next match ({current_match + 1}/3): {next_match.strftime('%A, %B %d at %I:%M %p')}")
+                # After closing, immediately advance to next week
+                print(f"🏁 Week {state['current_week']} complete! Advancing...")
+                await advance_week()
 
                 return True
         return False
@@ -407,7 +373,7 @@ async def end_season():
         await conn.execute("""
             UPDATE players
             SET season_goals = 0, season_assists = 0, 
-                season_apps = 0, season_rating = 0.0
+                season_apps = 0, season_rating = 0.0, season_motm = 0
             WHERE retired = FALSE
         """)
 
