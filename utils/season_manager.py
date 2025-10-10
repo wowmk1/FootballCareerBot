@@ -143,8 +143,8 @@ async def advance_week():
     if next_week > config.SEASON_TOTAL_WEEKS:
         await end_season()
         return
-    
-    # Calculate next match day (Mon/Wed/Sat at 3 PM)
+
+# Calculate next match day (Mon/Wed/Sat at 3 PM)
     now = datetime.now()
     target_days = [0, 2, 5]  # Mon, Wed, Sat
     current_match = state.get('current_match_of_week', 0)
@@ -214,6 +214,17 @@ async def check_match_day_trigger(bot=None):
             triggered = True
     
     # ============================================
+    # CHECK IF WE SHOULD SEND CLOSING WARNING
+    # ============================================
+    if state['match_window_open'] and state['match_window_closes']:
+        closes = datetime.fromisoformat(state['match_window_closes'])
+        time_until_close = (closes - now).total_seconds()
+        
+        # Send warning 15 minutes before close (check if within 14-16 min window)
+        if 840 <= time_until_close <= 960:  # 14-16 minutes before closing
+            await send_closing_warning(bot)
+    
+    # ============================================
     # CHECK IF WE SHOULD CLOSE MATCH WINDOW
     # ============================================
     if state['match_window_open'] and state['match_window_closes']:
@@ -228,6 +239,69 @@ async def check_match_day_trigger(bot=None):
             triggered = True
     
     return triggered
+
+
+async def send_closing_warning(bot=None):
+    """Warn players who haven't played 15min before close"""
+    if not bot:
+        return
+        
+    state = await db.get_game_state()
+    current_week = state['current_week']
+    
+    async with db.pool.acquire() as conn:
+        all_players = await conn.fetch("""
+            SELECT user_id, player_name
+            FROM players
+            WHERE retired = FALSE AND team_id != 'free_agent'
+        """)
+        
+        played_players = await conn.fetch("""
+            SELECT DISTINCT user_id
+            FROM match_participants mp
+            JOIN active_matches am ON mp.match_id = am.match_id
+            JOIN fixtures f ON am.fixture_id = f.fixture_id
+            WHERE f.week_number = $1
+        """, current_week)
+        
+        played_ids = {p['user_id'] for p in played_players}
+    
+    from datetime import datetime
+    closes = datetime.fromisoformat(state['match_window_closes'])
+    timestamp = int(closes.timestamp())
+    
+    warned = 0
+    for player in all_players:
+        if player['user_id'] not in played_ids:
+            try:
+                user = await bot.fetch_user(player['user_id'])
+                
+                embed = discord.Embed(
+                    title="⚠️ Match Window Closing Soon!",
+                    description=f"**You haven't played your Week {current_week} match!**\n\n"
+                               f"Window closes in **15 minutes**!",
+                    color=discord.Color.red()
+                )
+                
+                embed.add_field(
+                    name="⏰ Closes At",
+                    value=f"<t:{timestamp}:t> (<t:{timestamp}:R>)",
+                    inline=False
+                )
+                
+                embed.add_field(
+                    name="🚨 URGENT",
+                    value="Use `/play_match` **NOW** or your match will be auto-simulated!",
+                    inline=False
+                )
+                
+                await user.send(embed=embed)
+                warned += 1
+            except:
+                pass
+    
+    if warned > 0:
+        print(f"⚠️ Sent closing warnings to {warned} players who haven't played")
 
 
 async def open_transfer_window():
