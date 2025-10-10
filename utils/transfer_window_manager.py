@@ -1,6 +1,6 @@
 """
 Transfer Window Manager - Handles transfer window logic and offer generation
-IMPROVED VERSION with continuous weekly offer generation
+SMART VERSION - Only generates offers when needed
 """
 
 from database import db
@@ -34,8 +34,8 @@ async def check_and_update_transfer_window():
 
 async def process_weekly_transfer_offers(bot=None):
     """
-    MAIN FUNCTION: Called every week during transfer windows
-    Generates new offers for all active players who don't have pending offers
+    FIRST WEEK ONLY: Called when transfer window opens
+    Generates new offers for all active players
     """
     state = await db.get_game_state()
     current_week = state['current_week']
@@ -45,7 +45,7 @@ async def process_weekly_transfer_offers(bot=None):
         print(f"Week {current_week}: Transfer window closed, skipping offer generation")
         return
     
-    print(f"\n=== Week {current_week}: Generating Transfer Offers ===")
+    print(f"\n=== Week {current_week}: Generating Initial Transfer Offers ===")
     
     # Get all active players
     async with db.pool.acquire() as conn:
@@ -63,19 +63,6 @@ async def process_weekly_transfer_offers(bot=None):
     for player_row in players:
         player = dict(player_row)
         user_id = player['user_id']
-        
-        # Check if player already has pending offers
-        pending_offers = await get_pending_offers(user_id)
-        
-        if pending_offers:
-            print(f"  {player['player_name']}: Already has {len(pending_offers)} pending offers, skipping")
-            continue
-        
-        # Check if player already transferred this window
-        current_window = get_current_transfer_window(current_week)
-        if player.get('last_transfer_window') == current_window:
-            print(f"  {player['player_name']}: Already transferred this window, skipping")
-            continue
         
         # Generate 1-3 offers based on player quality
         num_offers = calculate_num_offers(player)
@@ -99,6 +86,88 @@ async def process_weekly_transfer_offers(bot=None):
             print(f"  {player['player_name']}: Failed to generate offers")
     
     print(f"\n=== Transfer Offers Complete ===")
+    print(f"Generated {offers_generated} offers for {players_with_offers} players")
+    
+    return offers_generated
+
+async def generate_offers_for_eligible_players():
+    """
+    SUBSEQUENT WEEKS: Generate offers ONLY for players who:
+    1. Have NO pending offers (declined all or never got any)
+    2. Have NOT accepted a transfer this window
+    """
+    state = await db.get_game_state()
+    current_week = state['current_week']
+    current_window = get_current_transfer_window(current_week)
+    
+    print(f"\n=== Week {current_week}: Checking for Eligible Players ===")
+    
+    # Get all active players
+    async with db.pool.acquire() as conn:
+        all_players = await conn.fetch("""
+            SELECT user_id, player_name, overall_rating, potential, 
+                   team_id, contract_wage, contract_years, age,
+                   season_rating, season_goals, last_transfer_window
+            FROM players
+            WHERE retired = FALSE
+        """)
+    
+    offers_generated = 0
+    players_with_offers = 0
+    
+    for player_row in all_players:
+        player = dict(player_row)
+        user_id = player['user_id']
+        
+        # SKIP if player already transferred this window
+        if player.get('last_transfer_window') == current_window:
+            continue
+        
+        # Check if player has pending offers
+        pending_offers = await get_pending_offers(user_id)
+        
+        if pending_offers:
+            # Player already has offers waiting - skip
+            continue
+        
+        # Check if player ACCEPTED an offer this window
+        async with db.pool.acquire() as conn:
+            accepted_this_window = await conn.fetchrow("""
+                SELECT offer_id FROM transfer_offers
+                WHERE user_id = $1 
+                AND status = 'accepted'
+                AND offer_week >= $2
+            """, user_id, min(config.TRANSFER_WINDOW_WEEKS[:3]) if current_window == 1 else min(config.TRANSFER_WINDOW_WEEKS[3:]))
+        
+        if accepted_this_window:
+            # Player accepted a transfer this window - no more offers
+            continue
+        
+        # ELIGIBLE: Generate new offers
+        print(f"  ✅ {player['player_name']}: Eligible for new offers")
+        
+        # Generate 1-3 offers for this player
+        num_offers = calculate_num_offers(player)
+        
+        if num_offers == 0:
+            continue
+        
+        # Generate offers
+        created_offers = await generate_offers_for_player(player, current_week, num_offers)
+        
+        if created_offers:
+            offers_generated += len(created_offers)
+            players_with_offers += 1
+            print(f"  💼 {player['player_name']}: Generated {len(created_offers)} new offers")
+            
+            # Send notification to player
+            try:
+                from bot import bot
+                await send_offer_notification(bot, user_id, len(created_offers))
+            except:
+                pass  # Bot not available, skip notification
+    
+    print(f"\n=== Eligible Player Offers Complete ===")
     print(f"Generated {offers_generated} offers for {players_with_offers} players")
     
     return offers_generated
@@ -188,15 +257,6 @@ async def generate_offers_for_player(player: dict, current_week: int, num_offers
             rows = await conn.fetch(
                 "SELECT * FROM teams WHERE league = $1 ORDER BY RANDOM() LIMIT 5",
                 'League One'
-            )
-            interested_teams.extend([dict(row) for row in rows])
-    
-    # Also include League Two for lower rated players
-    if rating >= 50:
-        async with db.pool.acquire() as conn:
-            rows = await conn.fetch(
-                "SELECT * FROM teams WHERE league = $1 ORDER BY RANDOM() LIMIT 4",
-                'League Two'
             )
             interested_teams.extend([dict(row) for row in rows])
     
@@ -507,16 +567,16 @@ async def send_offer_notification(bot, user_id: int, num_offers: int):
             )
             embed.add_field(
                 name="⏰ Offers Expire",
-                value="At the end of this week",
+                value="At the end of this transfer window",
                 inline=False
             )
             embed.add_field(
                 name="⚡ Quick Actions",
                 value="• `/offers` - View all offers\n"
-                      "• `/my_contract` - Check current contract",
+                      "• `/player contract` - Check current contract",
                 inline=False
             )
-            embed.set_footer(text="New offers generated each week during transfer windows!")
+            embed.set_footer(text="Accept before window closes!")
             await user.send(embed=embed)
             print(f"✅ Sent offer notification to user {user_id}")
     except Exception as e:
@@ -527,7 +587,7 @@ async def simulate_npc_transfers():
     
     print("\n=== Simulating NPC Transfers ===")
     
-    # Get NPCs who might transfer (aged 20-32, not retired)
+    # Get NPCs who might transfer (aged 18-33, not retired)
     async with db.pool.acquire() as conn:
         transfer_candidates = await conn.fetch("""
             SELECT n.*, t.league 
@@ -560,8 +620,6 @@ async def simulate_npc_transfers():
             potential_leagues.append('Championship')
         if rating >= 55:
             potential_leagues.append('League One')
-        if rating >= 50:
-            potential_leagues.append('League Two')
         
         # 50% chance of lateral move, 50% chance of up/down move
         if random.random() < 0.5 and current_league in potential_leagues:
