@@ -1,1 +1,1 @@
-worker: python run_migration_and_start.py
+worker: python bot.py
