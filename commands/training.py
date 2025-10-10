@@ -12,32 +12,35 @@ class TrainingCommands(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-    @app_commands.command(name="train", description="Train to improve your stats (once per day)")
-    async def train(self, interaction: discord.Interaction):
-        """Realistic daily training with slower, meaningful progression"""
+        @app_commands.command(name="train", description="Train to improve your stats (once per day)")
+        async def train(self, interaction: discord.Interaction):
+            """Realistic daily training with slower, meaningful progression"""
 
-        player = await db.get_player(interaction.user.id)
+            # CRITICAL: Defer immediately to prevent timeout
+            await interaction.response.defer()
 
-        if not player:
-            await interaction.response.send_message(
-                "You haven't created a player yet! Use `/start` to begin.",
-                ephemeral=True
-            )
-            return
+            player = await db.get_player(interaction.user.id)
 
-        if player['retired']:
-            await interaction.response.send_message(
-                "Your player has retired! Use `/start` to create a new player.",
-                ephemeral=True
-            )
-            return
+            if not player:
+                await interaction.followup.send(
+                    "You haven't created a player yet! Use `/start` to begin.",
+                    ephemeral=True
+                )
+                return
 
-        if player['injury_weeks'] and player['injury_weeks'] > 0:
-            await interaction.response.send_message(
-                f"You're injured! Rest for **{player['injury_weeks']} more weeks** before training.",
-                ephemeral=True
-            )
-            return
+            if player['retired']:
+                await interaction.followup.send(
+                    "Your player has retired! Use `/start` to create a new player.",
+                    ephemeral=True
+                )
+                return
+
+            if player['injury_weeks'] and player['injury_weeks'] > 0:
+                await interaction.followup.send(
+                    f"You're injured! Rest for **{player['injury_weeks']} more weeks** before training.",
+                    ephemeral=True
+                )
+                return
 
             # Replace the cooldown check section in your training.py (around line 40-55)
             # with this improved version:
@@ -339,7 +342,7 @@ class TrainingCommands(commands.Cog):
 
                 embed.set_footer(text=f"Age: {age_multiplier}x | Morale: {morale_multiplier}x | Consistency is key!")
 
-                await interaction.response.send_message(embed=embed)
+                await interaction.followup.send(embed=embed)
 
     import discord
     from discord import app_commands
