@@ -286,10 +286,10 @@ class MatchEngine:
                     if player:
                         result = await self.handle_player_moment(channel, player, participant, minute, home_team,
                                                                  away_team, True, match_id)
-                        if result == 'goal':
+                        if result and result.get('goal'):
                             home_score += 1
-                            await self.post_goal_celebration(channel, player['player_name'], home_team['team_name'],
-                                                             home_team['team_id'], home_score, away_score)
+                            await self.post_goal_celebration(channel, result['scorer_name'], home_team['team_name'],
+                                                             home_team['team_id'], home_score, away_score, result.get('assister_name'))
                             await self.update_pinned_score(channel, match_id, home_team, away_team, home_score,
                                                            away_score, minute)
                 else:
@@ -306,10 +306,10 @@ class MatchEngine:
                     if player:
                         result = await self.handle_player_moment(channel, player, participant, minute, away_team,
                                                                  home_team, False, match_id)
-                        if result == 'goal':
+                        if result and result.get('goal'):
                             away_score += 1
-                            await self.post_goal_celebration(channel, player['player_name'], away_team['team_name'],
-                                                             away_team['team_id'], home_score, away_score)
+                            await self.post_goal_celebration(channel, result['scorer_name'], away_team['team_name'],
+                                                             away_team['team_id'], home_score, away_score, result.get('assister_name'))
                             await self.update_pinned_score(channel, match_id, home_team, away_team, home_score,
                                                            away_score, minute)
                 else:
@@ -411,7 +411,7 @@ class MatchEngine:
         result = await self.execute_action_with_duel(channel, player, adjusted_stats, defender, action, minute,
                                                      match_id, member, attacking_team)
 
-        return 'goal' if result.get('goal') else None
+        return result
 
     async def execute_action_with_duel(self, channel, player, adjusted_stats, defender, action, minute,
                                        match_id, member, attacking_team):
@@ -460,6 +460,9 @@ class MatchEngine:
             )
 
         is_goal = False
+        scorer_name = None
+        assister_name = None
+        rating_change = 0
 
         if action == 'shoot' and success:
             if player_roll == 20 or player_total >= defender_total + 10:
@@ -469,6 +472,9 @@ class MatchEngine:
                     inline=False
                 )
                 is_goal = True
+                scorer_name = player['player_name']
+                rating_change = 1.2
+                
                 async with db.pool.acquire() as conn:
                     await conn.execute(
                         "UPDATE players SET season_goals = season_goals + 1, career_goals = career_goals + 1 WHERE user_id = $1",
@@ -482,48 +488,63 @@ class MatchEngine:
                     value=f"Goalkeeper makes a brilliant save!",
                     inline=False
                 )
+                rating_change = -0.1
 
         elif action in ['pass', 'through_ball', 'key_pass', 'cross'] and success:
             assist_chance = {'pass': 0.35, 'through_ball': 0.40, 'key_pass': 0.45, 'cross': 0.40}
             if random.random() < assist_chance.get(action, 0.35):
-                is_goal = await self.handle_teammate_goal(channel, player, attacking_team, match_id)
-                if is_goal:
+                teammate_result = await self.handle_teammate_goal(channel, player, attacking_team, match_id)
+                if teammate_result:
+                    is_goal = True
+                    scorer_name = teammate_result['scorer_name']
+                    assister_name = player['player_name']
+                    rating_change = 0.8
+                    
                     result_embed.add_field(
-                        name="⚽ TEAMMATE SCORES!",
-                        value=f"🅰️ **ASSIST: {player['player_name']}**\nGreat {action.replace('_', ' ')}!",
+                        name="⚽ TEAMMATE SCORES FROM YOUR PASS!",
+                        value=f"**{scorer_name}** finishes it!\n🅰️ **ASSIST: {player['player_name']}**\nGreat {action.replace('_', ' ')}!",
                         inline=False
                     )
                 else:
                     result_embed.add_field(name="✅ SUCCESS!",
                                            value=f"Great {action.replace('_', ' ')}! Chance created.", inline=False)
+                    rating_change = 0.3
             else:
                 result_embed.add_field(name="✅ SUCCESS!", value=f"Perfect {action.replace('_', ' ')}!", inline=False)
+                rating_change = 0.3
 
         elif action == 'dribble' and success:
             result_embed.add_field(name="✅ BEATEN THE DEFENDER!", value=f"You've created space!", inline=False)
+            rating_change = 0.3
 
         elif success:
             result_embed.add_field(name="✅ SUCCESS!", value=f"Great {action.replace('_', ' ')}!", inline=False)
+            rating_change = 0.3
 
         else:
             result_embed.add_field(name="❌ FAILED!", value=f"{action.replace('_', ' ')} unsuccessful!", inline=False)
+            rating_change = -0.1
 
         await suspense_msg.delete()
         await channel.send(embed=result_embed)
 
-        rating_change = 0.3 if success else -0.1
-        if is_goal:
-            rating_change = 1.2
+        # Update match rating
         async with db.pool.acquire() as conn:
             await conn.execute(
                 'UPDATE match_participants SET match_rating = GREATEST(0.0, LEAST(10.0, match_rating + $1)), actions_taken = actions_taken + 1 WHERE match_id = $2 AND user_id = $3',
                 rating_change, match_id, player['user_id']
             )
 
-        return {'success': success, 'goal': is_goal, 'roll': player_roll}
+        return {
+            'success': success, 
+            'goal': is_goal, 
+            'roll': player_roll,
+            'scorer_name': scorer_name,
+            'assister_name': assister_name
+        }
 
     async def handle_teammate_goal(self, channel, player, attacking_team, match_id):
-        """Handle teammate scoring after assist"""
+        """Handle teammate scoring after assist - returns dict with scorer info"""
         async with db.pool.acquire() as conn:
             teammate = await conn.fetchrow(
                 """SELECT player_name FROM npc_players
@@ -537,13 +558,8 @@ class MatchEngine:
                        WHERE user_id = $1""",
                     player['user_id']
                 )
-                await conn.execute(
-                    """UPDATE match_participants SET match_rating = LEAST(10.0, match_rating + 0.8) 
-                       WHERE match_id = $1 AND user_id = $2""",
-                    match_id, player['user_id']
-                )
-                return True
-        return False
+                return {'scorer_name': teammate['player_name']}
+        return None
 
     async def handle_npc_moment(self, channel, team_id, minute, attacking_team, defending_team, is_home):
         async with db.pool.acquire() as conn:
@@ -579,11 +595,17 @@ class MatchEngine:
 
         return None
 
-    async def post_goal_celebration(self, channel, scorer_name, team_name, team_id, home_score, away_score):
+    async def post_goal_celebration(self, channel, scorer_name, team_name, team_id, home_score, away_score, assister_name=None):
         celebrations = ["🔥🔥🔥 **GOOOOAAAALLL!!!** 🔥🔥🔥", "⚽⚽⚽ **WHAT A GOAL!!!** ⚽⚽⚽"]
+        
+        description = f"## **{scorer_name}** scores for {team_name}!\n\n"
+        if assister_name:
+            description += f"🅰️ **ASSIST:** {assister_name}\n\n"
+        description += f"**{home_score} - {away_score}**"
+        
         embed = discord.Embed(
             title=random.choice(celebrations),
-            description=f"## **{scorer_name}** scores for {team_name}!\n\n**{home_score} - {away_score}**",
+            description=description,
             color=discord.Color.gold()
         )
         team_crest = get_team_crest_url(team_id)
@@ -628,13 +650,10 @@ class MatchEngine:
                 print(
                     f"  📊 Form updated for user {participant['user_id']}: Rating {participant['match_rating']:.1f} → Form {new_form}")
 
-                # Add this code to match_engine.py in the end_match() function
-                # Place it right after the form update section (around line 552)
-
-                # ============================================
-                # UPDATE MORALE BASED ON MATCH RESULT
-                # ============================================
-                from utils.form_morale_system import update_player_morale
+        # ============================================
+        # UPDATE MORALE BASED ON MATCH RESULT
+        # ============================================
+        from utils.form_morale_system import update_player_morale
 
         for participant in participants:
             if participant['user_id']:
@@ -662,9 +681,9 @@ class MatchEngine:
                         await update_player_morale(participant['user_id'], 'draw')
                         print(f"  😐 Morale unchanged for user {participant['user_id']} (DRAW)")
 
-                # ============================================
-                # END OF MORALE UPDATE
-                # ============================================
+        # ============================================
+        # END OF MORALE UPDATE
+        # ============================================
 
         # ============================================
         # END OF FORM UPDATE
