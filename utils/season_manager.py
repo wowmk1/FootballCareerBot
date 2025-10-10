@@ -185,12 +185,12 @@ async def close_match_window():
         unplayed = [dict(row) for row in rows]
 
     if unplayed:
-    print(f"🤖 Auto-simulating {len(unplayed)} unplayed matches for Week {current_week}...")
-    for fixture in unplayed:
-        await simulate_match(fixture)
-    print(f"✅ Week {current_week} simulation complete!")
+        print(f"🤖 Auto-simulating {len(unplayed)} unplayed matches for Week {current_week}...")
+        for fixture in unplayed:
+            await simulate_match(fixture)
+        print(f"✅ Week {current_week} simulation complete!")
     else:
-    print(f"✅ Week {current_week}: All matches were played by users!")
+        print(f"✅ Week {current_week}: All matches were played by users!")
 
     # Mark all fixtures as unplayable since week is over
     async with db.pool.acquire() as conn:
