@@ -10,17 +10,17 @@ DATABASE_URL = os.getenv('DATABASE_URL')
 # Season Configuration
 CURRENT_SEASON = "2027/28"
 SEASON_TOTAL_WEEKS = 38
-MATCHES_PER_WEEK = 3  # Mon, Wed, Sat
+MATCHES_PER_WEEK = 1  # 1 real-life day = 1 game week (Mon/Wed/Sat)
 
 # Match Configuration
 MATCH_WINDOW_HOURS = 2
-MATCH_START_HOUR = 15  # 3PM EST (was 20:00)
+MATCH_START_HOUR = 15  # 3PM EST
 MATCH_EVENTS_PER_GAME_MIN = 18  # Minimum key moments
 MATCH_EVENTS_PER_GAME_MAX = 25  # Maximum key moments
 
 # Player Configuration
 STARTING_AGE = 18
-RETIREMENT_AGE = 38  # Changed from 40
+RETIREMENT_AGE = 38
 BASE_STAT_GAIN = 2
 STREAK_BONUS_THRESHOLD = 7
 STREAK_BONUS_AMOUNT = 1
@@ -39,7 +39,7 @@ NOTIFY_TRANSFER_OFFERS = True
 
 print("✅ Config loaded successfully")
 print(f"📊 Environment: production")
-print(f"⚽ Matches per week: {MATCHES_PER_WEEK}")
+print(f"⚽ Match schedule: Mon/Wed/Sat (1 game week per real day)")
 print(f"🎲 Match events per game: {MATCH_EVENTS_PER_GAME_MIN}-{MATCH_EVENTS_PER_GAME_MAX}")
 print(f"⏱️ Match window: {MATCH_WINDOW_HOURS} hours")
 print(f"⏰ Match start time: {MATCH_START_HOUR}:00")
