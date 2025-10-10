@@ -90,7 +90,7 @@ async def process_weekly_transfer_offers(bot=None):
     
     return offers_generated
 
-async def generate_offers_for_eligible_players():
+async def generate_offers_for_eligible_players(bot=None):
     """
     SUBSEQUENT WEEKS: Generate offers ONLY for players who:
     1. Have NO pending offers (declined all or never got any)
@@ -160,12 +160,9 @@ async def generate_offers_for_eligible_players():
             players_with_offers += 1
             print(f"  💼 {player['player_name']}: Generated {len(created_offers)} new offers")
             
-            # Send notification to player
-            try:
-                from bot import bot
+            # Send notification to player if bot is available
+            if bot:
                 await send_offer_notification(bot, user_id, len(created_offers))
-            except:
-                pass  # Bot not available, skip notification
     
     print(f"\n=== Eligible Player Offers Complete ===")
     print(f"Generated {offers_generated} offers for {players_with_offers} players")
