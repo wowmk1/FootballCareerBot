@@ -109,13 +109,14 @@ class FootballBot(commands.Bot):
             else:
                 print(f"❌ Error syncing commands: {e}")
 
+        # START SIMPLIFIED BACKGROUND TASKS
         if not self.season_task_started:
-            self.check_match_day.start()
+            self.check_match_windows.start()
+            self.check_warnings.start()
             self.check_retirements.start()
             self.check_training_reminders.start()
-            self.check_match_warnings.start()
             self.season_task_started = True
-            print("✅ Background tasks started")
+            print("✅ Background tasks started (simplified system)")
 
     async def load_cogs(self):
         """Load all command modules"""
@@ -293,13 +294,9 @@ class FootballBot(commands.Bot):
                         color=discord.Color.green()
                     )
                     
-                    from datetime import datetime
-                    closes = datetime.fromisoformat(state['match_window_closes'])
-                    timestamp = int(closes.timestamp())
-                    
                     embed.add_field(
-                        name="⏰ Window Closes",
-                        value=f"<t:{timestamp}:R>\n<t:{timestamp}:t>",
+                        name="⏰ Window Open",
+                        value="**3:00 PM - 5:00 PM EST**\n2 hour window",
                         inline=True
                     )
                     
@@ -309,23 +306,96 @@ class FootballBot(commands.Bot):
                         inline=True
                     )
                     
-                    embed.set_footer(text="Don't miss your match!")
+                    embed.set_footer(text="Window closes at 5:00 PM EST!")
                     
                     await channel.send(embed=embed)
                     print(f"✅ Posted match window notification to {guild.name}")
         except Exception as e:
             print(f"⚠️ Could not post match window notification: {e}")
 
-    @tasks.loop(minutes=15)
-    async def check_match_day(self):
-        """Check if it's time to open/close match windows"""
+    # ============================================
+    # SIMPLIFIED BACKGROUND TASKS
+    # ============================================
+
+    @tasks.loop(minutes=5)
+    async def check_match_windows(self):
+        """
+        Simple 5-minute check: Is it time to open/close windows?
+        Checks: Mon/Wed/Sat 3-5 PM EST
+        """
         try:
-            from utils.season_manager import check_match_day_trigger
-            triggered = await check_match_day_trigger(bot=self)
-            if triggered:
-                print("⚽ Match window state changed")
+            from utils.season_manager import (
+                is_match_window_time,
+                open_match_window,
+                close_match_window
+            )
+            
+            state = await db.get_game_state()
+            
+            if not state['season_started']:
+                return
+            
+            # Check: Is it match window time RIGHT NOW?
+            is_window_time, is_start_time, is_end_time = is_match_window_time()
+            
+            window_open = state['match_window_open']
+            
+            # OPEN WINDOW: If it's start time and window is closed
+            if is_start_time and not window_open:
+                print("🟢 Opening match window (fixed schedule)")
+                await open_match_window()
+                await self.notify_match_window_open()
+            
+            # CLOSE WINDOW: If it's end time and window is open
+            elif is_end_time and window_open:
+                print("🔴 Closing match window (fixed schedule)")
+                await close_match_window()
+            
+            # AUTO-CLOSE: If window is open but it's NOT window time (safety check)
+            elif window_open and not is_window_time:
+                print("⚠️ Window is open outside of match hours - auto-closing")
+                await close_match_window()
+                
         except Exception as e:
-            print(f"❌ Error in match day check: {e}")
+            print(f"❌ Error in match window check: {e}")
+            import traceback
+            traceback.print_exc()
+
+    @tasks.loop(minutes=5)
+    async def check_warnings(self):
+        """
+        Check if we should send warnings
+        Times: 2:00 PM, 2:30 PM, 2:45 PM (before open), 4:45 PM (before close)
+        """
+        try:
+            from utils.season_manager import (
+                should_send_warning,
+                send_1h_warning,
+                send_30m_warning,
+                send_15m_warning,
+                send_closing_warning
+            )
+            
+            state = await db.get_game_state()
+            
+            if not state['season_started']:
+                return
+            
+            # Check each warning type
+            if should_send_warning('pre_1h'):
+                await send_1h_warning(self)
+            
+            elif should_send_warning('pre_30m'):
+                await send_30m_warning(self)
+            
+            elif should_send_warning('pre_15m'):
+                await send_15m_warning(self)
+            
+            elif should_send_warning('closing_soon'):
+                await send_closing_warning(self)
+                
+        except Exception as e:
+            print(f"❌ Error in warning check: {e}")
 
     @tasks.loop(hours=24)
     async def check_retirements(self):
@@ -387,158 +457,13 @@ class FootballBot(commands.Bot):
             print(f"⚠️ Could not send training reminder to {user_id}: {e}")
             return False
 
-    @tasks.loop(minutes=5)
-    async def check_match_warnings(self):
-        """Check for upcoming match windows and send warnings"""
-        try:
-            state = await db.get_game_state()
-            
-            if not state['season_started'] or state['match_window_open']:
-                return
-            
-            if not state['next_match_day']:
-                return
-            
-            from datetime import datetime
-            
-            now = datetime.now()
-            next_match = datetime.fromisoformat(state['next_match_day'])
-            time_until = (next_match - now).total_seconds()
-            
-            # Send warnings at specific intervals
-            if 3300 <= time_until <= 3600:  # 55-60 minutes before
-                await self.send_match_warning_1hour()
-            elif 1500 <= time_until <= 1800:  # 25-30 minutes before
-                await self.send_match_warning_30min()
-            elif 600 <= time_until <= 900:  # 10-15 minutes before
-                await self.send_match_warning_15min()
-                
-        except Exception as e:
-            print(f"❌ Error in match warning check: {e}")
+    # Wait until ready methods
+    @check_match_windows.before_loop
+    async def before_check_match_windows(self):
+        await self.wait_until_ready()
 
-    async def send_match_warning_1hour(self):
-        """Send 1 hour warning to all servers"""
-        state = await db.get_game_state()
-        
-        for guild in self.guilds:
-            try:
-                channel = discord.utils.get(guild.text_channels, name="match-results")
-                if not channel:
-                    channel = discord.utils.get(guild.text_channels, name="general")
-                
-                if channel:
-                    from datetime import datetime
-                    next_match = datetime.fromisoformat(state['next_match_day'])
-                    timestamp = int(next_match.timestamp())
-                    
-                    embed = discord.Embed(
-                        title="⏰ Match Window Opening Soon!",
-                        description=f"**Week {state['current_week']}** matches start in **1 hour**!",
-                        color=discord.Color.orange()
-                    )
-                    
-                    embed.add_field(
-                        name="🕐 Opens At",
-                        value=f"<t:{timestamp}:t> (<t:{timestamp}:R>)",
-                        inline=True
-                    )
-                    
-                    embed.add_field(
-                        name="⚡ Get Ready",
-                        value="Use `/play_match` when the window opens!",
-                        inline=True
-                    )
-                    
-                    embed.set_footer(text="Don't miss your match!")
-                    
-                    await channel.send(embed=embed)
-                    print(f"✅ Sent 1h warning to {guild.name}")
-            except Exception as e:
-                print(f"⚠️ Could not send 1h warning to {guild.name}: {e}")
-
-    async def send_match_warning_30min(self):
-        """Send 30 minute warning via DM"""
-        state = await db.get_game_state()
-        
-        async with db.pool.acquire() as conn:
-            players = await conn.fetch("""
-                SELECT user_id, player_name 
-                FROM players 
-                WHERE retired = FALSE AND team_id != 'free_agent'
-            """)
-        
-        from datetime import datetime
-        next_match = datetime.fromisoformat(state['next_match_day'])
-        timestamp = int(next_match.timestamp())
-        
-        for player in players:
-            try:
-                user = await self.fetch_user(player['user_id'])
-                
-                embed = discord.Embed(
-                    title="⏰ Match Starting Soon!",
-                    description=f"**Week {state['current_week']}** match window opens in **30 minutes**!",
-                    color=discord.Color.orange()
-                )
-                
-                embed.add_field(
-                    name="🕐 Opens At",
-                    value=f"<t:{timestamp}:t> (<t:{timestamp}:R>)",
-                    inline=False
-                )
-                
-                embed.add_field(
-                    name="⚡ Quick Tip",
-                    value="Be ready to use `/play_match` when the window opens!",
-                    inline=False
-                )
-                
-                await user.send(embed=embed)
-            except:
-                pass
-        
-        print(f"✅ Sent 30min warnings to {len(players)} players")
-
-    async def send_match_warning_15min(self):
-        """Send 15 minute final warning"""
-        state = await db.get_game_state()
-        
-        for guild in self.guilds:
-            try:
-                channel = discord.utils.get(guild.text_channels, name="match-results")
-                if not channel:
-                    channel = discord.utils.get(guild.text_channels, name="general")
-                
-                if channel:
-                    from datetime import datetime
-                    next_match = datetime.fromisoformat(state['next_match_day'])
-                    timestamp = int(next_match.timestamp())
-                    
-                    embed = discord.Embed(
-                        title="🚨 Match Window Opening VERY Soon!",
-                        description=f"**Week {state['current_week']}** matches start in **15 minutes**!",
-                        color=discord.Color.red()
-                    )
-                    
-                    embed.add_field(
-                        name="🕐 Opens At",
-                        value=f"<t:{timestamp}:t> (<t:{timestamp}:R>)",
-                        inline=False
-                    )
-                    
-                    embed.add_field(
-                        name="⚡ Final Reminder",
-                        value="Get ready to use `/play_match`!\nWindow will be open for 2 hours.",
-                        inline=False
-                    )
-                    
-                    await channel.send(embed=embed)
-                    print(f"✅ Sent 15min warning to {guild.name}")
-            except Exception as e:
-                print(f"⚠️ Could not send 15min warning to {guild.name}: {e}")
-
-    @check_match_day.before_loop
-    async def before_check_match_day(self):
+    @check_warnings.before_loop
+    async def before_check_warnings(self):
         await self.wait_until_ready()
 
     @check_retirements.before_loop
@@ -549,9 +474,9 @@ class FootballBot(commands.Bot):
     async def before_check_training_reminders(self):
         await self.wait_until_ready()
 
-    @check_match_warnings.before_loop
-    async def before_check_match_warnings(self):
-        await self.wait_until_ready()
+    # ============================================
+    # END SIMPLIFIED BACKGROUND TASKS
+    # ============================================
 
     async def on_ready(self):
         """Called when bot is fully ready"""
@@ -565,6 +490,14 @@ class FootballBot(commands.Bot):
             print(f'📅 Season: {state["current_season"]} - Week {state["current_week"]}/{config.SEASON_TOTAL_WEEKS}')
         else:
             print(f'⏳ Season not started')
+
+        # Show next match window
+        from utils.season_manager import get_next_match_window, EST
+        try:
+            next_window = get_next_match_window()
+            print(f'⏰ Next match window: {next_window.strftime("%A, %B %d at %I:%M %p EST")}')
+        except:
+            pass
 
         print("=" * 50 + "\n")
 
