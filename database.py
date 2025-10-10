@@ -34,6 +34,7 @@ class Database:
                     'CREATE INDEX IF NOT EXISTS idx_fixtures_week ON fixtures(week_number)',
                     'CREATE INDEX IF NOT EXISTS idx_fixtures_playable ON fixtures(playable, played)',
                     'CREATE INDEX IF NOT EXISTS idx_match_participants_user ON match_participants(user_id)',
+                    'CREATE INDEX IF NOT EXISTS idx_match_participants_match ON match_participants(match_id)',
                     'CREATE INDEX IF NOT EXISTS idx_news_user_created ON news(user_id, created_at DESC)',
                     'CREATE INDEX IF NOT EXISTS idx_training_user_date ON training_history(user_id, training_date DESC)',
                     'CREATE INDEX IF NOT EXISTS idx_players_retired ON players(retired, age)',
