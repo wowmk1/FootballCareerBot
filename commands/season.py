@@ -1,10 +1,13 @@
+"""
+Simplified /season command - shows fixed schedule
+COMPLETE REPLACEMENT for commands/season.py
+"""
 import discord
 from discord import app_commands
 from discord.ext import commands
 from database import db
 import config
-from datetime import datetime, timedelta
-from utils.season_manager import check_match_day_trigger
+from datetime import datetime
 
 
 class SeasonCommands(commands.Cog):
@@ -13,15 +16,9 @@ class SeasonCommands(commands.Cog):
 
     @app_commands.command(name="season", description="View current season status and schedule")
     async def season(self, interaction: discord.Interaction):
-        """View season information - WITH DISCORD TIMESTAMPS"""
+        """View season information - SIMPLIFIED with fixed schedule"""
 
         state = await db.get_game_state()
-
-        # Auto-trigger check
-        triggered = await check_match_day_trigger(bot=self.bot)
-        if triggered:
-            state = await db.get_game_state()  # Refresh state after trigger
-            print("✅ Auto-triggered via /season command")
 
         if not state['season_started']:
             embed = discord.Embed(
@@ -38,78 +35,52 @@ class SeasonCommands(commands.Cog):
             color=discord.Color.blue()
         )
 
-        # MATCH WINDOW STATUS - WITH DISCORD TIMESTAMPS
-        if state['match_window_open']:
-            closes = datetime.fromisoformat(state['match_window_closes'])
-            time_left = closes - datetime.now()
-
-            if time_left.total_seconds() > 0:
-                hours = int(time_left.total_seconds() // 3600)
-                minutes = int((time_left.total_seconds() % 3600) // 60)
-
-                # Discord timestamp - auto-converts to user's timezone
-                timestamp = int(closes.timestamp())
-
-                embed.add_field(
-                    name="🟢 Match Window: OPEN",
-                    value=f"**Time Remaining:** {hours}h {minutes}m\n"
-                          f"**Closes:** <t:{timestamp}:t> (<t:{timestamp}:R>)\n\n"
-                          f"🎮 Use `/play_match` to play your match!",
-                    inline=False
-                )
-            else:
-                embed.add_field(
-                    name="🟡 Match Window: Closing Soon",
-                    value="Window is closing... matches being simulated.",
-                    inline=False
-                )
+        # MATCH WINDOW STATUS - Simplified
+        from utils.season_manager import is_match_window_time, get_next_match_window, EST
+        
+        is_window_time, _, _ = is_match_window_time()
+        window_open = state['match_window_open']
+        
+        if window_open:
+            # Window is currently OPEN
+            now = datetime.now(EST)
+            
+            embed.add_field(
+                name="🟢 Match Window: OPEN",
+                value=f"**Current Time:** {now.strftime('%I:%M %p EST')}\n"
+                      f"**Closes:** 5:00 PM EST\n\n"
+                      f"🎮 Use `/play_match` to play your match!",
+                inline=False
+            )
         else:
-            # NEXT MATCH WINDOW - WITH DISCORD TIMESTAMPS
-            if state['next_match_day']:
-                next_match = datetime.fromisoformat(state['next_match_day'])
-                time_until = next_match - datetime.now()
-
-                if time_until.total_seconds() > 0:
-                    days = time_until.days
-                    hours = int(time_until.seconds // 3600)
-                    minutes = int((time_until.seconds % 3600) // 60)
-
-                    # Format time string
-                    if days > 0:
-                        time_str = f"**{days}d {hours}h**"
-                    elif hours > 0:
-                        time_str = f"**{hours}h {minutes}m**"
-                    else:
-                        time_str = f"**{minutes}m**"
-
-                    # Discord timestamp - automatically shows in user's timezone!
-                    timestamp = int(next_match.timestamp())
-
-                    embed.add_field(
-                        name="🔴 Match Window: CLOSED",
-                        value=f"**Opens in:** {time_str}\n"
-                              f"**Date & Time:** <t:{timestamp}:F>\n"
-                              f"**Your Local Time:** <t:{timestamp}:t>\n\n"
-                              f"⏰ Come back then to play your match!",
-                        inline=False
-                    )
-                else:
-                    embed.add_field(
-                        name="🟡 Match Window",
-                        value="Opening very soon...",
-                        inline=False
-                    )
+            # Window is CLOSED - show next window
+            next_window = get_next_match_window()
+            day_name = next_window.strftime('%A')
+            date_str = next_window.strftime('%B %d')
+            
+            # Calculate time until
+            now = datetime.now(EST)
+            time_until = next_window - now
+            days = time_until.days
+            hours = time_until.seconds // 3600
+            
+            if days > 0:
+                time_str = f"**{days}d {hours}h**"
             else:
-                embed.add_field(
-                    name="🏁 Season Status",
-                    value="Season completed!",
-                    inline=False
-                )
+                time_str = f"**{hours}h**"
+            
+            embed.add_field(
+                name="🔴 Match Window: CLOSED",
+                value=f"**Next Window:** {day_name}, {date_str}\n"
+                      f"**Opens:** 3:00 PM EST ({time_str})\n\n"
+                      f"⏰ Come back then to play your match!",
+                inline=False
+            )
 
         # MATCH SCHEDULE INFO
         embed.add_field(
-            name="📅 Season Format",
-            value=f"**Mon/Wed/Sat** schedule\n"
+            name="📅 Fixed Schedule",
+            value=f"**Mon/Wed/Sat** at 3:00-5:00 PM EST\n"
                   f"**{config.MATCH_WINDOW_HOURS}h** window per match day\n"
                   f"**{config.MATCH_EVENTS_PER_GAME_MIN}-{config.MATCH_EVENTS_PER_GAME_MAX}** key moments per match",
             inline=True
@@ -141,21 +112,13 @@ class SeasonCommands(commands.Cog):
                 inline=True
             )
 
-        # LAST MATCH INFO WITH TIMESTAMP
-        if state['last_match_day']:
-            last = datetime.fromisoformat(state['last_match_day'])
-            timestamp = int(last.timestamp())
-            embed.set_footer(text=f"Last match window closed")
-            # Add relative time in description
-            embed.description += f"\n*Last window: <t:{timestamp}:R>*"
-        else:
-            embed.set_footer(text="Use /league fixtures to see your schedule!")
+        embed.set_footer(text="Use /league fixtures to see your schedule!")
 
         await interaction.response.send_message(embed=embed)
 
-    # Keep as method for /league_info to call
+    # Keep as method for /league to call
     async def fixtures(self, interaction: discord.Interaction):
-        """View player's fixtures (called by /league_info command)"""
+        """View player's fixtures (called by /league command)"""
 
         player = await db.get_player(interaction.user.id)
 
@@ -218,9 +181,9 @@ class SeasonCommands(commands.Cog):
 
         await interaction.response.send_message(embed=embed)
 
-    # Keep as method for /league_info to call
+    # Keep as method for /league to call
     async def results(self, interaction: discord.Interaction):
-        """View recent results (called by /league_info command)"""
+        """View recent results (called by /league command)"""
 
         player = await db.get_player(interaction.user.id)
 
