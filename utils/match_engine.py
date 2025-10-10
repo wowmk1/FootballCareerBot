@@ -615,60 +615,62 @@ class MatchEngine:
         await self.update_team_stats(fixture['away_team_id'], away_score, home_score)
 
         # ============================================
-        # UPDATE FORM BASED ON MATCH RATINGS
-        # ============================================
-        from utils.form_morale_system import update_player_form
+# UPDATE FORM BASED ON MATCH RATINGS
+# ============================================
+from utils.form_morale_system import update_player_form
 
-        for participant in participants:
-            if participant['user_id']:
-                new_form = await update_player_form(
-                    participant['user_id'],
-                    participant['match_rating']
-                )
-                print(
-                    f"  📊 Form updated for user {participant['user_id']}: Rating {participant['match_rating']:.1f} → Form {new_form}")
+for participant in participants:
+    if participant['user_id']:
+        new_form = await update_player_form(
+            participant['user_id'],
+            participant['match_rating']
+        )
+        print(
+            f"  📊 Form updated for user {participant['user_id']}: "
+            f"Rating {participant['match_rating']:.1f} → Form {new_form}"
+        )
 
-                # Add this code to match_engine.py in the end_match() function
-                # Place it right after the form update section (around line 552)
+# Add this code to match_engine.py in the end_match() function
+# Place it right after the form update section (around line 552)
 
-                # ============================================
-                # UPDATE MORALE BASED ON MATCH RESULT
-                # ============================================
-                from utils.form_morale_system import update_player_morale
+# ============================================
+# UPDATE MORALE BASED ON MATCH RESULT
+# ============================================
+from utils.form_morale_system import update_player_morale
 
-                for participant in participants:
-                    if participant['user_id']:
-                        player_team = participant['team_id']
+for participant in participants:
+    if participant['user_id']:
+        player_team = participant['team_id']
 
-                        # Determine if player won, lost, or drew
-                        if player_team == fixture['home_team_id']:
-                            if home_score > away_score:
-                                await update_player_morale(participant['user_id'], 'win')
-                                print(f"  😊 Morale boost for user {participant['user_id']} (WIN)")
-                            elif home_score < away_score:
-                                await update_player_morale(participant['user_id'], 'loss')
-                                print(f"  😕 Morale drop for user {participant['user_id']} (LOSS)")
-                            else:
-                                await update_player_morale(participant['user_id'], 'draw')
-                                print(f"  😐 Morale unchanged for user {participant['user_id']} (DRAW)")
-                        else:  # Away team
-                            if away_score > home_score:
-                                await update_player_morale(participant['user_id'], 'win')
-                                print(f"  😊 Morale boost for user {participant['user_id']} (WIN)")
-                            elif away_score < home_score:
-                                await update_player_morale(participant['user_id'], 'loss')
-                                print(f"  😕 Morale drop for user {participant['user_id']} (LOSS)")
-                            else:
-                                await update_player_morale(participant['user_id'], 'draw')
-                                print(f"  😐 Morale unchanged for user {participant['user_id']} (DRAW)")
+        # Determine if player won, lost, or drew
+        if player_team == fixture['home_team_id']:
+            if home_score > away_score:
+                await update_player_morale(participant['user_id'], 'win')
+                print(f"  😊 Morale boost for user {participant['user_id']} (WIN)")
+            elif home_score < away_score:
+                await update_player_morale(participant['user_id'], 'loss')
+                print(f"  😕 Morale drop for user {participant['user_id']} (LOSS)")
+            else:
+                await update_player_morale(participant['user_id'], 'draw')
+                print(f"  😐 Morale unchanged for user {participant['user_id']} (DRAW)")
+        else:  # Away team
+            if away_score > home_score:
+                await update_player_morale(participant['user_id'], 'win')
+                print(f"  😊 Morale boost for user {participant['user_id']} (WIN)")
+            elif away_score < home_score:
+                await update_player_morale(participant['user_id'], 'loss')
+                print(f"  😕 Morale drop for user {participant['user_id']} (LOSS)")
+            else:
+                await update_player_morale(participant['user_id'], 'draw')
+                print(f"  😐 Morale unchanged for user {participant['user_id']} (DRAW)")
 
-                # ============================================
-                # END OF MORALE UPDATE
-                # ============================================
+# ============================================
+# END OF MORALE UPDATE
+# ============================================
 
-        # ============================================
-        # END OF FORM UPDATE
-        # ============================================
+# ============================================
+# END OF FORM UPDATE
+# ============================================
 
         embed = discord.Embed(
             title="🏁 FULL TIME!",
