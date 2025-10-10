@@ -121,14 +121,17 @@ async def advance_week():
 
 
 async def open_match_window(bot=None):
-    """Open match window for current week"""
+    """Open match window for current week - KEEPS FIXTURES PLAYABLE ALL WEEK"""
     state = await db.get_game_state()
 
     if not state['season_started']:
         return
 
     current_week = state['current_week']
+    current_match = state.get('current_match_of_week', 0)
 
+    # IMPORTANT: Make ALL unplayed fixtures for this week playable
+    # They stay playable across all 3 match windows until played
     async with db.pool.acquire() as conn:
         await conn.execute('''
             UPDATE fixtures
@@ -137,6 +140,14 @@ async def open_match_window(bot=None):
               AND played = FALSE
         ''', current_week)
 
+        # Count how many fixtures are now playable
+        result = await conn.fetchrow('''
+            SELECT COUNT(*) as count 
+            FROM fixtures 
+            WHERE week_number = $1 AND playable = TRUE AND played = FALSE
+        ''', current_week)
+        playable_count = result['count']
+
     window_closes = datetime.now() + timedelta(hours=config.MATCH_WINDOW_HOURS)
 
     await db.update_game_state(
@@ -144,11 +155,12 @@ async def open_match_window(bot=None):
         match_window_closes=window_closes.isoformat()
     )
 
-    print(f"✅ Match window opened for Week {current_week}")
+    print(f"✅ Match window {current_match + 1}/3 opened for Week {current_week}")
+    print(f"⚽ {playable_count} fixtures available to play")
     print(f"⏰ Window closes at {window_closes.strftime('%Y-%m-%d %H:%M')}")
 
-    # POST WEEKLY NEWS TO CHANNELS
-    if bot:
+    # POST WEEKLY NEWS TO CHANNELS (only on first window of the week)
+    if bot and current_match == 0:
         try:
             for guild in bot.guilds:
                 await post_weekly_news_digest(bot, guild)
@@ -156,32 +168,45 @@ async def open_match_window(bot=None):
         except Exception as e:
             print(f"⚠️ Could not post weekly news: {e}")
 
+)
 
-async def close_match_window():
-    """Close match window and auto-simulate unplayed matches"""
+
+async
+
+def close_match_window():
+    """Close match window but KEEP fixtures playable until week ends"""
     from utils.match_simulator import simulate_match
 
     state = await db.get_game_state()
     current_week = state['current_week']
+    current_match = state.get('current_match_of_week', 0)
 
-    async with db.pool.acquire() as conn:
-        rows = await conn.fetch(
-            "SELECT * FROM fixtures WHERE week_number = $1 AND played = FALSE AND playable = TRUE",
-            current_week
-        )
-        unplayed = [dict(row) for row in rows]
+    # DON'T auto-simulate yet unless this is the LAST window of the week
+    if current_match + 1 >= 3:  # This is the 3rd/final window
+        # NOW we auto-simulate unplayed matches
+        async with db.pool.acquire() as conn:
+            rows = await conn.fetch(
+                "SELECT * FROM fixtures WHERE week_number = $1 AND played = FALSE AND playable = TRUE",
+                current_week
+            )
+            unplayed = [dict(row) for row in rows]
 
-    if unplayed:
-        print(f"🤖 Auto-simulating {len(unplayed)} unplayed matches...")
-        for fixture in unplayed:
-            await simulate_match(fixture)
+        if unplayed:
+            print(f"🤖 Final window - Auto-simulating {len(unplayed)} unplayed matches...")
+            for fixture in unplayed:
+                await simulate_match(fixture)
 
-    async with db.pool.acquire() as conn:
-        await conn.execute('''
-            UPDATE fixtures
-            SET playable = FALSE
-            WHERE week_number = $1
-        ''', current_week)
+        # Mark all fixtures as unplayable since week is over
+        async with db.pool.acquire() as conn:
+            await conn.execute('''
+                UPDATE fixtures
+                SET playable = FALSE
+                WHERE week_number = $1
+            ''', current_week)
+    else:
+        # NOT the final window - just close this window
+        # Fixtures stay playable for next window
+        print(f"✅ Window {current_match + 1}/3 closed - fixtures remain playable for next window")
 
     await db.update_game_state(
         match_window_open=False,
@@ -189,7 +214,7 @@ async def close_match_window():
         last_match_day=datetime.now().isoformat()
     )
 
-    print(f"✅ Match window closed for Week {current_week}")
+    print(f"✅ Match window closed for Week {current_week} (Window {current_match + 1}/3)")
 
 
 async def check_match_day_trigger(bot=None):
