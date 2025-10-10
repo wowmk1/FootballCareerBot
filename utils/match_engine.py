@@ -14,7 +14,7 @@ except ImportError:
     print("⚠️ crests_database not found, using fallback")
     def get_team_crest_url(team_id):
         return ""
-    def get_competition_logo_url(comp):
+    def get_competition_logo(comp):
         return ""
 
 
@@ -116,22 +116,16 @@ class MatchEngine:
                 color=discord.Color.green()
             )
 
-            # Try to get crest
             home_crest = get_team_crest_url(home_team['team_id'])
             if home_crest:
                 embed.set_thumbnail(url=home_crest)
-                print(f"✅ Set crest: {home_crest[:50]}")
-            else:
-                print(f"⚠️ No crest for {home_team['team_id']}")
             
-            # Try to get competition logo
-            comp_logo = get_competition_logo_url(home_team.get('league', 'Premier League'))
+            comp_logo = get_competition_logo(home_team.get('league', 'Premier League'))
             if comp_logo:
                 embed.set_footer(
                     text=f"{home_team.get('league', 'Premier League')} • Minute {minute}",
                     icon_url=comp_logo
                 )
-                print(f"✅ Set logo: {comp_logo[:50]}")
 
             if match_id in self.pinned_messages:
                 msg = self.pinned_messages[match_id]
@@ -193,13 +187,9 @@ class MatchEngine:
             color=discord.Color.green()
         )
 
-        # Add home team crest
         home_crest = get_team_crest_url(fixture['home_team_id'])
         if home_crest:
             embed.set_thumbnail(url=home_crest)
-            print(f"✅ Match start crest: {home_crest[:50]}")
-        else:
-            print(f"⚠️ No crest found for {fixture['home_team_id']}")
 
         embed.add_field(name="🏠 Home", value=f"**{home_team['team_name']}**\n{home_team['league']}", inline=True)
         embed.add_field(name="✈️ Away", value=f"**{away_team['team_name']}**\n{away_team['league']}", inline=True)
@@ -358,11 +348,9 @@ class MatchEngine:
             color=discord.Color.gold()
         )
 
-        # Add team crest
         team_crest = get_team_crest_url(attacking_team['team_id'])
         if team_crest:
             embed.set_thumbnail(url=team_crest)
-            print(f"✅ Player moment crest: {team_crest[:50]}")
 
         embed.add_field(
             name="📊 Your Stats (Form-Adjusted)",
@@ -387,7 +375,6 @@ class MatchEngine:
                 inline=False
             )
 
-        # Show ONLY actions that have buttons
         actions_text = ""
         for action in available_actions:
             player_stat_name = self.get_stat_for_action(action)
@@ -465,7 +452,6 @@ class MatchEngine:
 
         is_goal = False
         
-        # SHOOTING
         if action == 'shoot' and success:
             if player_roll == 20 or player_total >= defender_total + 10:
                 result_embed.add_field(
@@ -488,9 +474,7 @@ class MatchEngine:
                     inline=False
                 )
         
-        # PASSING/ASSIST ACTIONS
         elif action in ['pass', 'through_ball', 'key_pass', 'cross'] and success:
-            # Check teammate scoring chances
             assist_chance = {'pass': 0.35, 'through_ball': 0.40, 'key_pass': 0.45, 'cross': 0.40}
             if random.random() < assist_chance.get(action, 0.35):
                 is_goal = await self.handle_teammate_goal(channel, player, attacking_team, match_id)
@@ -505,23 +489,18 @@ class MatchEngine:
             else:
                 result_embed.add_field(name="✅ SUCCESS!", value=f"Perfect {action.replace('_', ' ')}!", inline=False)
         
-        # DRIBBLING - Follow up with shooting chance
         elif action == 'dribble' and success:
             result_embed.add_field(name="✅ BEATEN THE DEFENDER!", value=f"You've created space!", inline=False)
-            # Could add follow-up shot here
         
-        # OTHER SUCCESS
         elif success:
             result_embed.add_field(name="✅ SUCCESS!", value=f"Great {action.replace('_', ' ')}!", inline=False)
         
-        # FAILURE
         else:
             result_embed.add_field(name="❌ FAILED!", value=f"{action.replace('_', ' ')} unsuccessful!", inline=False)
 
         await suspense_msg.delete()
         await channel.send(embed=result_embed)
 
-        # Update rating
         rating_change = 0.3 if success else -0.1
         if is_goal:
             rating_change = 1.2
@@ -624,13 +603,29 @@ class MatchEngine:
         await self.update_team_stats(fixture['home_team_id'], home_score, away_score)
         await self.update_team_stats(fixture['away_team_id'], away_score, home_score)
         
+        # ============================================
+        # UPDATE FORM BASED ON MATCH RATINGS
+        # ============================================
+        from utils.form_morale_system import update_player_form
+        
+        for participant in participants:
+            if participant['user_id']:
+                new_form = await update_player_form(
+                    participant['user_id'], 
+                    participant['match_rating']
+                )
+                print(f"  📊 Form updated for user {participant['user_id']}: Rating {participant['match_rating']:.1f} → Form {new_form}")
+        
+        # ============================================
+        # END OF FORM UPDATE
+        # ============================================
+        
         embed = discord.Embed(
             title="🏁 FULL TIME!",
             description=f"## {home_team['team_name']} {home_score} - {away_score} {away_team['team_name']}",
             color=discord.Color.gold()
         )
         
-        # Add crest to final embed
         home_crest = get_team_crest_url(fixture['home_team_id'])
         if home_crest:
             embed.set_thumbnail(url=home_crest)
@@ -670,7 +665,6 @@ class EnhancedActionView(discord.ui.View):
         super().__init__(timeout=timeout)
         self.chosen_action = None
         
-        # Emoji map
         emoji_map = {
             'shoot': '🎯', 'pass': '🎪', 'dribble': '🪄', 'tackle': '🛡️', 'cross': '📤',
             'clearance': '🚀', 'through_ball': '⚡', 'save': '🧤', 'interception': '👀', 
@@ -680,7 +674,6 @@ class EnhancedActionView(discord.ui.View):
             'press': '⚡', 'cover': '🛡️', 'track_runner': '🏃', 'sweep': '🧹'
         }
         
-        # Create buttons for ONLY the available actions (max 5)
         for action in available_actions[:5]:
             button = ActionButton(action, emoji_map.get(action, '⚽'))
             self.add_item(button)
