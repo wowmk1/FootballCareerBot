@@ -9,11 +9,16 @@ import config
 # Import crest functions at top level
 try:
     from utils.football_data_api import get_team_crest_url, get_competition_logo
+
     print("✅ Loaded crests_database directly")
 except ImportError:
     print("⚠️ crests_database not found, using fallback")
+
+
     def get_team_crest_url(team_id):
         return ""
+
+
     def get_competition_logo(comp):
         return ""
 
@@ -119,7 +124,7 @@ class MatchEngine:
             home_crest = get_team_crest_url(home_team['team_id'])
             if home_crest:
                 embed.set_thumbnail(url=home_crest)
-            
+
             comp_logo = get_competition_logo(home_team.get('league', 'Premier League'))
             if comp_logo:
                 embed.set_footer(
@@ -193,7 +198,7 @@ class MatchEngine:
 
         embed.add_field(name="🏠 Home", value=f"**{home_team['team_name']}**\n{home_team['league']}", inline=True)
         embed.add_field(name="✈️ Away", value=f"**{away_team['team_name']}**\n{away_team['league']}", inline=True)
-        
+
         embed.add_field(
             name="📊 Match Info",
             value=f"🎯 {num_events} key moments\n⏱️ 30s decision time\n🎲 Stat + D20 battle system",
@@ -225,7 +230,7 @@ class MatchEngine:
                                             last_event_time)
                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING match_id
             ''', fixture['fixture_id'], fixture['home_team_id'], fixture['away_team_id'],
-                match_channel.id, message.id, 'in_progress', 0, datetime.now().isoformat())
+                                         match_channel.id, message.id, 'in_progress', 0, datetime.now().isoformat())
             match_id = result['match_id']
 
         for user_id in player_users:
@@ -270,7 +275,8 @@ class MatchEngine:
             await asyncio.sleep(2)
 
             if minute == 45:
-                await self.post_halftime_summary(channel, home_team, away_team, home_score, away_score, participants, match_id)
+                await self.post_halftime_summary(channel, home_team, away_team, home_score, away_score, participants,
+                                                 match_id)
 
             attacking_team = random.choice(['home', 'away'])
             if attacking_team == 'home':
@@ -291,7 +297,8 @@ class MatchEngine:
                                                           away_team, True)
                     if result == 'goal':
                         home_score += 1
-                        await self.update_pinned_score(channel, match_id, home_team, away_team, home_score, away_score, minute)
+                        await self.update_pinned_score(channel, match_id, home_team, away_team, home_score, away_score,
+                                                       minute)
             else:
                 if away_participants:
                     participant = random.choice(away_participants)
@@ -310,7 +317,8 @@ class MatchEngine:
                                                           home_team, False)
                     if result == 'goal':
                         away_score += 1
-                        await self.update_pinned_score(channel, match_id, home_team, away_team, home_score, away_score, minute)
+                        await self.update_pinned_score(channel, match_id, home_team, away_team, home_score, away_score,
+                                                       minute)
 
             async with db.pool.acquire() as conn:
                 await conn.execute(
@@ -367,8 +375,9 @@ class MatchEngine:
                     icon_url=opp_crest
                 )
             else:
-                embed.set_footer(text=f"Defending: {defender['player_name']} ({defender['position']}) • {defending_team['team_name']}")
-            
+                embed.set_footer(
+                    text=f"Defending: {defender['player_name']} ({defender['position']}) • {defending_team['team_name']}")
+
             embed.add_field(
                 name=f"🛡️ Defending: {defender['player_name']} ({defender['position']})",
                 value=f"⚡ PAC: **{defender['pace']}** | 🛡️ DEF: **{defender['defending']}** | 💪 PHY: **{defender['physical']}**",
@@ -384,7 +393,7 @@ class MatchEngine:
             chance = self.calculate_success_chance(player_stat_value, defender_stat_value)
 
             emoji = "🟢" if chance >= 60 else "🟡" if chance >= 45 else "🔴"
-            
+
             action_desc = self.get_action_description_detailed(action)
             actions_text += f"{emoji} {action_desc}\n   Success: ~{chance}%\n\n"
 
@@ -451,7 +460,7 @@ class MatchEngine:
             )
 
         is_goal = False
-        
+
         if action == 'shoot' and success:
             if player_roll == 20 or player_total >= defender_total + 10:
                 result_embed.add_field(
@@ -473,7 +482,7 @@ class MatchEngine:
                     value=f"Goalkeeper makes a brilliant save!",
                     inline=False
                 )
-        
+
         elif action in ['pass', 'through_ball', 'key_pass', 'cross'] and success:
             assist_chance = {'pass': 0.35, 'through_ball': 0.40, 'key_pass': 0.45, 'cross': 0.40}
             if random.random() < assist_chance.get(action, 0.35):
@@ -485,16 +494,17 @@ class MatchEngine:
                         inline=False
                     )
                 else:
-                    result_embed.add_field(name="✅ SUCCESS!", value=f"Great {action.replace('_', ' ')}! Chance created.", inline=False)
+                    result_embed.add_field(name="✅ SUCCESS!",
+                                           value=f"Great {action.replace('_', ' ')}! Chance created.", inline=False)
             else:
                 result_embed.add_field(name="✅ SUCCESS!", value=f"Perfect {action.replace('_', ' ')}!", inline=False)
-        
+
         elif action == 'dribble' and success:
             result_embed.add_field(name="✅ BEATEN THE DEFENDER!", value=f"You've created space!", inline=False)
-        
+
         elif success:
             result_embed.add_field(name="✅ SUCCESS!", value=f"Great {action.replace('_', ' ')}!", inline=False)
-        
+
         else:
             result_embed.add_field(name="❌ FAILED!", value=f"{action.replace('_', ' ')} unsuccessful!", inline=False)
 
@@ -542,17 +552,17 @@ class MatchEngine:
                 team_id
             )
             npc = dict(result) if result else None
-        
+
         if not npc:
             return None
-        
+
         action = random.choice(['shoot', 'pass'])
         stat_value = npc['shooting'] if action == 'shoot' else npc['passing']
         roll = random.randint(1, 20)
         total = stat_value + roll
-        
+
         success = total >= 75
-        
+
         if action == 'shoot' and success and roll >= 18:
             embed = discord.Embed(
                 title=f"⚽ NPC GOAL — Minute {minute}'",
@@ -566,7 +576,7 @@ class MatchEngine:
                     npc['npc_id']
                 )
             return 'goal'
-        
+
         return None
 
     async def post_goal_celebration(self, channel, scorer_name, team_name, team_id, home_score, away_score):
@@ -581,7 +591,8 @@ class MatchEngine:
             embed.set_thumbnail(url=team_crest)
         await channel.send(embed=embed)
 
-    async def post_halftime_summary(self, channel, home_team, away_team, home_score, away_score, participants, match_id):
+    async def post_halftime_summary(self, channel, home_team, away_team, home_score, away_score, participants,
+                                    match_id):
         embed = discord.Embed(
             title="⸻ HALF-TIME",
             description=f"## {home_team['team_name']} {home_score} - {away_score} {away_team['team_name']}",
@@ -593,53 +604,92 @@ class MatchEngine:
     async def end_match(self, match_id, fixture, channel, home_score, away_score, participants):
         home_team = await db.get_team(fixture['home_team_id'])
         away_team = await db.get_team(fixture['away_team_id'])
-        
+
         async with db.pool.acquire() as conn:
             await conn.execute(
                 'UPDATE fixtures SET home_score = $1, away_score = $2, played = TRUE, playable = FALSE WHERE fixture_id = $3',
                 home_score, away_score, fixture['fixture_id']
             )
-        
+
         await self.update_team_stats(fixture['home_team_id'], home_score, away_score)
         await self.update_team_stats(fixture['away_team_id'], away_score, home_score)
-        
+
         # ============================================
         # UPDATE FORM BASED ON MATCH RATINGS
         # ============================================
         from utils.form_morale_system import update_player_form
-        
+
         for participant in participants:
             if participant['user_id']:
                 new_form = await update_player_form(
-                    participant['user_id'], 
+                    participant['user_id'],
                     participant['match_rating']
                 )
-                print(f"  📊 Form updated for user {participant['user_id']}: Rating {participant['match_rating']:.1f} → Form {new_form}")
-        
+                print(
+                    f"  📊 Form updated for user {participant['user_id']}: Rating {participant['match_rating']:.1f} → Form {new_form}")
+
+                # Add this code to match_engine.py in the end_match() function
+                # Place it right after the form update section (around line 552)
+
+                # ============================================
+                # UPDATE MORALE BASED ON MATCH RESULT
+                # ============================================
+                from utils.form_morale_system import update_player_morale
+
+                for participant in participants:
+                    if participant['user_id']:
+                        player_team = participant['team_id']
+
+                        # Determine if player won, lost, or drew
+                        if player_team == fixture['home_team_id']:
+                            if home_score > away_score:
+                                await update_player_morale(participant['user_id'], 'win')
+                                print(f"  😊 Morale boost for user {participant['user_id']} (WIN)")
+                            elif home_score < away_score:
+                                await update_player_morale(participant['user_id'], 'loss')
+                                print(f"  😕 Morale drop for user {participant['user_id']} (LOSS)")
+                            else:
+                                await update_player_morale(participant['user_id'], 'draw')
+                                print(f"  😐 Morale unchanged for user {participant['user_id']} (DRAW)")
+                        else:  # Away team
+                            if away_score > home_score:
+                                await update_player_morale(participant['user_id'], 'win')
+                                print(f"  😊 Morale boost for user {participant['user_id']} (WIN)")
+                            elif away_score < home_score:
+                                await update_player_morale(participant['user_id'], 'loss')
+                                print(f"  😕 Morale drop for user {participant['user_id']} (LOSS)")
+                            else:
+                                await update_player_morale(participant['user_id'], 'draw')
+                                print(f"  😐 Morale unchanged for user {participant['user_id']} (DRAW)")
+
+                # ============================================
+                # END OF MORALE UPDATE
+                # ============================================
+
         # ============================================
         # END OF FORM UPDATE
         # ============================================
-        
+
         embed = discord.Embed(
             title="🏁 FULL TIME!",
             description=f"## {home_team['team_name']} {home_score} - {away_score} {away_team['team_name']}",
             color=discord.Color.gold()
         )
-        
+
         home_crest = get_team_crest_url(fixture['home_team_id'])
         if home_crest:
             embed.set_thumbnail(url=home_crest)
-        
+
         # POST RESULT TO match-results CHANNEL
         try:
             from utils.event_poster import post_match_result_to_channel
             await post_match_result_to_channel(self.bot, channel.guild, fixture, home_score, away_score)
         except Exception as e:
             print(f"❌ Could not post match result: {e}")
-        
+
         embed.set_footer(text="Channel deletes in 60 seconds")
         await channel.send(embed=embed)
-        
+
         await asyncio.sleep(60)
         try:
             await channel.delete()
@@ -664,16 +714,16 @@ class EnhancedActionView(discord.ui.View):
     def __init__(self, available_actions, timeout=30):
         super().__init__(timeout=timeout)
         self.chosen_action = None
-        
+
         emoji_map = {
             'shoot': '🎯', 'pass': '🎪', 'dribble': '🪄', 'tackle': '🛡️', 'cross': '📤',
-            'clearance': '🚀', 'through_ball': '⚡', 'save': '🧤', 'interception': '👀', 
+            'clearance': '🚀', 'through_ball': '⚡', 'save': '🧤', 'interception': '👀',
             'block': '🧱', 'cut_inside': '↩️', 'key_pass': '🔑', 'long_ball': '📡',
             'overlap': '🏃', 'claim_cross': '✊', 'distribution': '🎯', 'hold_up_play': '💪',
             'run_in_behind': '🏃', 'press_defender': '⚡', 'track_back': '🔙',
             'press': '⚡', 'cover': '🛡️', 'track_runner': '🏃', 'sweep': '🧹'
         }
-        
+
         for action in available_actions[:5]:
             button = ActionButton(action, emoji_map.get(action, '⚽'))
             self.add_item(button)
@@ -687,7 +737,7 @@ class ActionButton(discord.ui.Button):
     def __init__(self, action, emoji):
         label = action.replace('_', ' ').title()
         super().__init__(
-            label=label, 
+            label=label,
             emoji=emoji,
             style=discord.ButtonStyle.primary
         )
