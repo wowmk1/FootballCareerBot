@@ -27,6 +27,38 @@ class FootballBot(commands.Bot):
         print("🔄 Setting up bot...")
 
         await db.connect()
+
+        # ============================================
+        # AUTO-MIGRATE: Add missing column if needed
+        # ============================================
+        try:
+            async with db.pool.acquire() as conn:
+                result = await conn.fetchrow("""
+                        SELECT column_name 
+                        FROM information_schema.columns 
+                        WHERE table_name = 'game_state' AND column_name = 'current_match_of_week'
+                    """)
+
+                if not result:
+                    print("📋 Auto-migration: Adding current_match_of_week column...")
+                    await conn.execute("""
+                            ALTER TABLE game_state 
+                            ADD COLUMN current_match_of_week INTEGER DEFAULT 0
+                        """)
+                    await conn.execute("""
+                            UPDATE game_state 
+                            SET current_match_of_week = 0 
+                            WHERE current_match_of_week IS NULL
+                        """)
+                    print("✅ Auto-migration complete!")
+                else:
+                    print("✅ current_match_of_week column already exists")
+        except Exception as e:
+            print(f"⚠️ Auto-migration warning: {e}")
+        # ============================================
+        # END AUTO-MIGRATE
+        # ============================================
+        
         await self.initialize_data()
         await self.load_cogs()
 
@@ -257,7 +289,7 @@ class FootballBot(commands.Bot):
                     AND last_training::timestamp < NOW() - INTERVAL '23 hours'
                     AND last_training::timestamp > NOW() - INTERVAL '24 hours'
                 """)
-                
+
                 for row in rows:
                     await self.send_training_reminder(row['user_id'])
         except Exception as e:
@@ -285,7 +317,7 @@ class FootballBot(commands.Bot):
     async def notify_match_window_open(self):
         """Notify all servers when match window opens"""
         state = await db.get_game_state()
-        
+
         for guild in self.guilds:
             try:
                 # Try to find bot-commands channel
@@ -293,14 +325,14 @@ class FootballBot(commands.Bot):
                 if not channel:
                     # Fallback to first text channel bot can send in
                     channel = next((c for c in guild.text_channels if c.permissions_for(guild.me).send_messages), None)
-                
+
                 if not channel:
                     continue
-                
+
                 embed = discord.Embed(
                     title="🟢 MATCH WINDOW OPEN!",
                     description=f"## Week {state['current_week']} matches are now playable!\n\n"
-                               f"⏰ Window closes in **{config.MATCH_WINDOW_HOURS} hours**",
+                                f"⏰ Window closes in **{config.MATCH_WINDOW_HOURS} hours**",
                     color=discord.Color.green()
                 )
                 embed.add_field(
@@ -311,7 +343,7 @@ class FootballBot(commands.Bot):
                     inline=False
                 )
                 embed.set_footer(text="Use /fixtures to see your schedule")
-                
+
                 await channel.send(embed=embed)
                 print(f"✅ Notified {guild.name} of match window opening")
             except Exception as e:
