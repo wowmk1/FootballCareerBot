@@ -8,7 +8,6 @@ class PlayerCommands(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
     
-    # Keep these as methods so /player can call them
     async def profile(self, interaction: discord.Interaction, user: discord.User = None):
         """View player profile (called by /player command)"""
         target_user = user or interaction.user
@@ -76,7 +75,7 @@ class PlayerCommands(commands.Cog):
         embed.add_field(name="📈 Attributes", value=stats_text, inline=True)
         
         # Season stats (handle missing MOTM column gracefully)
-        season_motm = player.get('season_motm', 0)  # Default to 0 if missing
+        season_motm = player.get('season_motm', 0)
         season_text = (
             f"⚽ Goals: {player['season_goals']}\n"
             f"🅰️ Assists: {player['season_assists']}\n"
@@ -86,7 +85,7 @@ class PlayerCommands(commands.Cog):
         embed.add_field(name="📊 Season Stats", value=season_text, inline=True)
         
         # Career stats (handle missing MOTM column gracefully)
-        career_motm = player.get('career_motm', 0)  # Default to 0 if missing
+        career_motm = player.get('career_motm', 0)
         career_text = (
             f"⚽ {player['career_goals']} goals\n"
             f"🅰️ {player['career_assists']} assists\n"
@@ -95,12 +94,28 @@ class PlayerCommands(commands.Cog):
         )
         embed.add_field(name="🏆 Career Stats", value=career_text, inline=True)
         
+        # ============================================
+        # FORM & TRAINING STREAK SECTION
+        # ============================================
+        from utils.form_morale_system import get_form_description, get_morale_description
+        
+        form_desc = get_form_description(player['form'])
+        morale_desc = get_morale_description(player['morale'])
+        
+        status_text = f"📊 Form: **{form_desc}** ({player['form']}/100)\n"
+        status_text += f"😊 Morale: **{morale_desc}** ({player['morale']}/100)"
+        
         if player['training_streak'] > 0:
-            embed.add_field(
-                name="🔥 Training Streak",
-                value=f"{player['training_streak']} days",
-                inline=False
-            )
+            status_text += f"\n🔥 Training: **{player['training_streak']} day streak**"
+        
+        embed.add_field(
+            name="🎯 Player Status",
+            value=status_text,
+            inline=False
+        )
+        # ============================================
+        # END OF FORM SECTION
+        # ============================================
         
         embed.set_footer(text=f"Player ID: {target_user.id}")
         
@@ -175,6 +190,24 @@ class PlayerCommands(commands.Cog):
         embed.add_field(
             name="Season Stats",
             value=f"⚽ {player2['season_goals']} | 🅰️ {player2['season_assists']} | 👕 {player2['season_apps']}",
+            inline=True
+        )
+        
+        # Add form comparison
+        from utils.form_morale_system import get_form_description
+        
+        form1_desc = get_form_description(player1['form'])
+        form2_desc = get_form_description(player2['form'])
+        
+        embed.add_field(
+            name="Current Form",
+            value=f"{form1_desc} ({player1['form']})",
+            inline=True
+        )
+        embed.add_field(name="", value="", inline=True)
+        embed.add_field(
+            name="Current Form",
+            value=f"{form2_desc} ({player2['form']})",
             inline=True
         )
         
