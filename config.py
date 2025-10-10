@@ -29,7 +29,7 @@ STREAK_BONUS_AMOUNT = 1
 TRAINING_COOLDOWN_HOURS = 24
 
 # Transfer Configuration
-TRANSFER_WINDOW_WEEKS = [4, 5, 6, 20, 21, 22]  # Two transfer windows per season
+TRANSFER_WINDOW_WEEKS = [15, 16, 17, 30, 31, 32]  # Two transfer windows per season
 TRANSFER_OFFERS_PER_WINDOW = 3  # Number of offers a player receives
 
 # Notification Configuration
