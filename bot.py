@@ -56,6 +56,29 @@ class FootballBot(commands.Bot):
                     print("✅ current_match_of_week column already exists")
         except Exception as e:
             print(f"⚠️ Auto-migration warning: {e}")
+        
+        # ============================================
+        # AUTO-MIGRATE: Add last_reminded column
+        # ============================================
+        try:
+            async with db.pool.acquire() as conn:
+                result = await conn.fetchrow("""
+                    SELECT column_name 
+                    FROM information_schema.columns 
+                    WHERE table_name = 'players' AND column_name = 'last_reminded'
+                """)
+                
+                if not result:
+                    print("📋 Adding last_reminded column for training notifications...")
+                    await conn.execute("""
+                        ALTER TABLE players 
+                        ADD COLUMN last_reminded TEXT
+                    """)
+                    print("✅ last_reminded column added")
+                else:
+                    print("✅ last_reminded column already exists")
+        except Exception as e:
+            print(f"⚠️ Migration warning: {e}")
         # ============================================
         # END AUTO-MIGRATE
         # ============================================
@@ -288,6 +311,7 @@ class FootballBot(commands.Bot):
                     embed.set_footer(text="Don't miss your match!")
                     
                     await channel.send(embed=embed)
+                    print(f"✅ Posted match window notification to {guild.name}")
         except Exception as e:
             print(f"⚠️ Could not post match window notification: {e}")
 
@@ -314,19 +338,30 @@ class FootballBot(commands.Bot):
     async def check_training_reminders(self):
         """Check for players whose training is ready and send reminders"""
         try:
-            from datetime import timedelta
             async with db.pool.acquire() as conn:
+                # Get players who can train now (24h+ since last training)
+                # AND haven't been reminded in the last 12 hours
                 rows = await conn.fetch("""
                     SELECT user_id, player_name, last_training
                     FROM players
                     WHERE retired = FALSE
                       AND last_training IS NOT NULL
-                      AND last_training::timestamp < NOW() - INTERVAL '23 hours'
-                      AND last_training::timestamp > NOW() - INTERVAL '24 hours'
+                      AND last_training::timestamp <= NOW() - INTERVAL '24 hours'
+                      AND (last_reminded IS NULL OR last_reminded::timestamp < NOW() - INTERVAL '12 hours')
                 """)
 
                 for row in rows:
-                    await self.send_training_reminder(row['user_id'])
+                    # Send reminder
+                    success = await self.send_training_reminder(row['user_id'])
+                    
+                    if success:
+                        # Update last_reminded to avoid spam
+                        await conn.execute("""
+                            UPDATE players 
+                            SET last_reminded = $1 
+                            WHERE user_id = $2
+                        """, datetime.now().isoformat(), row['user_id'])
+                        
         except Exception as e:
             print(f"❌ Error in training reminder check: {e}")
 
@@ -346,8 +381,10 @@ class FootballBot(commands.Bot):
             )
             await user.send(embed=embed)
             print(f"✅ Sent training reminder to user {user_id}")
+            return True
         except Exception as e:
             print(f"⚠️ Could not send training reminder to {user_id}: {e}")
+            return False
 
     @check_match_day.before_loop
     async def before_check_match_day(self):
