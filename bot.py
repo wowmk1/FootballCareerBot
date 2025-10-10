@@ -34,22 +34,23 @@ class FootballBot(commands.Bot):
         try:
             async with db.pool.acquire() as conn:
                 result = await conn.fetchrow("""
-                        SELECT column_name 
-                        FROM information_schema.columns 
-                        WHERE table_name = 'game_state' AND column_name = 'current_match_of_week'
-                    """)
+                    SELECT column_name
+                    FROM information_schema.columns
+                    WHERE table_name = 'game_state'
+                      AND column_name = 'current_match_of_week'
+                """)
 
                 if not result:
                     print("📋 Auto-migration: Adding current_match_of_week column...")
                     await conn.execute("""
-                            ALTER TABLE game_state 
-                            ADD COLUMN current_match_of_week INTEGER DEFAULT 0
-                        """)
+                        ALTER TABLE game_state
+                        ADD COLUMN current_match_of_week INTEGER DEFAULT 0
+                    """)
                     await conn.execute("""
-                            UPDATE game_state 
-                            SET current_match_of_week = 0 
-                            WHERE current_match_of_week IS NULL
-                        """)
+                        UPDATE game_state
+                        SET current_match_of_week = 0
+                        WHERE current_match_of_week IS NULL
+                    """)
                     print("✅ Auto-migration complete!")
                 else:
                     print("✅ current_match_of_week column already exists")
@@ -58,7 +59,7 @@ class FootballBot(commands.Bot):
         # ============================================
         # END AUTO-MIGRATE
         # ============================================
-        
+
         await self.initialize_data()
         await self.load_cogs()
 
@@ -141,9 +142,9 @@ class FootballBot(commands.Bot):
                         wage_budget = 30000
 
                     await conn.execute('''
-                                       INSERT INTO teams (team_id, team_name, league, budget, wage_budget)
-                                       VALUES ($1, $2, $3, $4, $5)
-                                       ''', team['team_id'], team['team_name'], team['league'], budget, wage_budget)
+                        INSERT INTO teams (team_id, team_name, league, budget, wage_budget)
+                        VALUES ($1, $2, $3, $4, $5)
+                    ''', team['team_id'], team['team_name'], team['league'], budget, wage_budget)
             print(f"✅ Added {len(ALL_TEAMS)} teams")
 
         async with db.pool.acquire() as conn:
@@ -173,11 +174,11 @@ class FootballBot(commands.Bot):
             for p in pl_players:
                 stats = self.calculate_player_stats(p['overall_rating'], p['position'])
                 await conn.execute('''
-                                   INSERT INTO npc_players (player_name, team_id, position, age, overall_rating,
-                                                            pace, shooting, passing, dribbling, defending, physical,
-                                                            is_regen)
-                                   VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, FALSE)
-                                   ''', p['player_name'], p['team_id'], p['position'], p['age'], p['overall_rating'],
+                    INSERT INTO npc_players (player_name, team_id, position, age, overall_rating,
+                                             pace, shooting, passing, dribbling, defending, physical,
+                                             is_regen)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, FALSE)
+                ''', p['player_name'], p['team_id'], p['position'], p['age'], p['overall_rating'],
                                    stats['pace'], stats['shooting'], stats['passing'], stats['dribbling'],
                                    stats['defending'], stats['physical'])
 
@@ -188,11 +189,11 @@ class FootballBot(commands.Bot):
             for p in champ_players:
                 stats = self.calculate_player_stats(p['overall_rating'], p['position'])
                 await conn.execute('''
-                                   INSERT INTO npc_players (player_name, team_id, position, age, overall_rating,
-                                                            pace, shooting, passing, dribbling, defending, physical,
-                                                            is_regen)
-                                   VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, FALSE)
-                                   ''', p['player_name'], p['team_id'], p['position'], p['age'], p['overall_rating'],
+                    INSERT INTO npc_players (player_name, team_id, position, age, overall_rating,
+                                             pace, shooting, passing, dribbling, defending, physical,
+                                             is_regen)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, FALSE)
+                ''', p['player_name'], p['team_id'], p['position'], p['age'], p['overall_rating'],
                                    stats['pace'], stats['shooting'], stats['passing'], stats['dribbling'],
                                    stats['defending'], stats['physical'])
 
@@ -240,8 +241,7 @@ class FootballBot(commands.Bot):
             }
         elif position in ['CB', 'FB']:
             return {
-                'pace': min(99, base + random.randint(0, 5)) if position == 'FB' else max(50,
-                                                                                          base - random.randint(5, 10)),
+                'pace': min(99, base + random.randint(0, 5)) if position == 'FB' else max(50, base - random.randint(5, 10)),
                 'shooting': max(35, base - random.randint(20, 30)),
                 'passing': max(55, base - random.randint(5, 10)),
                 'dribbling': max(45, base - random.randint(10, 20)),
@@ -252,6 +252,45 @@ class FootballBot(commands.Bot):
             return {'pace': base, 'shooting': base, 'passing': base,
                     'dribbling': base, 'defending': base, 'physical': base}
 
+    async def notify_match_window_open(self):
+        """Notify all guilds that match window is open"""
+        try:
+            for guild in self.guilds:
+                channel = discord.utils.get(guild.text_channels, name="match-results")
+                if not channel:
+                    channel = discord.utils.get(guild.text_channels, name="general")
+                
+                if channel:
+                    state = await db.get_game_state()
+                    embed = discord.Embed(
+                        title="🟢 MATCH WINDOW OPEN!",
+                        description=f"**Week {state['current_week']}** matches are now playable!\n\n"
+                                   f"Use `/play_match` to play your match!",
+                        color=discord.Color.green()
+                    )
+                    
+                    from datetime import datetime
+                    closes = datetime.fromisoformat(state['match_window_closes'])
+                    timestamp = int(closes.timestamp())
+                    
+                    embed.add_field(
+                        name="⏰ Window Closes",
+                        value=f"<t:{timestamp}:R>\n<t:{timestamp}:t>",
+                        inline=True
+                    )
+                    
+                    embed.add_field(
+                        name="⚡ Quick Commands",
+                        value="`/play_match` - Play your match\n`/season` - Check schedule",
+                        inline=True
+                    )
+                    
+                    embed.set_footer(text="Don't miss your match!")
+                    
+                    await channel.send(embed=embed)
+        except Exception as e:
+            print(f"⚠️ Could not post match window notification: {e}")
+
     @tasks.loop(minutes=15)
     async def check_match_day(self):
         """Check if it's time to open/close match windows"""
@@ -260,10 +299,6 @@ class FootballBot(commands.Bot):
             triggered = await check_match_day_trigger(bot=self)
             if triggered:
                 print("⚽ Match window state changed")
-                # Notify all servers when match window opens
-                state = await db.get_game_state()
-                if state['match_window_open']:
-                    await self.notify_match_window_open()
         except Exception as e:
             print(f"❌ Error in match day check: {e}")
 
@@ -285,9 +320,9 @@ class FootballBot(commands.Bot):
                     SELECT user_id, player_name, last_training
                     FROM players
                     WHERE retired = FALSE
-                    AND last_training IS NOT NULL
-                    AND last_training::timestamp < NOW() - INTERVAL '23 hours'
-                    AND last_training::timestamp > NOW() - INTERVAL '24 hours'
+                      AND last_training IS NOT NULL
+                      AND last_training::timestamp < NOW() - INTERVAL '23 hours'
+                      AND last_training::timestamp > NOW() - INTERVAL '24 hours'
                 """)
 
                 for row in rows:
@@ -306,48 +341,13 @@ class FootballBot(commands.Bot):
             )
             embed.add_field(
                 name="🔥 Reminder",
-                value="Training daily maintains your streak!\n30-day streak = +5 potential",
+                value="Training daily maintains your streak!\n30-day streak = +3 potential",
                 inline=False
             )
             await user.send(embed=embed)
             print(f"✅ Sent training reminder to user {user_id}")
         except Exception as e:
             print(f"⚠️ Could not send training reminder to {user_id}: {e}")
-
-    async def notify_match_window_open(self):
-        """Notify all servers when match window opens"""
-        state = await db.get_game_state()
-
-        for guild in self.guilds:
-            try:
-                # Try to find bot-commands channel
-                channel = discord.utils.get(guild.text_channels, name="bot-commands")
-                if not channel:
-                    # Fallback to first text channel bot can send in
-                    channel = next((c for c in guild.text_channels if c.permissions_for(guild.me).send_messages), None)
-
-                if not channel:
-                    continue
-
-                embed = discord.Embed(
-                    title="🟢 MATCH WINDOW OPEN!",
-                    description=f"## Week {state['current_week']} matches are now playable!\n\n"
-                                f"⏰ Window closes in **{config.MATCH_WINDOW_HOURS} hours**",
-                    color=discord.Color.green()
-                )
-                embed.add_field(
-                    name="⚡ How to Play",
-                    value="1. Use `/play_match` to start your match\n"
-                          "2. Make decisions during key moments\n"
-                          "3. Earn ratings based on performance",
-                    inline=False
-                )
-                embed.set_footer(text="Use /fixtures to see your schedule")
-
-                await channel.send(embed=embed)
-                print(f"✅ Notified {guild.name} of match window opening")
-            except Exception as e:
-                print(f"⚠️ Could not notify {guild.name}: {e}")
 
     @check_match_day.before_loop
     async def before_check_match_day(self):
@@ -381,77 +381,9 @@ class FootballBot(commands.Bot):
             status=discord.Status.online
         )
 
-    async def setup_server_channels(self, guild):
-        """Setup organized channel structure"""
-        categories_to_create = {
-            "📰 NEWS & INFO": ["news-feed", "match-results", "transfer-news"],
-            "⚽ ACTIVE MATCHES": [],
-            "📊 COMMANDS": ["bot-commands"],
-            "💬 DISCUSSION": ["general-chat", "tactics-talk"]
-        }
-
-        for category_name, channels in categories_to_create.items():
-            category = discord.utils.get(guild.categories, name=category_name)
-
-            if not category:
-                category = await guild.create_category(category_name)
-                print(f"✅ Created category: {category_name}")
-
-            for channel_name in channels:
-                existing_channel = discord.utils.get(guild.text_channels, name=channel_name)
-
-                if not existing_channel:
-                    await guild.create_text_channel(channel_name, category=category)
-                    print(f"✅ Created channel: {channel_name}")
-
-    async def post_weekly_news(self, guild):
-        """Post weekly news digest"""
-        news_channel = discord.utils.get(guild.text_channels, name="news-feed")
-        if not news_channel:
-            return
-
-        state = await db.get_game_state()
-        current_week = state['current_week']
-
-        async with db.pool.acquire() as conn:
-            rows = await conn.fetch(
-                """SELECT *
-                   FROM news
-                   WHERE week_number = $1
-                   ORDER BY importance DESC, created_at DESC LIMIT 10""",
-                current_week
-            )
-            news_items = [dict(row) for row in rows]
-
-        if not news_items:
-            return
-
-        embed = discord.Embed(
-            title=f"📰 Week {current_week} News Digest",
-            description=f"Season {state['current_season']}",
-            color=discord.Color.blue()
-        )
-
-        for news in news_items[:8]:
-            emoji = {'player_news': '⭐', 'league_news': '🏆', 'match_news': '⚽',
-                     'transfer_news': '💼'}.get(news['category'], '📌')
-
-            embed.add_field(
-                name=f"{emoji} {news['headline']}",
-                value=news['content'][:200],
-                inline=False
-            )
-
-        await news_channel.send(embed=embed)
-
 
 # Create bot instance
 bot = FootballBot()
-
-
-# ========== NO MORE STANDALONE COMMANDS ==========
-# All admin commands are now in /adm dropdown menu
-# These standalone versions have been removed to reduce clutter
 
 
 # Help command (ONLY non-admin standalone command)
