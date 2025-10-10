@@ -1,408 +1,339 @@
 from database import db
 from datetime import datetime, timedelta
 import config
-from utils.event_poster import post_weekly_news_digest
-from utils.transfer_window_manager import (
-    check_and_update_transfer_window,
-    process_weekly_transfer_offers,
-    simulate_npc_transfers,
-    is_transfer_window_open
-)
-
+import random
 
 async def start_season():
-    """Initialize and start the season with SCHEDULED match windows"""
-    from utils.fixture_generator import generate_all_fixtures
-
+    """Start the season and schedule first match"""
+    state = await db.get_game_state()
+    
+    if state['season_started']:
+        print("⚠️ Season already started")
+        return False
+    
+    # Find next Mon/Wed/Sat at 3 PM
+    now = datetime.now()
+    
+    # Days of week: 0=Mon, 2=Wed, 5=Sat
+    target_days = [0, 2, 5]
+    
+    # Find next match day
+    days_ahead = None
+    for target_day in target_days:
+        days_until = (target_day - now.weekday()) % 7
+        if days_until == 0:  # Today
+            if now.hour < config.MATCH_START_HOUR:
+                days_ahead = 0
+                break
+        elif days_ahead is None or days_until < days_ahead:
+            days_ahead = days_until
+    
+    if days_ahead is None:
+        days_ahead = (target_days[0] - now.weekday()) % 7
+    
+    first_match_day = now + timedelta(days=days_ahead)
+    first_match_day = first_match_day.replace(
+        hour=config.MATCH_START_HOUR,
+        minute=0,
+        second=0,
+        microsecond=0
+    )
+    
     await db.update_game_state(
         season_started=True,
         current_week=1,
-        season_start_date=datetime.now().isoformat(),
-        fixtures_generated=False
+        current_season='2027/28',
+        season_start_date=now.isoformat(),
+        next_match_day=first_match_day.isoformat(),
+        current_match_of_week=0
     )
-
-    await generate_all_fixtures()
-
-    # Schedule first match window at a predictable time
-    now = datetime.now()
-    next_match = now.replace(hour=config.MATCH_START_HOUR, minute=0, second=0, microsecond=0)
-
-    # If today's start hour has passed, schedule for tomorrow
-    if now.hour >= config.MATCH_START_HOUR:
-        next_match = next_match + timedelta(days=1)
-
-    await db.update_game_state(
-        next_match_day=next_match.isoformat()
-    )
-
-    print(f"✅ Season {config.CURRENT_SEASON} started!")
-    print(f"📅 First match window: {next_match.strftime('%A, %B %d at %I:%M %p')}")
-    print(f"⏰ Players have time to join before matches start!")
+    
+    # Generate fixtures for all teams
+    await generate_season_fixtures()
+    
+    print(f"✅ Season started! First match: {first_match_day.strftime('%A, %B %d at %I:%M %p')}")
+    return True
 
 
-async def advance_week():
-    """Advance to the next week - 1 REAL DAY = 1 GAME WEEK"""
+async def generate_season_fixtures():
+    """Generate fixtures for all leagues"""
+    from utils.fixture_generator import generate_league_fixtures
+    
+    leagues = ['Premier League', 'Championship', 'League One']
+    
+    for league in leagues:
+        teams = await db.get_league_table(league)
+        team_ids = [t['team_id'] for t in teams]
+        
+        await generate_league_fixtures(
+            team_ids=team_ids,
+            league=league,
+            season='2027/28',
+            total_weeks=config.SEASON_TOTAL_WEEKS
+        )
+    
+    await db.update_game_state(fixtures_generated=True)
+    print(f"✅ Generated {config.SEASON_TOTAL_WEEKS} weeks of fixtures for all leagues")
+
+
+async def open_match_window():
+    """Open the match window for current week"""
     state = await db.get_game_state()
-
-    if not state['season_started']:
-        print("⚠️ Season hasn't started yet")
-        return
-
     current_week = state['current_week']
-
-    if current_week >= config.SEASON_TOTAL_WEEKS:
-        await end_season()
-        return
-
-    new_week = current_week + 1
-
-    print(f"\n{'=' * 60}")
-    print(f"ADVANCING TO WEEK {new_week}")
-    print(f"{'=' * 60}")
-
-    # ============================================
-    # SCHEDULE NEXT MATCH DAY (Mon/Wed/Sat pattern)
-    # ============================================
-    now = datetime.now()
-    current_day = now.weekday()  # 0=Monday, 2=Wednesday, 5=Saturday
-
-    # Determine next match day
-    if current_day < 2:  # Before Wednesday
-        # Next match is Wednesday
-        days_until_next = 2 - current_day
-    elif current_day < 5:  # Before Saturday
-        # Next match is Saturday
-        days_until_next = 5 - current_day
-    else:  # Saturday or Sunday
-        # Next match is Monday
-        days_until_next = (7 - current_day) % 7
-        if days_until_next == 0:
-            days_until_next = 2  # If Monday, go to Wednesday
-
-    next_match = now + timedelta(days=days_until_next)
-    next_match = next_match.replace(hour=config.MATCH_START_HOUR, minute=0, second=0, microsecond=0)
-
-    print(f"📅 Week {new_week} scheduled for:")
-    print(f"   {next_match.strftime('%A, %B %d at %I:%M %p')}")
-
-    await db.update_game_state(
-        current_week=new_week,
-        next_match_day=next_match.isoformat()
-    )
-    # ============================================
-
-    # CHECK AND UPDATE TRANSFER WINDOW
-    await check_and_update_transfer_window()
-    window_active = await is_transfer_window_open(new_week)
-
-    # GENERATE TRANSFER OFFERS IF WINDOW IS OPEN
-    if window_active:
-        print(f"\n🔥 Transfer Window is OPEN for Week {new_week}")
-        try:
-            from bot import bot
-            offers_count = await process_weekly_transfer_offers(bot)
-            print(f"✅ Generated {offers_count} transfer offers")
-        except Exception as e:
-            print(f"❌ Error generating offers: {e}")
-
-        # SIMULATE NPC TRANSFERS
-        try:
-            npc_count = await simulate_npc_transfers()
-            print(f"✅ Simulated {npc_count} NPC transfers")
-        except Exception as e:
-            print(f"❌ Error simulating NPC transfers: {e}")
-    else:
-        print(f"❌ Transfer window is CLOSED for Week {new_week}")
-
-    print(f"\n✅ Advanced to Week {new_week}/{config.SEASON_TOTAL_WEEKS}")
-    print(f"{'=' * 60}\n")
-
-
-async def open_match_window(bot=None):
-    """Open match window for current week - ALL FIXTURES PLAYABLE"""
-    state = await db.get_game_state()
-
-    if not state['season_started']:
-        return
-
-    current_week = state['current_week']
-
-    # Make ALL fixtures for this week playable
+    
+    # Make this week's fixtures playable
     async with db.pool.acquire() as conn:
-        await conn.execute('''
-            UPDATE fixtures
-            SET playable = TRUE
-            WHERE week_number = $1
-              AND played = FALSE
-        ''', current_week)
-
-        # Count how many fixtures are now playable
-        result = await conn.fetchrow('''
-            SELECT COUNT(*) as count 
-            FROM fixtures 
-            WHERE week_number = $1 AND playable = TRUE AND played = FALSE
-        ''', current_week)
-        playable_count = result['count']
-
-    window_closes = datetime.now() + timedelta(hours=config.MATCH_WINDOW_HOURS)
-
+        await conn.execute(
+            "UPDATE fixtures SET playable = TRUE WHERE week_number = $1 AND played = FALSE",
+            current_week
+        )
+    
+    # Set closing time
+    closes = datetime.now() + timedelta(hours=config.MATCH_WINDOW_HOURS)
+    
     await db.update_game_state(
         match_window_open=True,
-        match_window_closes=window_closes.isoformat()
+        match_window_closes=closes.isoformat()
     )
-
+    
     print(f"✅ Match window opened for Week {current_week}")
-    print(f"⚽ {playable_count} fixtures available to play")
-    print(f"⏰ Window closes at {window_closes.strftime('%Y-%m-%d %H:%M')}")
-
-    # POST WEEKLY NEWS TO CHANNELS
-    if bot:
-        try:
-            for guild in bot.guilds:
-                await post_weekly_news_digest(bot, guild)
-            print(f"✅ Posted weekly news to all servers")
-        except Exception as e:
-            print(f"⚠️ Could not post weekly news: {e}")
-
-    # NOTIFY MATCH WINDOW OPEN
-    if bot:
-        await bot.notify_match_window_open()
+    print(f"   Closes at: {closes.strftime('%I:%M %p')}")
 
 
 async def close_match_window():
-    """Close match window and auto-simulate unplayed matches"""
-    from utils.match_simulator import simulate_match
-
+    """Close match window and simulate unplayed matches"""
     state = await db.get_game_state()
     current_week = state['current_week']
-
-    # Auto-simulate ALL unplayed matches
+    
+    # Simulate all unplayed matches
     async with db.pool.acquire() as conn:
-        rows = await conn.fetch(
-            "SELECT * FROM fixtures WHERE week_number = $1 AND played = FALSE AND playable = TRUE",
+        unplayed = await conn.fetch(
+            """SELECT * FROM fixtures 
+               WHERE week_number = $1 AND played = FALSE AND playable = TRUE""",
             current_week
         )
-        unplayed = [dict(row) for row in rows]
-
+    
+    from utils.match_simulator import simulate_match
+    
+    for fixture in unplayed:
+        await simulate_match(dict(fixture))
+    
     if unplayed:
-        print(f"🤖 Auto-simulating {len(unplayed)} unplayed matches for Week {current_week}...")
-        for fixture in unplayed:
-            await simulate_match(fixture)
-        print(f"✅ Week {current_week} simulation complete!")
-    else:
-        print(f"✅ Week {current_week}: All matches were played by users!")
-
-    # Mark all fixtures as unplayable since week is over
-    async with db.pool.acquire() as conn:
-        await conn.execute('''
-            UPDATE fixtures
-            SET playable = FALSE
-            WHERE week_number = $1
-        ''', current_week)
-
+        print(f"⚽ Simulated {len(unplayed)} unplayed matches")
+    
+    # Close window
     await db.update_game_state(
         match_window_open=False,
-        match_window_closes=None,
-        last_match_day=datetime.now().isoformat()
+        match_window_closes=None
     )
-
+    
+    # Advance to next week
+    await advance_week()
+    
     print(f"✅ Match window closed for Week {current_week}")
 
 
-async def check_match_day_trigger(bot=None):
-    """Check if it's time to open/close match window"""
+async def advance_week():
+    """Advance to next week and schedule next match"""
     state = await db.get_game_state()
+    current_week = state['current_week']
+    next_week = current_week + 1
+    
+    # Check if season ended
+    if next_week > config.SEASON_TOTAL_WEEKS:
+        await end_season()
+        return
+    
+    # Calculate next match day (Mon/Wed/Sat at 3 PM)
+    now = datetime.now()
+    target_days = [0, 2, 5]  # Mon, Wed, Sat
+    current_match = state.get('current_match_of_week', 0)
+    
+    # Cycle through match days
+    next_match_index = (current_match + 1) % len(target_days)
+    target_day = target_days[next_match_index]
+    
+    # Calculate days until next target day
+    days_until = (target_day - now.weekday()) % 7
+    if days_until == 0:
+        days_until = 7  # If today, schedule for next week
+    
+    next_match_day = now + timedelta(days=days_until)
+    next_match_day = next_match_day.replace(
+        hour=config.MATCH_START_HOUR,
+        minute=0,
+        second=0,
+        microsecond=0
+    )
+    
+    # Update game state
+    await db.update_game_state(
+        current_week=next_week,
+        next_match_day=next_match_day.isoformat(),
+        current_match_of_week=next_match_index
+    )
+    
+    # Check if transfer window should open
+    if next_week in config.TRANSFER_WINDOW_WEEKS:
+        await open_transfer_window()
+    
+    # Check if transfer window should close
+    if current_week in config.TRANSFER_WINDOW_WEEKS and next_week not in config.TRANSFER_WINDOW_WEEKS:
+        await close_transfer_window()
+    
+    print(f"📅 Advanced to Week {next_week}")
+    print(f"   Next match: {next_match_day.strftime('%A, %B %d at %I:%M %p')}")
 
+
+async def check_match_day_trigger(bot=None):
+    """Check if it's time to open or close match windows - with time tolerance"""
+    state = await db.get_game_state()
+    
     if not state['season_started']:
         return False
-
-    # PRIORITY 1: Check if match window should close
-    if state['match_window_open']:
-        if state['match_window_closes']:
-            closes = datetime.fromisoformat(state['match_window_closes'])
-            if datetime.now() >= closes:
-                await close_match_window()
-
-                # After closing, immediately advance to next week
-                print(f"🏁 Week {state['current_week']} complete! Advancing...")
-                await advance_week()
-
-                return True
-        return False
-
-    # PRIORITY 2: Check if it's time to open next match window
-    if state['next_match_day']:
+    
+    now = datetime.now()
+    triggered = False
+    
+    # ============================================
+    # CHECK IF WE SHOULD OPEN MATCH WINDOW
+    # ============================================
+    if state['next_match_day'] and not state['match_window_open']:
         next_match = datetime.fromisoformat(state['next_match_day'])
-        if datetime.now() >= next_match:
-            await open_match_window(bot)
-            return True
+        
+        # Use time range instead of exact match (within 15 min after scheduled time)
+        time_diff = (now - next_match).total_seconds()
+        
+        if 0 <= time_diff <= 900:  # 0 to 15 minutes after scheduled time
+            print(f"⚽ Opening match window (scheduled: {next_match}, now: {now})")
+            await open_match_window()
+            
+            if bot:
+                await bot.notify_match_window_open()
+            
+            triggered = True
+    
+    # ============================================
+    # CHECK IF WE SHOULD CLOSE MATCH WINDOW
+    # ============================================
+    if state['match_window_open'] and state['match_window_closes']:
+        closes = datetime.fromisoformat(state['match_window_closes'])
+        
+        # Use time range instead of exact match (within 15 min after closing time)
+        time_diff = (now - closes).total_seconds()
+        
+        if 0 <= time_diff <= 900:  # 0 to 15 minutes after closing time
+            print(f"⏰ Closing match window (scheduled: {closes}, now: {now})")
+            await close_match_window()
+            triggered = True
+    
+    return triggered
 
-    return False
+
+async def open_transfer_window():
+    """Open transfer window"""
+    await db.update_game_state(transfer_window_active=True)
+    print("💼 Transfer window opened")
+
+
+async def close_transfer_window():
+    """Close transfer window"""
+    await db.update_game_state(transfer_window_active=False)
+    
+    # Expire all pending offers
+    async with db.pool.acquire() as conn:
+        await conn.execute(
+            "UPDATE transfer_offers SET status = 'expired' WHERE status = 'pending'"
+        )
+    
+    print("💼 Transfer window closed")
 
 
 async def end_season():
-    """End the current season with relegation and promotion"""
-
-    print("\n🏁 SEASON ENDING...")
-
+    """End the season and handle promotion/relegation"""
+    state = await db.get_game_state()
+    current_season = state['current_season']
+    
+    print(f"🏆 Season {current_season} complete!")
+    
+    # Handle promotion/relegation
+    await handle_promotion_relegation()
+    
+    # Age all players
     await db.age_all_players()
-    retirements = await db.retire_old_players()
-
-    # Balance squads after retirements
-    from utils.npc_transfer_system import balance_team_squads
-    await balance_team_squads()
-
-    print("⚖️ Processing relegation and promotion...")
-
-    pl_table = await db.get_league_table('Premier League')
-    champ_table = await db.get_league_table('Championship')
-    l1_table = await db.get_league_table('League One')
-
-    relegated_from_pl = pl_table[-3:] if len(pl_table) >= 3 else []
-    promoted_to_pl = champ_table[:2] if len(champ_table) >= 2 else []
-    relegated_from_champ = champ_table[-3:] if len(champ_table) >= 3 else []
-    promoted_to_champ = l1_table[:2] if len(l1_table) >= 2 else []
-
-    async with db.pool.acquire() as conn:
-        for team in relegated_from_pl:
-            await conn.execute(
-                "UPDATE teams SET league = 'Championship' WHERE team_id = $1",
-                team['team_id']
-            )
-            await conn.execute(
-                "UPDATE players SET league = 'Championship' WHERE team_id = $1 AND retired = FALSE",
-                team['team_id']
-            )
-
-            await db.add_news(
-                f"RELEGATION: {team['team_name']} Relegated",
-                f"{team['team_name']} have been relegated to the Championship.",
-                "league_news",
-                None,
-                10
-            )
-            print(f"  ⬇️ {team['team_name']} relegated to Championship")
-
-        for team in promoted_to_pl:
-            await conn.execute(
-                "UPDATE teams SET league = 'Premier League' WHERE team_id = $1",
-                team['team_id']
-            )
-            await conn.execute(
-                "UPDATE players SET league = 'Premier League' WHERE team_id = $1 AND retired = FALSE",
-                team['team_id']
-            )
-
-            await db.add_news(
-                f"PROMOTION: {team['team_name']} Promoted!",
-                f"Congratulations to {team['team_name']} on winning promotion to the Premier League!",
-                "league_news",
-                None,
-                10
-            )
-            print(f"  ⬆️ {team['team_name']} promoted to Premier League")
-
-        # Similar for Championship <-> League One
-        for team in relegated_from_champ:
-            await conn.execute(
-                "UPDATE teams SET league = 'League One' WHERE team_id = $1",
-                team['team_id']
-            )
-            await conn.execute(
-                "UPDATE players SET league = 'League One' WHERE team_id = $1 AND retired = FALSE",
-                team['team_id']
-            )
-
-            await db.add_news(
-                f"{team['team_name']} Relegated to League One",
-                f"{team['team_name']} drop down to League One.",
-                "league_news",
-                None,
-                7
-            )
-            print(f"  ⬇️ {team['team_name']} relegated to League One")
-
-        for team in promoted_to_champ:
-            await conn.execute(
-                "UPDATE teams SET league = 'Championship' WHERE team_id = $1",
-                team['team_id']
-            )
-            await conn.execute(
-                "UPDATE players SET league = 'Championship' WHERE team_id = $1 AND retired = FALSE",
-                team['team_id']
-            )
-
-            await db.add_news(
-                f"{team['team_name']} Promoted to Championship!",
-                f"{team['team_name']} celebrate promotion!",
-                "league_news",
-                None,
-                8
-            )
-            print(f"  ⬆️ {team['team_name']} promoted to Championship")
-
-    # Announce champions
-    if pl_table:
-        champion = pl_table[0]
-        await db.add_news(
-            f"CHAMPIONS: {champion['team_name']} Win Premier League!",
-            f"{champion['team_name']} are Premier League champions with {champion['points']} points!",
-            "league_news",
-            None,
-            10
-        )
-        print(f"  🏆 Premier League Champions: {champion['team_name']}")
-
-    # Decrease contract years
-    async with db.pool.acquire() as conn:
-        await conn.execute("""
-            UPDATE players
-            SET contract_years = GREATEST(0, contract_years - 1)
-            WHERE retired = FALSE
-        """)
-
-        await conn.execute("""
-            UPDATE players
-            SET team_id = 'free_agent', league = NULL
-            WHERE contract_years = 0 AND retired = FALSE
-        """)
-
+    
+    # Retire old players
+    retired_count = await db.retire_old_players()
+    
     # Reset season stats
     async with db.pool.acquire() as conn:
         await conn.execute("""
-            UPDATE players
-            SET season_goals = 0, season_assists = 0, 
-                season_apps = 0, season_rating = 0.0, season_motm = 0
-            WHERE retired = FALSE
+            UPDATE players SET 
+            season_goals = 0, season_assists = 0, 
+            season_apps = 0, season_rating = 0.0, season_motm = 0
         """)
-
+        
         await conn.execute("""
-            UPDATE teams
-            SET played = 0, won = 0, drawn = 0, lost = 0,
-                goals_for = 0, goals_against = 0, points = 0, form = ''
+            UPDATE npc_players SET 
+            season_goals = 0, season_assists = 0, season_apps = 0
         """)
-
+        
         await conn.execute("""
-            UPDATE npc_players
-            SET season_goals = 0, season_assists = 0, season_apps = 0
-            WHERE retired = FALSE
+            UPDATE teams SET 
+            played = 0, won = 0, drawn = 0, lost = 0,
+            goals_for = 0, goals_against = 0, points = 0, form = ''
         """)
-
-    await db.add_news(
-        f"Season {config.CURRENT_SEASON} Concludes",
-        f"The season has ended! Promotions and relegations complete. {retirements} players retired.",
-        "league_news",
-        None,
-        10,
-        config.SEASON_TOTAL_WEEKS
-    )
-
+    
+    # Start new season
+    year = int(current_season.split('/')[0])
+    new_season = f"{year + 1}/{str(year + 2)[-2:]}"
+    
     await db.update_game_state(
-        season_started=False,
+        current_season=new_season,
         current_week=0,
         fixtures_generated=False,
-        match_window_open=False,
-        transfer_window_active=False
+        season_started=False
     )
+    
+    print(f"✅ Ready for Season {new_season}")
 
-    print(f"✅ Season ended. {retirements} retirements. Ready for new season.")
+
+async def handle_promotion_relegation():
+    """Handle promotion and relegation between leagues"""
+    
+    # Premier League: Bottom 3 relegated
+    pl_table = await db.get_league_table('Premier League')
+    relegated_from_pl = [pl_table[-3]['team_id'], pl_table[-2]['team_id'], pl_table[-1]['team_id']]
+    
+    # Championship: Top 2 promoted, 3rd-6th playoff (auto-promote top 3 for simplicity)
+    champ_table = await db.get_league_table('Championship')
+    promoted_from_champ = [champ_table[0]['team_id'], champ_table[1]['team_id'], champ_table[2]['team_id']]
+    relegated_from_champ = [champ_table[-3]['team_id'], champ_table[-2]['team_id'], champ_table[-1]['team_id']]
+    
+    # League One: Top 3 promoted
+    l1_table = await db.get_league_table('League One')
+    promoted_from_l1 = [l1_table[0]['team_id'], l1_table[1]['team_id'], l1_table[2]['team_id']]
+    
+    # Apply changes
+    async with db.pool.acquire() as conn:
+        for team_id in relegated_from_pl:
+            await conn.execute("UPDATE teams SET league = 'Championship' WHERE team_id = $1", team_id)
+            await conn.execute("UPDATE npc_players SET team_id = $1 WHERE team_id = $1", team_id)
+            print(f"   ⬇️ {team_id} relegated to Championship")
+        
+        for team_id in promoted_from_champ:
+            await conn.execute("UPDATE teams SET league = 'Premier League' WHERE team_id = $1", team_id)
+            await conn.execute("UPDATE npc_players SET team_id = $1 WHERE team_id = $1", team_id)
+            print(f"   ⬆️ {team_id} promoted to Premier League")
+        
+        for team_id in relegated_from_champ:
+            await conn.execute("UPDATE teams SET league = 'League One' WHERE team_id = $1", team_id)
+            await conn.execute("UPDATE npc_players SET team_id = $1 WHERE team_id = $1", team_id)
+            print(f"   ⬇️ {team_id} relegated to League One")
+        
+        for team_id in promoted_from_l1:
+            await conn.execute("UPDATE teams SET league = 'Championship' WHERE team_id = $1", team_id)
+            await conn.execute("UPDATE npc_players SET team_id = $1 WHERE team_id = $1", team_id)
+            print(f"   ⬆️ {team_id} promoted to Championship")
+    
+    print("✅ Promotion/relegation complete")
