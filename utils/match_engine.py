@@ -744,10 +744,15 @@ class ActionButton(discord.ui.Button):
         self.action = action
 
     async def callback(self, interaction: discord.Interaction):
+        # CRITICAL: Defer immediately to prevent timeout during match actions
+        await interaction.response.defer()
+
         self.view.chosen_action = self.action
         for item in self.view.children:
             item.disabled = True
-        await interaction.response.edit_message(view=self.view)
+
+        # Use edit_original_response after defer
+        await interaction.edit_original_response(view=self.view)
         self.view.stop()
 
 
