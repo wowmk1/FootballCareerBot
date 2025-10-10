@@ -225,11 +225,11 @@ class MatchEngine:
 
         async with db.pool.acquire() as conn:
             result = await conn.fetchrow('''
-                INSERT INTO active_matches (fixture_id, home_team_id, away_team_id, channel_id,
-                                            message_id, match_state, current_minute,
-                                            last_event_time)
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING match_id
-            ''', fixture['fixture_id'], fixture['home_team_id'], fixture['away_team_id'],
+                                         INSERT INTO active_matches (fixture_id, home_team_id, away_team_id, channel_id,
+                                                                     message_id, match_state, current_minute,
+                                                                     last_event_time)
+                                         VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING match_id
+                                         ''', fixture['fixture_id'], fixture['home_team_id'], fixture['away_team_id'],
                                          match_channel.id, message.id, 'in_progress', 0, datetime.now().isoformat())
             match_id = result['match_id']
 
@@ -289,7 +289,8 @@ class MatchEngine:
                         if result and result.get('goal'):
                             home_score += 1
                             await self.post_goal_celebration(channel, result['scorer_name'], home_team['team_name'],
-                                                             home_team['team_id'], home_score, away_score, result.get('assister_name'))
+                                                             home_team['team_id'], home_score, away_score,
+                                                             result.get('assister_name'))
                             await self.update_pinned_score(channel, match_id, home_team, away_team, home_score,
                                                            away_score, minute)
                 else:
@@ -309,7 +310,8 @@ class MatchEngine:
                         if result and result.get('goal'):
                             away_score += 1
                             await self.post_goal_celebration(channel, result['scorer_name'], away_team['team_name'],
-                                                             away_team['team_id'], home_score, away_score, result.get('assister_name'))
+                                                             away_team['team_id'], home_score, away_score,
+                                                             result.get('assister_name'))
                             await self.update_pinned_score(channel, match_id, home_team, away_team, home_score,
                                                            away_score, minute)
                 else:
@@ -474,7 +476,7 @@ class MatchEngine:
                 is_goal = True
                 scorer_name = player['player_name']
                 rating_change = 1.2
-                
+
                 async with db.pool.acquire() as conn:
                     await conn.execute(
                         "UPDATE players SET season_goals = season_goals + 1, career_goals = career_goals + 1 WHERE user_id = $1",
@@ -499,7 +501,7 @@ class MatchEngine:
                     scorer_name = teammate_result['scorer_name']
                     assister_name = player['player_name']
                     rating_change = 0.8
-                    
+
                     result_embed.add_field(
                         name="⚽ TEAMMATE SCORES FROM YOUR PASS!",
                         value=f"**{scorer_name}** finishes it!\n🅰️ **ASSIST: {player['player_name']}**\nGreat {action.replace('_', ' ')}!",
@@ -536,8 +538,8 @@ class MatchEngine:
             )
 
         return {
-            'success': success, 
-            'goal': is_goal, 
+            'success': success,
+            'goal': is_goal,
             'roll': player_roll,
             'scorer_name': scorer_name,
             'assister_name': assister_name
@@ -547,14 +549,19 @@ class MatchEngine:
         """Handle teammate scoring after assist - returns dict with scorer info"""
         async with db.pool.acquire() as conn:
             teammate = await conn.fetchrow(
-                """SELECT player_name FROM npc_players
-                   WHERE team_id = $1 AND position IN ('ST', 'W', 'CAM') AND retired = FALSE
+                """SELECT player_name
+                   FROM npc_players
+                   WHERE team_id = $1
+                     AND position IN ('ST', 'W', 'CAM')
+                     AND retired = FALSE
                    ORDER BY RANDOM() LIMIT 1""",
                 attacking_team['team_id']
             )
             if teammate:
                 await conn.execute(
-                    """UPDATE players SET season_assists = season_assists + 1, career_assists = career_assists + 1 
+                    """UPDATE players
+                       SET season_assists = season_assists + 1,
+                           career_assists = career_assists + 1
                        WHERE user_id = $1""",
                     player['user_id']
                 )
@@ -595,14 +602,15 @@ class MatchEngine:
 
         return None
 
-    async def post_goal_celebration(self, channel, scorer_name, team_name, team_id, home_score, away_score, assister_name=None):
+    async def post_goal_celebration(self, channel, scorer_name, team_name, team_id, home_score, away_score,
+                                    assister_name=None):
         celebrations = ["🔥🔥🔥 **GOOOOAAAALLL!!!** 🔥🔥🔥", "⚽⚽⚽ **WHAT A GOAL!!!** ⚽⚽⚽"]
-        
+
         description = f"## **{scorer_name}** scores for {team_name}!\n\n"
         if assister_name:
             description += f"🅰️ **ASSIST:** {assister_name}\n\n"
         description += f"**{home_score} - {away_score}**"
-        
+
         embed = discord.Embed(
             title=random.choice(celebrations),
             description=description,
@@ -688,6 +696,58 @@ class MatchEngine:
         # ============================================
         # END OF FORM UPDATE
         # ============================================
+
+        # ============================================
+        # DETERMINE AND ANNOUNCE MAN OF THE MATCH
+        # ============================================
+        if participants:
+            # Find MOTM (player with highest match rating)
+            user_participants = [p for p in participants if p['user_id']]
+
+            if user_participants:
+                motm = max(user_participants, key=lambda p: p['match_rating'])
+
+                # Update MOTM counters in database
+                async with db.pool.acquire() as conn:
+                    await conn.execute("""
+                        UPDATE players
+                        SET season_motm = season_motm + 1,
+                            career_motm = career_motm + 1
+                        WHERE user_id = $1
+                    """, motm['user_id'])
+
+                # Get player details
+                motm_player = await db.get_player(motm['user_id'])
+
+                # Announce MOTM
+                motm_embed = discord.Embed(
+                    title="⭐ MAN OF THE MATCH",
+                    description=f"**{motm_player['player_name']}**\nMatch Rating: **{motm['match_rating']:.1f}/10**",
+                    color=discord.Color.gold()
+                )
+
+                motm_embed.add_field(
+                    name="📊 Performance",
+                    value=f"Goals: {motm.get('goals_scored', 0)}\nAssists: {motm.get('assists', 0)}\nActions: {motm['actions_taken']}",
+                    inline=False
+                )
+
+                from utils.football_data_api import get_team_crest_url
+                team_crest = get_team_crest_url(motm_player['team_id'])
+                if team_crest:
+                    motm_embed.set_thumbnail(url=team_crest)
+
+                await channel.send(embed=motm_embed)
+                print(f"⭐ MOTM: {motm_player['player_name']} ({motm['match_rating']:.1f}/10)")
+        # ============================================
+        # END OF MOTM DETERMINATION
+        # ============================================
+
+        embed = discord.Embed(
+            title="🏁 FULL TIME!",
+            description=f"## {home_team['team_name']} {home_score} - {away_score} {away_team['team_name']}",
+            color=discord.Color.gold()
+        )
 
         embed = discord.Embed(
             title="🏁 FULL TIME!",
