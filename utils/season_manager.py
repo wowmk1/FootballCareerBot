@@ -193,21 +193,54 @@ async def close_match_window():
 
 
 async def check_match_day_trigger(bot=None):
-    """Check if it's time to open match window"""
+    """Check if it's time to open match window OR auto-advance week (3 MATCHES PER WEEK)"""
     state = await db.get_game_state()
 
     if not state['season_started']:
         return False
 
+    # Get current match counter (1, 2, or 3)
+    current_match = state.get('current_match_of_week', 0)
+
+    # PRIORITY 1: Check if match window should close
     if state['match_window_open']:
         if state['match_window_closes']:
             closes = datetime.fromisoformat(state['match_window_closes'])
             if datetime.now() >= closes:
                 await close_match_window()
-                await advance_week()
+
+                # INCREMENT MATCH COUNTER
+                current_match += 1
+                await db.update_game_state(current_match_of_week=current_match)
+
+                print(f"✅ Match {current_match}/3 completed for Week {state['current_week']}")
+
+                # If we've played all 3 matches, advance to next week
+                if current_match >= 3:
+                    print(f"🏁 All 3 matches complete! Advancing to next week...")
+                    await db.update_game_state(current_match_of_week=0)  # Reset counter
+                    await advance_week()
+                else:
+                    # Schedule next match (Wednesday or Saturday)
+                    now = datetime.now()
+
+                    if current_match == 1:
+                        # Just finished Monday → Schedule Wednesday (2 days later)
+                        next_match = now + timedelta(days=2)
+                    elif current_match == 2:
+                        # Just finished Wednesday → Schedule Saturday (3 days later)
+                        next_match = now + timedelta(days=3)
+
+                    next_match = next_match.replace(hour=config.MATCH_START_HOUR, minute=0, second=0, microsecond=0)
+
+                    await db.update_game_state(next_match_day=next_match.isoformat())
+
+                    print(f"📅 Next match ({current_match + 1}/3): {next_match.strftime('%A, %B %d at %I:%M %p')}")
+
                 return True
         return False
 
+    # PRIORITY 2: Check if it's time to open next match window
     if state['next_match_day']:
         next_match = datetime.fromisoformat(state['next_match_day'])
         if datetime.now() >= next_match:
