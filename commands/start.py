@@ -13,7 +13,7 @@ import random
 class StartCommands(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-    
+
     @app_commands.command(name="start", description="⚽ Create your player and start your career")
     @app_commands.describe(
         name="Your player's name",
@@ -31,7 +31,7 @@ class StartCommands(commands.Cog):
     ])
     async def start(self, interaction: discord.Interaction, name: str, position: str):
         """Create a new player"""
-        
+
         # Check if player already exists
         existing = await db.get_player(interaction.user.id)
         if existing and not existing['retired']:
@@ -41,30 +41,30 @@ class StartCommands(commands.Cog):
                 ephemeral=True
             )
             return
-        
+
         # Step 1: Create the view first to get club data
         view = ClubSelectionView(name, position, interaction.user, self.bot)
-        
+
         embed = discord.Embed(
             title="🏟️ Choose Your Starting Club",
             description=f"**{name}** ({position})\n\nYou have **3 contract offers** from Championship clubs:",
             color=discord.Color.blue()
         )
-        
+
         # Show all 3 offers with full details
         for i, club in enumerate(view.clubs, 1):
             league_emoji = "🔵"
-            
+
             embed.add_field(
                 name=f"{league_emoji} Option {i}: {club['team_name']}",
                 value=f"**League:** {club['league']}\n"
                       f"**Your Stats:** {club['starting_overall']} OVR → ⭐ {club['starting_potential']} POT\n"
-                      f"**Wage:** £{club['wage']:,}/week (~£{club['wage']*52:,}/year)\n"
+                      f"**Wage:** £{club['wage']:,}/week (~£{club['wage'] * 52:,}/year)\n"
                       f"**Contract:** 3 years\n"
                       f"**Style:** {club['offer_type']}",
                 inline=False
             )
-        
+
         embed.add_field(
             name="💡 Choose Your Path",
             value="**All 3 options are Championship-ready!**\n"
@@ -72,9 +72,9 @@ class StartCommands(commands.Cog):
                   "Everyone gets different random offers for variety.",
             inline=False
         )
-        
+
         embed.set_footer(text="Click a button below to sign with that club")
-        
+
         await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
 
 
@@ -85,38 +85,38 @@ class ClubSelectionView(discord.ui.View):
         self.position = position
         self.user = user
         self.bot = bot
-        
+
         # Generate 3 club options from different leagues
         self.clubs = self.generate_club_options()
-        
+
         # Create buttons for each club
         for i, club in enumerate(self.clubs):
             button = ClubButton(club, i, self)
             self.add_item(button)
-    
+
     def generate_club_options(self):
         """Generate 3 club offers - ALL FROM CHAMPIONSHIP with random but viable stats"""
         from data.teams import ALL_TEAMS
         import random
-        
+
         # Get Championship teams only for fair starts
         championship_teams = [t for t in ALL_TEAMS if t['league'] == 'Championship']
-        
+
         # Select 3 random Championship teams
         selected_teams = random.sample(championship_teams, 3)
         clubs = [team.copy() for team in selected_teams]
-        
+
         # Each player gets 3 RANDOM but viable options
         for club in clubs:
             # Random wages (Championship range)
             club['wage'] = random.randint(9000, 14000)
-            
+
             # Random starting overall (Championship-ready: 62-70)
             club['starting_overall'] = random.randint(62, 70)
-            
+
             # Random ELITE potential (future superstars: 82-98)
             club['starting_potential'] = random.randint(82, 98)
-            
+
             # Determine offer type based on stats
             stat_diff = club['starting_potential'] - club['starting_overall']
             if stat_diff >= 25:
@@ -125,7 +125,7 @@ class ClubSelectionView(discord.ui.View):
                 club['offer_type'] = "⚖️ Elite Growth"
             else:
                 club['offer_type'] = "💪 Strong Foundation"
-        
+
         return clubs
 
 
@@ -133,38 +133,41 @@ class ClubButton(discord.ui.Button):
     def __init__(self, club: dict, index: int, parent_view):
         self.club = club
         self.parent_view = parent_view
-        
+
         style = discord.ButtonStyle.primary
         emoji = "🔵"
-        
+
         label = f"{club['team_name']}"
-        
+
         super().__init__(
             label=label,
             style=style,
             emoji=emoji,
             custom_id=f"club_{index}"
         )
-    
+
     async def callback(self, interaction: discord.Interaction):
         if interaction.user.id != self.parent_view.user.id:
             await interaction.response.send_message("❌ This isn't your player creation!", ephemeral=True)
             return
-        
+
         await self.create_player(interaction)
-    
+
     async def create_player(self, interaction: discord.Interaction):
         """Create the player with selected club"""
-        
+
+        # CRITICAL: Defer immediately to prevent timeout
+        await interaction.response.defer(ephemeral=True)
+
         # Base stats (adjusted by position)
         base_stats = self.calculate_starting_stats(
-            self.parent_view.position, 
+            self.parent_view.position,
             self.club['starting_overall']
         )
-        
+
         overall = self.club['starting_overall']
         potential = self.club['starting_potential']
-        
+
         # Create player in database
         async with db.pool.acquire() as conn:
             await conn.execute('''
@@ -175,28 +178,28 @@ class ClubButton(discord.ui.Button):
                     form, morale, joined_week
                 ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
             ''',
-                interaction.user.id,
-                interaction.user.name,
-                self.parent_view.player_name,
-                self.parent_view.position,
-                18,
-                overall,
-                base_stats['pace'],
-                base_stats['shooting'],
-                base_stats['passing'],
-                base_stats['dribbling'],
-                base_stats['defending'],
-                base_stats['physical'],
-                potential,
-                self.club['team_id'],
-                self.club['league'],
-                self.club['wage'],
-                3,
-                50,  # Starting form
-                75,  # Starting morale
-                (await db.get_game_state())['current_week']
-            )
-        
+                               interaction.user.id,
+                               interaction.user.name,
+                               self.parent_view.player_name,
+                               self.parent_view.position,
+                               18,
+                               overall,
+                               base_stats['pace'],
+                               base_stats['shooting'],
+                               base_stats['passing'],
+                               base_stats['dribbling'],
+                               base_stats['defending'],
+                               base_stats['physical'],
+                               potential,
+                               self.club['team_id'],
+                               self.club['league'],
+                               self.club['wage'],
+                               3,
+                               50,  # Starting form
+                               75,  # Starting morale
+                               (await db.get_game_state())['current_week']
+                               )
+
         # Add news
         await db.add_news(
             f"NEW SIGNING: {self.parent_view.player_name} joins {self.club['team_name']}",
@@ -206,7 +209,7 @@ class ClubButton(discord.ui.Button):
             interaction.user.id,
             7
         )
-        
+
         # POST TO transfer-news CHANNEL
         transfer_info = {
             'player_name': self.parent_view.player_name,
@@ -222,87 +225,81 @@ class ClubButton(discord.ui.Button):
             'overall': overall,
             'potential': potential
         }
-        
-        from utils.event_poster import post_new_player_announcement
+
         for guild in self.parent_view.bot.guilds:
             try:
+                from utils.event_poster import post_new_player_announcement
                 await post_new_player_announcement(self.parent_view.bot, guild, transfer_info)
             except Exception as e:
                 print(f"Could not post new player announcement to {guild.name}: {e}")
 
-                # ============================================
-                # AUTO-START SEASON (BUT DON'T OPEN WINDOW YET)
-                # ============================================
-                state = await db.get_game_state()
-                if not state['season_started']:
-                    print(f"🎬 First player created! Auto-starting season...")
-                    from utils.season_manager import start_season
-                    await start_season()
+        # AUTO-START SEASON (BUT DON'T OPEN WINDOW YET)
+        state = await db.get_game_state()
+        if not state['season_started']:
+            print(f"🎬 First player created! Auto-starting season...")
+            from utils.season_manager import start_season
+            await start_season()
+            print(f"✅ Season auto-started! First match window will open at scheduled time.")
 
-                    # DON'T open window yet - let it open on schedule
-                    print(f"✅ Season auto-started! First match window will open at scheduled time.")
-                # ============================================
-                # END OF AUTO-START
-                # ============================================
+        # Success embed
+        from utils.football_data_api import get_team_crest_url
 
-                # Success embed
-                from utils.football_data_api import get_team_crest_url
+        # Get next match window info
+        state = await db.get_game_state()
+        next_match_str = "Check /season for schedule"
 
-                # Get next match window info
-                state = await db.get_game_state()
-                next_match_str = "Check /season for schedule"
+        if state['next_match_day']:
+            from datetime import datetime
+            next_match = datetime.fromisoformat(state['next_match_day'])
+            next_match_str = next_match.strftime('%A, %B %d at %I:%M %p')
 
-                if state['next_match_day']:
-                    from datetime import datetime
-                    next_match = datetime.fromisoformat(state['next_match_day'])
-                    next_match_str = next_match.strftime('%A, %B %d at %I:%M %p')
+        embed = discord.Embed(
+            title="✅ CAREER STARTED!",
+            description=f"## {self.parent_view.player_name}\n**{self.club['team_name']}** • {self.club['league']}",
+            color=discord.Color.green()
+        )
 
-                embed = discord.Embed(
-                    title="✅ CAREER STARTED!",
-                    description=f"## {self.parent_view.player_name}\n**{self.club['team_name']}** • {self.club['league']}",
-                    color=discord.Color.green()
-                )
+        crest = get_team_crest_url(self.club['team_id'])
+        if crest:
+            embed.set_thumbnail(url=crest)
 
-                crest = get_team_crest_url(self.club['team_id'])
-                if crest:
-                    embed.set_thumbnail(url=crest)
+        embed.add_field(
+            name="📊 Starting Stats",
+            value=f"**{overall} OVR** • ⭐ {potential} POT\n"
+                  f"Age: **18** • Position: **{self.parent_view.position}**\n\n"
+                  f"*Championship-ready player!*",
+            inline=False
+        )
 
-                embed.add_field(
-                    name="📊 Starting Stats",
-                    value=f"**{overall} OVR** • ⭐ {potential} POT\n"
-                          f"Age: **18** • Position: **{self.parent_view.position}**\n\n"
-                          f"*Championship-ready player!*",
-                    inline=False
-                )
+        embed.add_field(
+            name="💼 Contract",
+            value=f"**£{self.club['wage']:,}/week**\n3 years",
+            inline=True
+        )
 
-                embed.add_field(
-                    name="💼 Contract",
-                    value=f"**£{self.club['wage']:,}/week**\n3 years",
-                    inline=True
-                )
+        embed.add_field(
+            name="📅 First Match",
+            value=f"**{next_match_str}**\n\n*Everyone plays at the same time!*",
+            inline=True
+        )
 
-                embed.add_field(
-                    name="📅 First Match",
-                    value=f"**{next_match_str}**\n\n*Everyone plays at the same time!*",
-                    inline=True
-                )
+        embed.add_field(
+            name="📈 Next Steps",
+            value="• `/train` - Train daily to improve\n"
+                  "• `/season` - Check match schedule\n"
+                  "• `/profile` - View your stats",
+            inline=False
+        )
 
-                embed.add_field(
-                    name="📈 Next Steps",
-                    value="• `/train` - Train daily to improve\n"
-                          "• `/season` - Check match schedule\n"
-                          "• `/profile` - View your stats",
-                    inline=False
-                )
+        embed.set_footer(text="🕐 Matches open at scheduled times - no rush!")
 
-                embed.set_footer(text="🕐 Matches open at scheduled times - no rush!")
+        # Disable all buttons
+        for item in self.parent_view.children:
+            item.disabled = True
 
-                # Disable all buttons
-                for item in self.parent_view.children:
-                    item.disabled = True
+        # Use followup instead of edit_message
+        await interaction.followup.send(embed=embed, ephemeral=True)
 
-                await interaction.response.edit_message(embed=embed, view=self.parent_view)
-    
     def calculate_starting_stats(self, position: str, target_overall: int):
         """Calculate starting stats based on position and target overall"""
         if position == 'GK':
@@ -360,13 +357,13 @@ class ClubButton(discord.ui.Button):
                     'defending': 0.35,
                     'physical': 0.30
                 }
-        
+
         stats = {}
-        
+
         for stat, weight in weights.items():
             base = target_overall + (weight * 20)
             stats[stat] = max(30, min(90, int(base + random.randint(-5, 5))))
-        
+
         return stats
 
 
