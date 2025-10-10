@@ -80,6 +80,8 @@ class AdminCommands(commands.Cog):
             await self._debug_commands(interaction)
         elif action == "rebuild_commands":
             await self._rebuild_commands(interaction)
+        elif action == "fix_motm":
+            await self._fix_motm(interaction)
         elif action == "restart":
             await self._restart(interaction)
     
@@ -124,19 +126,44 @@ class AdminCommands(commands.Cog):
         await interaction.followup.send(embed=embed)
     
     async def _open_window(self, interaction: discord.Interaction):
-        """Open match window"""
-        await interaction.response.defer()
+        """Open match window with notifications"""
+        await interaction.response.defer(ephemeral=True)
         
         from utils.season_manager import open_match_window
-        await open_match_window(bot=self.bot)
+        
+        # Open the window
+        await open_match_window()
+        
+        # CRITICAL: Send notifications to all servers
+        await self.bot.notify_match_window_open()
+        
+        state = await db.get_game_state()
         
         embed = discord.Embed(
-            title="✅ Match Window Opened",
-            description=f"Window open for {config.MATCH_WINDOW_HOURS} hours",
+            title="✅ Match Window Force Opened",
+            description=f"**Week {state['current_week']}** matches are now playable!\n\n"
+                       f"Notifications sent to all servers.",
             color=discord.Color.green()
         )
         
-        await interaction.followup.send(embed=embed)
+        from datetime import datetime
+        if state['match_window_closes']:
+            closes = datetime.fromisoformat(state['match_window_closes'])
+            timestamp = int(closes.timestamp())
+            
+            embed.add_field(
+                name="⏰ Closes At",
+                value=f"<t:{timestamp}:t> (<t:{timestamp}:R>)",
+                inline=True
+            )
+        
+        embed.add_field(
+            name="📢 Notifications",
+            value=f"✅ Posted to {len(self.bot.guilds)} server(s)",
+            inline=True
+        )
+        
+        await interaction.followup.send(embed=embed, ephemeral=True)
     
     async def _close_window(self, interaction: discord.Interaction):
         """Close match window"""
@@ -423,6 +450,26 @@ class AdminCommands(commands.Cog):
                 f"⚠️ Restart Discord to see changes!",
                 ephemeral=True
             )
+        except Exception as e:
+            await interaction.followup.send(f"❌ Error: {e}", ephemeral=True)
+    
+    async def _fix_motm(self, interaction: discord.Interaction):
+        """Fix MOTM columns"""
+        await interaction.response.defer(ephemeral=True)
+        
+        try:
+            async with db.pool.acquire() as conn:
+                # Add MOTM columns if missing
+                await conn.execute("""
+                    ALTER TABLE players 
+                    ADD COLUMN IF NOT EXISTS season_motm INTEGER DEFAULT 0
+                """)
+                await conn.execute("""
+                    ALTER TABLE players 
+                    ADD COLUMN IF NOT EXISTS career_motm INTEGER DEFAULT 0
+                """)
+            
+            await interaction.followup.send("✅ MOTM columns fixed!", ephemeral=True)
         except Exception as e:
             await interaction.followup.send(f"❌ Error: {e}", ephemeral=True)
     
