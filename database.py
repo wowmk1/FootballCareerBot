@@ -227,7 +227,8 @@ class Database:
                     season_apps INTEGER DEFAULT 0,
                     market_value INTEGER DEFAULT 10000000,
                     retired BOOLEAN DEFAULT FALSE,
-                    is_regen BOOLEAN DEFAULT FALSE
+                    is_regen BOOLEAN DEFAULT FALSE,
+                    potential INTEGER DEFAULT 75
                 )
             ''')
             
@@ -521,19 +522,22 @@ class Database:
             for npc in old_npcs:
                 # Mark as retired
                 await conn.execute(
-                    "UPDATE npc_players SET retired = TRUE WHERE npc_id = $1",
+                    "UPDATE npc_players SET retired = TRUE, team_id = 'retired' WHERE npc_id = $1",
                     npc['npc_id']
                 )
                 
-                # Create regen to replace them
-                await self.create_regen_player(npc['team_id'], npc['position'], npc['overall_rating'])
+                # Create regen ONLY if they were on a team
+                if npc['team_id'] and npc['team_id'] not in ['free_agent', 'retired']:
+                    await self.create_regen_player(npc['team_id'], npc['position'], npc['overall_rating'])
                 
                 # News for notable retirements (80+ rated)
                 if npc['overall_rating'] >= 80:
+                    team = await self.get_team(npc['team_id'])
+                    team_name = team['team_name'] if team else 'Unknown'
                     await self.add_news(
                         f"Star Retires: {npc['player_name']}",
-                        f"Legendary {npc['player_name']} ({npc['overall_rating']} OVR) retires at {npc['age']}. "
-                        f"A regen will take his place in {npc['team_id']}.",
+                        f"Legendary {npc['player_name']} ({npc['overall_rating']} OVR) retires at {npc['age']} from {team_name}. "
+                        f"An 18-year-old regen will take his place.",
                         "league_news",
                         None,
                         7
@@ -548,7 +552,6 @@ class Database:
     async def create_regen_player(self, team_id: str, position: str, original_rating: int = None):
         """Create regenerated player to replace retired player"""
         from data.player_names import get_random_player_name
-        from utils.player_generator import calculate_regen_rating
         
         team = await self.get_team(team_id)
         if not team:
@@ -556,15 +559,32 @@ class Database:
         
         name = get_random_player_name()
         
-        # Regen rating is based on league and position, with slight randomness
+        # Regen rating is 70-85% of original player's rating
         if original_rating:
-            # Regen is 60-80% of original player's rating
-            base_rating = int(original_rating * random.uniform(0.6, 0.8))
+            rating_multiplier = random.uniform(0.70, 0.85)
+            base_rating = int(original_rating * rating_multiplier)
         else:
-            base_rating = calculate_regen_rating(team['league'], position)
+            # Fallback if no original rating provided
+            if team['league'] == 'Premier League':
+                base_rating = random.randint(65, 75)
+            elif team['league'] == 'Championship':
+                base_rating = random.randint(58, 68)
+            else:
+                base_rating = random.randint(50, 60)
         
-        # Young regens (18-21)
-        age = random.randint(18, 21)
+        # Apply league min/max
+        if team['league'] == 'Premier League':
+            base_rating = max(65, min(80, base_rating))
+        elif team['league'] == 'Championship':
+            base_rating = max(58, min(72, base_rating))
+        else:
+            base_rating = max(50, min(65, base_rating))
+        
+        # Young regen (18 years old)
+        age = 18
+        
+        # High potential (10-20 points above current rating)
+        potential = min(99, base_rating + random.randint(10, 20))
         
         # Calculate stats based on position and rating
         if position == 'GK':
@@ -616,11 +636,12 @@ class Database:
         async with self.pool.acquire() as conn:
             await conn.execute('''
                 INSERT INTO npc_players 
-                (player_name, team_id, position, age, overall_rating, pace, shooting, passing, dribbling, defending, physical, is_regen)
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, TRUE)
-            ''', name, team_id, position, age, base_rating, pace, shooting, passing, dribbling, defending, physical)
+                (player_name, team_id, position, age, overall_rating, pace, shooting, passing, dribbling, defending, physical, potential, is_regen)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, TRUE)
+            ''', name, team_id, position, age, base_rating, pace, shooting, passing, dribbling, defending, physical, potential)
         
-        print(f"  Created regen: {name} ({base_rating} OVR {position}) for {team_id}")
+        if team:
+            print(f"  🆕 Regen: {name} ({position}, {base_rating} OVR, {potential} POT) joins {team['team_name']}")
     
     async def wipe_all_user_players(self):
         """ADMIN: Delete all user-created players and reset game state"""
