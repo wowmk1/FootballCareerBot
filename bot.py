@@ -479,49 +479,49 @@ class FootballBot(commands.Bot):
     # ============================================
 
     async def on_ready(self):
-    """Called when bot is fully ready"""
-    state = await db.get_game_state()
+        """Called when bot is fully ready"""
+        state = await db.get_game_state()
 
-    print("\n" + "=" * 50)
-    print(f'✅ Bot logged in as {self.user.name}')
-    print(f'✅ Connected to {len(self.guilds)} server(s)')
+        print("\n" + "=" * 50)
+        print(f'✅ Bot logged in as {self.user.name}')
+        print(f'✅ Connected to {len(self.guilds)} server(s)')
 
-    if state['season_started']:
-        print(f'📅 Season: {state["current_season"]} - Week {state["current_week"]}/{config.SEASON_TOTAL_WEEKS}')
-    else:
-        print(f'⏳ Season not started')
-
-    # Show next match window
-    from utils.season_manager import get_next_match_window, EST
-    try:
-        next_window = get_next_match_window()
-        print(f'⏰ Next match window: {next_window.strftime("%A, %B %d at %I:%M %p EST")}')
-    except:
-        pass
-
-    print("=" * 50 + "\n")
-
-    # 🔥 NEW: Dynamic bot presence based on window status
-    if state['season_started']:
-        if state['match_window_open']:
-            # Window is OPEN - show green status
-            status_text = f"🟢 WINDOW OPEN | Week {state['current_week']}"
+        if state['season_started']:
+            print(f'📅 Season: {state["current_season"]} - Week {state["current_week"]}/{config.SEASON_TOTAL_WEEKS}')
         else:
-            # Window is CLOSED - show next window time
-            try:
-                next_window = get_next_match_window()
-                day = next_window.strftime('%a')  # Mon, Wed, Sat
-                status_text = f"Next: {day} 3PM EST | Week {state['current_week']}"
-            except:
-                status_text = f"⚽ Week {state['current_week']} | /season"
-    else:
-        # Season not started
-        status_text = "⚽ /start to begin"
-    
-    await self.change_presence(
-        activity=discord.Game(name=status_text),
-        status=discord.Status.online
-    )
+            print(f'⏳ Season not started')
+
+        # Show next match window
+        from utils.season_manager import get_next_match_window, EST
+        try:
+            next_window = get_next_match_window()
+            print(f'⏰ Next match window: {next_window.strftime("%A, %B %d at %I:%M %p EST")}')
+        except:
+            pass
+
+        print("=" * 50 + "\n")
+
+        # 🔥 NEW: Dynamic bot presence based on window status
+        if state['season_started']:
+            if state['match_window_open']:
+                # Window is OPEN - show green status
+                status_text = f"🟢 WINDOW OPEN | Week {state['current_week']}"
+            else:
+                # Window is CLOSED - show next window time
+                try:
+                    next_window = get_next_match_window()
+                    day = next_window.strftime('%a')  # Mon, Wed, Sat
+                    status_text = f"Next: {day} 3PM EST | Week {state['current_week']}"
+                except:
+                    status_text = f"⚽ Week {state['current_week']} | /season"
+        else:
+            # Season not started
+            status_text = "⚽ /start to begin"
+        
+        await self.change_presence(
+            activity=discord.Game(name=status_text),
+            status=discord.Status.online
+        )
 
 
 # Create bot instance
