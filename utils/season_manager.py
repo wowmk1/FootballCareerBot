@@ -1,7 +1,7 @@
 """
 SIMPLIFIED Season Manager - Fixed Schedule System
 Match windows: Mon/Wed/Sat 3-5 PM EST
-No complex date calculations, just check the clock
+WITH AUTOMATIC TRANSFER OFFER GENERATION
 """
 import discord
 from database import db
@@ -188,7 +188,7 @@ async def close_match_window():
 
 
 async def advance_week():
-    """Advance to next week - simplified"""
+    """Advance to next week - WITH AUTOMATIC TRANSFER GENERATION"""
     state = await db.get_game_state()
     current_week = state['current_week']
     next_week = current_week + 1
@@ -201,11 +201,42 @@ async def advance_week():
     # Update week
     await db.update_game_state(current_week=next_week)
     
-    # Check transfer window
+    # ============================================
+    # 🔥 TRANSFER WINDOW MANAGEMENT
+    # ============================================
+    
+    # Check if transfer window should OPEN
     if next_week in config.TRANSFER_WINDOW_WEEKS:
         await open_transfer_window()
+        
+        # 🎯 GENERATE TRANSFER OFFERS FOR ALL PLAYERS
+        from utils.transfer_window_manager import process_weekly_transfer_offers
+        try:
+            offers_generated = await process_weekly_transfer_offers(bot=None)
+            print(f"💼 Generated {offers_generated} transfer offers for players")
+        except Exception as e:
+            print(f"⚠️ Could not generate transfer offers: {e}")
+            import traceback
+            traceback.print_exc()
+    
+    # Check if transfer window should CLOSE
     elif current_week in config.TRANSFER_WINDOW_WEEKS and next_week not in config.TRANSFER_WINDOW_WEEKS:
         await close_transfer_window()
+    
+    # If we're IN a transfer window (but not opening/closing), still generate offers
+    elif next_week in config.TRANSFER_WINDOW_WEEKS:
+        # Generate weekly offers during active transfer windows
+        from utils.transfer_window_manager import process_weekly_transfer_offers
+        try:
+            offers_generated = await process_weekly_transfer_offers(bot=None)
+            if offers_generated > 0:
+                print(f"💼 Generated {offers_generated} new transfer offers (ongoing window)")
+        except Exception as e:
+            print(f"⚠️ Could not generate transfer offers: {e}")
+    
+    # ============================================
+    # END TRANSFER WINDOW MANAGEMENT
+    # ============================================
     
     print(f"📅 Advanced to Week {next_week}")
     next_window = get_next_match_window()
@@ -215,11 +246,26 @@ async def advance_week():
 async def open_transfer_window():
     """Open transfer window"""
     await db.update_game_state(transfer_window_active=True)
-    print("💼 Transfer window opened")
+    print("💼 Transfer window OPENED")
 
 
 async def close_transfer_window():
-    """Close transfer window"""
+    """Close transfer window and trigger NPC transfers"""
+    
+    # ============================================
+    # 🔥 SIMULATE NPC TRANSFERS
+    # ============================================
+    from utils.transfer_window_manager import simulate_npc_transfers
+    try:
+        npc_transfers = await simulate_npc_transfers()
+        print(f"💼 {npc_transfers} NPC transfers completed")
+    except Exception as e:
+        print(f"⚠️ Could not simulate NPC transfers: {e}")
+        import traceback
+        traceback.print_exc()
+    
+    # ============================================
+    
     await db.update_game_state(transfer_window_active=False)
     
     # Expire all pending offers
@@ -228,7 +274,7 @@ async def close_transfer_window():
             "UPDATE transfer_offers SET status = 'expired' WHERE status = 'pending'"
         )
     
-    print("💼 Transfer window closed")
+    print("💼 Transfer window CLOSED")
 
 
 async def end_season():
@@ -278,7 +324,10 @@ async def end_season():
     print(f"✅ Ready for Season {new_season}")
 
 
-# Warning functions for bot to call
+# ============================================
+# WARNING FUNCTIONS - Called by bot.py
+# ============================================
+
 async def send_1h_warning(bot):
     """Send 1 hour warning to all servers"""
     state = await db.get_game_state()
@@ -293,7 +342,6 @@ async def send_1h_warning(bot):
                 channel = discord.utils.get(guild.text_channels, name="general")
             
             if channel:
-                import discord
                 embed = discord.Embed(
                     title="⏰ Match Window Opening in 1 Hour!",
                     description=f"**Week {state['current_week']}** matches start at **3:00 PM EST**!",
@@ -336,7 +384,6 @@ async def send_30m_warning(bot):
         try:
             user = await bot.fetch_user(player['user_id'])
             
-            import discord
             embed = discord.Embed(
                 title="⏰ Match Starting in 30 Minutes!",
                 description=f"**Week {state['current_week']}** match window opens at **3:00 PM EST**!",
@@ -370,7 +417,6 @@ async def send_15m_warning(bot):
                 channel = discord.utils.get(guild.text_channels, name="general")
             
             if channel:
-                import discord
                 embed = discord.Embed(
                     title="🚨 Match Window Opening VERY Soon!",
                     description=f"**Week {state['current_week']}** matches start in **15 minutes**!",
@@ -421,7 +467,6 @@ async def send_closing_warning(bot):
             try:
                 user = await bot.fetch_user(player['user_id'])
                 
-                import discord
                 embed = discord.Embed(
                     title="⚠️ Match Window Closing in 15 Minutes!",
                     description=f"**You haven't played your Week {current_week} match!**",
