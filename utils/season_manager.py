@@ -11,7 +11,7 @@ from utils.transfer_window_manager import (
 
 
 async def start_season():
-    """Initialize and start the season"""
+    """Initialize and start the season with SCHEDULED match windows"""
     from utils.fixture_generator import generate_all_fixtures
 
     await db.update_game_state(
@@ -23,15 +23,21 @@ async def start_season():
 
     await generate_all_fixtures()
 
-    next_match = datetime.now() + timedelta(days=1)
-    next_match = next_match.replace(hour=config.MATCH_START_HOUR, minute=0, second=0, microsecond=0)
+    # Schedule first match window at a predictable time
+    now = datetime.now()
+    next_match = now.replace(hour=config.MATCH_START_HOUR, minute=0, second=0, microsecond=0)
+
+    # If today's start hour has passed, schedule for tomorrow
+    if now.hour >= config.MATCH_START_HOUR:
+        next_match = next_match + timedelta(days=1)
 
     await db.update_game_state(
         next_match_day=next_match.isoformat()
     )
 
     print(f"✅ Season {config.CURRENT_SEASON} started!")
-    print(f"📅 First match day scheduled for {next_match.strftime('%Y-%m-%d %H:%M')}")
+    print(f"📅 First match window: {next_match.strftime('%A, %B %d at %I:%M %p')}")
+    print(f"⏰ Players have time to join before matches start!")
 
 
 async def advance_week():
@@ -52,10 +58,10 @@ async def advance_week():
         await close_match_window()
 
     new_week = current_week + 1
-    
-    print(f"\n{'='*60}")
+
+    print(f"\n{'=' * 60}")
     print(f"ADVANCING TO WEEK {new_week}")
-    print(f"{'='*60}")
+    print(f"{'=' * 60}")
 
     # Update week number
     next_match = datetime.now() + timedelta(days=2)
@@ -79,7 +85,7 @@ async def advance_week():
             print(f"✅ Generated {offers_count} transfer offers")
         except Exception as e:
             print(f"❌ Error generating offers: {e}")
-        
+
         # SIMULATE NPC TRANSFERS
         try:
             npc_count = await simulate_npc_transfers()
@@ -92,8 +98,8 @@ async def advance_week():
     print(f"\n✅ Advanced to Week {new_week}/{config.SEASON_TOTAL_WEEKS}")
     if new_week <= config.SEASON_TOTAL_WEEKS:
         print(f"📅 Next match day: {next_match.strftime('%Y-%m-%d %H:%M')}")
-    
-    print(f"{'='*60}\n")
+
+    print(f"{'=' * 60}\n")
 
 
 async def open_match_window(bot=None):
