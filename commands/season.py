@@ -4,6 +4,7 @@ from discord.ext import commands
 from database import db
 import config
 from datetime import datetime, timedelta
+from utils.season_manager import check_match_day_trigger
 
 
 class SeasonCommands(commands.Cog):
@@ -15,6 +16,12 @@ class SeasonCommands(commands.Cog):
         """View season information - WITH DISCORD TIMESTAMPS"""
 
         state = await db.get_game_state()
+
+        # Auto-trigger check
+        triggered = await check_match_day_trigger(bot=self.bot)
+        if triggered:
+            state = await db.get_game_state()  # Refresh state after trigger
+            print("✅ Auto-triggered via /season command")
 
         if not state['season_started']:
             embed = discord.Embed(
