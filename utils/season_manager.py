@@ -154,7 +154,7 @@ async def open_match_window():
     return True
 
 
-async def close_match_window():
+async def close_match_window(bot=None):
     """Close match window and simulate unplayed matches"""
     state = await db.get_game_state()
     current_week = state['current_week']
@@ -184,7 +184,7 @@ async def close_match_window():
     print(f"   Time: {datetime.now(EST).strftime('%A %I:%M %p EST')}")
     
     # Advance to next week
-    await advance_week()
+    await advance_week(bot=bot)
 
 
 async def advance_week(bot=None):
