@@ -41,7 +41,7 @@ async def start_season():
 
 
 async def advance_week():
-    """Advance to the next week - CALLED BY /admin advance_week"""
+    """Advance to the next week - SCHEDULES 3 MATCHES PER WEEK"""
     state = await db.get_game_state()
 
     if not state['season_started']:
@@ -54,6 +54,7 @@ async def advance_week():
         await end_season()
         return
 
+    # Close window if still open
     if state['match_window_open']:
         await close_match_window()
 
@@ -63,14 +64,34 @@ async def advance_week():
     print(f"ADVANCING TO WEEK {new_week}")
     print(f"{'=' * 60}")
 
-    # Update week number
-    next_match = datetime.now() + timedelta(days=2)
-    next_match = next_match.replace(hour=config.MATCH_START_HOUR, minute=0, second=0, microsecond=0)
+    # ============================================
+    # SCHEDULE NEXT 3 MATCHES (Mon/Wed/Sat pattern)
+    # ============================================
+    now = datetime.now()
+
+    # Find next Monday at MATCH_START_HOUR
+    days_until_monday = (7 - now.weekday()) % 7  # 0 = Monday
+    if days_until_monday == 0 and now.hour >= config.MATCH_START_HOUR:
+        days_until_monday = 7  # If it's Monday but past match time, go to next Monday
+
+    next_monday = now + timedelta(days=days_until_monday)
+    next_monday = next_monday.replace(hour=config.MATCH_START_HOUR, minute=0, second=0, microsecond=0)
+
+    # Store when the 3 matches will be
+    match_1 = next_monday  # Monday
+    match_2 = next_monday + timedelta(days=2)  # Wednesday
+    match_3 = next_monday + timedelta(days=5)  # Saturday
+
+    print(f"📅 Week {new_week} Schedule:")
+    print(f"   Match 1: {match_1.strftime('%A, %B %d at %I:%M %p')}")
+    print(f"   Match 2: {match_2.strftime('%A, %B %d at %I:%M %p')}")
+    print(f"   Match 3: {match_3.strftime('%A, %B %d at %I:%M %p')}")
 
     await db.update_game_state(
         current_week=new_week,
-        next_match_day=next_match.isoformat() if new_week <= config.SEASON_TOTAL_WEEKS else None
+        next_match_day=match_1.isoformat()  # Schedule first of 3 matches
     )
+    # ============================================
 
     # CHECK AND UPDATE TRANSFER WINDOW
     await check_and_update_transfer_window()
@@ -96,9 +117,6 @@ async def advance_week():
         print(f"❌ Transfer window is CLOSED for Week {new_week}")
 
     print(f"\n✅ Advanced to Week {new_week}/{config.SEASON_TOTAL_WEEKS}")
-    if new_week <= config.SEASON_TOTAL_WEEKS:
-        print(f"📅 Next match day: {next_match.strftime('%Y-%m-%d %H:%M')}")
-
     print(f"{'=' * 60}\n")
 
 
