@@ -626,17 +626,15 @@ class MatchEngine:
                     participant['match_rating']
                 )
                 print(
-                    f"  📊 Form updated for user {participant['user_id']}: "
-                    f"Rating {participant['match_rating']:.1f} → Form {new_form}"
-                )
+                    f"  📊 Form updated for user {participant['user_id']}: Rating {participant['match_rating']:.1f} → Form {new_form}")
 
-        # Add this code to match_engine.py in the end_match() function
-        # Place it right after the form update section (around line 552)
+                # Add this code to match_engine.py in the end_match() function
+                # Place it right after the form update section (around line 552)
 
-        # ============================================
-        # UPDATE MORALE BASED ON MATCH RESULT
-        # ============================================
-        from utils.form_morale_system import update_player_morale
+                # ============================================
+                # UPDATE MORALE BASED ON MATCH RESULT
+                # ============================================
+                from utils.form_morale_system import update_player_morale
 
         for participant in participants:
             if participant['user_id']:
@@ -664,9 +662,9 @@ class MatchEngine:
                         await update_player_morale(participant['user_id'], 'draw')
                         print(f"  😐 Morale unchanged for user {participant['user_id']} (DRAW)")
 
-        # ============================================
-        # END OF MORALE UPDATE
-        # ============================================
+                # ============================================
+                # END OF MORALE UPDATE
+                # ============================================
 
         # ============================================
         # END OF FORM UPDATE
