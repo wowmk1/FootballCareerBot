@@ -1,6 +1,6 @@
 """
 Enhanced /start command with club selection
-Add this as commands/start.py
+FIXED VERSION - Auto-opens match window for first player
 """
 
 import discord
@@ -53,7 +53,6 @@ class StartCommands(commands.Cog):
         
         # Show all 3 offers with full details
         for i, club in enumerate(view.clubs, 1):
-            # All Championship clubs
             league_emoji = "🔵"
             
             embed.add_field(
@@ -108,7 +107,6 @@ class ClubSelectionView(discord.ui.View):
         clubs = [team.copy() for team in selected_teams]
         
         # Each player gets 3 RANDOM but viable options
-        # All are Championship-ready with ELITE potential
         for club in clubs:
             # Random wages (Championship range)
             club['wage'] = random.randint(9000, 14000)
@@ -136,11 +134,9 @@ class ClubButton(discord.ui.Button):
         self.club = club
         self.parent_view = parent_view
         
-        # Color based on league
-        style = discord.ButtonStyle.primary  # Blue
+        style = discord.ButtonStyle.primary
         emoji = "🔵"
         
-        # Show league and wage in button label
         label = f"{club['team_name']}"
         
         super().__init__(
@@ -151,24 +147,21 @@ class ClubButton(discord.ui.Button):
         )
     
     async def callback(self, interaction: discord.Interaction):
-        # Verify it's the correct user
         if interaction.user.id != self.parent_view.user.id:
             await interaction.response.send_message("❌ This isn't your player creation!", ephemeral=True)
             return
         
-        # Create the player
         await self.create_player(interaction)
     
     async def create_player(self, interaction: discord.Interaction):
         """Create the player with selected club"""
         
-        # Base stats (adjusted by position) - use club's predetermined values
+        # Base stats (adjusted by position)
         base_stats = self.calculate_starting_stats(
             self.parent_view.position, 
             self.club['starting_overall']
         )
         
-        # Use the club's predetermined overall and potential
         overall = self.club['starting_overall']
         potential = self.club['starting_potential']
         
@@ -186,7 +179,7 @@ class ClubButton(discord.ui.Button):
                 interaction.user.name,
                 self.parent_view.player_name,
                 self.parent_view.position,
-                18,  # Starting age
+                18,
                 overall,
                 base_stats['pace'],
                 base_stats['shooting'],
@@ -198,7 +191,7 @@ class ClubButton(discord.ui.Button):
                 self.club['team_id'],
                 self.club['league'],
                 self.club['wage'],
-                3,  # 3-year contract
+                3,
                 50,  # Starting form
                 75,  # Starting morale
                 (await db.get_game_state())['current_week']
@@ -214,7 +207,7 @@ class ClubButton(discord.ui.Button):
             7
         )
         
-        # POST TO transfer-news CHANNEL IN ALL SERVERS
+        # POST TO transfer-news CHANNEL
         transfer_info = {
             'player_name': self.parent_view.player_name,
             'from_team': 'Free Agent',
@@ -236,61 +229,82 @@ class ClubButton(discord.ui.Button):
                 await post_new_player_announcement(self.parent_view.bot, guild, transfer_info)
             except Exception as e:
                 print(f"Could not post new player announcement to {guild.name}: {e}")
-        
-        # AUTO-START SEASON if this is the first player
-        state = await db.get_game_state()
-        if not state['season_started']:
-            print(f"🎬 First player created! Auto-starting season...")
-            from utils.season_manager import start_season
-            await start_season()
-            print(f"✅ Season auto-started for first player")
-        
-        # Success embed
-        from utils.football_data_api import get_team_crest_url
-        
-        embed = discord.Embed(
-            title="✅ CAREER STARTED!",
-            description=f"## {self.parent_view.player_name}\n**{self.club['team_name']}** • {self.club['league']}",
-            color=discord.Color.green()
-        )
-        
-        crest = get_team_crest_url(self.club['team_id'])
-        if crest:
-            embed.set_thumbnail(url=crest)
-        
-        embed.add_field(
-            name="📊 Starting Stats",
-            value=f"**{overall} OVR** • ⭐ {potential} POT\n"
-                  f"Age: **18** • Position: **{self.parent_view.position}**\n\n"
-                  f"*Championship-ready player!*",
-            inline=False
-        )
-        
-        embed.add_field(
-            name="💼 Contract",
-            value=f"**£{self.club['wage']:,}/week**\n3 years",
-            inline=True
-        )
-        
-        embed.add_field(
-            name="📈 Next Steps",
-            value="• `/train` - Train daily to improve\n"
-                  "• `/season` - Check match schedule\n"
-                  "• `/profile` - View your stats",
-            inline=True
-        )
-        
-        embed.set_footer(text="Welcome to your football career! 🎉")
-        
-        # Disable all buttons
-        for item in self.parent_view.children:
-            item.disabled = True
-        
-        await interaction.response.edit_message(embed=embed, view=self.parent_view)
+
+                # ============================================
+                # AUTO-START SEASON (BUT DON'T OPEN WINDOW YET)
+                # ============================================
+                state = await db.get_game_state()
+                if not state['season_started']:
+                    print(f"🎬 First player created! Auto-starting season...")
+                    from utils.season_manager import start_season
+                    await start_season()
+
+                    # DON'T open window yet - let it open on schedule
+                    print(f"✅ Season auto-started! First match window will open at scheduled time.")
+                # ============================================
+                # END OF AUTO-START
+                # ============================================
+
+                # Success embed
+                from utils.football_data_api import get_team_crest_url
+
+                # Get next match window info
+                state = await db.get_game_state()
+                next_match_str = "Check /season for schedule"
+
+                if state['next_match_day']:
+                    from datetime import datetime
+                    next_match = datetime.fromisoformat(state['next_match_day'])
+                    next_match_str = next_match.strftime('%A, %B %d at %I:%M %p')
+
+                embed = discord.Embed(
+                    title="✅ CAREER STARTED!",
+                    description=f"## {self.parent_view.player_name}\n**{self.club['team_name']}** • {self.club['league']}",
+                    color=discord.Color.green()
+                )
+
+                crest = get_team_crest_url(self.club['team_id'])
+                if crest:
+                    embed.set_thumbnail(url=crest)
+
+                embed.add_field(
+                    name="📊 Starting Stats",
+                    value=f"**{overall} OVR** • ⭐ {potential} POT\n"
+                          f"Age: **18** • Position: **{self.parent_view.position}**\n\n"
+                          f"*Championship-ready player!*",
+                    inline=False
+                )
+
+                embed.add_field(
+                    name="💼 Contract",
+                    value=f"**£{self.club['wage']:,}/week**\n3 years",
+                    inline=True
+                )
+
+                embed.add_field(
+                    name="📅 First Match",
+                    value=f"**{next_match_str}**\n\n*Everyone plays at the same time!*",
+                    inline=True
+                )
+
+                embed.add_field(
+                    name="📈 Next Steps",
+                    value="• `/train` - Train daily to improve\n"
+                          "• `/season` - Check match schedule\n"
+                          "• `/profile` - View your stats",
+                    inline=False
+                )
+
+                embed.set_footer(text="🕐 Matches open at scheduled times - no rush!")
+
+                # Disable all buttons
+                for item in self.parent_view.children:
+                    item.disabled = True
+
+                await interaction.response.edit_message(embed=embed, view=self.parent_view)
     
     def calculate_starting_stats(self, position: str, target_overall: int):
         """Calculate starting stats based on position and target overall"""
-        # Position-based stat distributions
         if position == 'GK':
             weights = {
                 'pace': 0.08,
@@ -347,13 +361,10 @@ class ClubButton(discord.ui.Button):
                     'physical': 0.30
                 }
         
-        # Generate stats around the target overall with position weights
         stats = {}
-        variance = random.randint(-3, 3)  # Small variance for realism
         
         for stat, weight in weights.items():
-            # Calculate stat value based on target overall and weight
-            base = target_overall + (weight * 20)  # High-weight stats get bonus
+            base = target_overall + (weight * 20)
             stats[stat] = max(30, min(90, int(base + random.randint(-5, 5))))
         
         return stats
