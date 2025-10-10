@@ -79,6 +79,62 @@ class FootballBot(commands.Bot):
                     print("✅ last_reminded column already exists")
         except Exception as e:
             print(f"⚠️ Migration warning: {e}")
+        
+        # ============================================
+        # AUTO-MIGRATE: Add season_motm column
+        # ============================================
+        try:
+            async with db.pool.acquire() as conn:
+                result = await conn.fetchrow("""
+                    SELECT column_name 
+                    FROM information_schema.columns 
+                    WHERE table_name = 'players' AND column_name = 'season_motm'
+                """)
+                
+                if not result:
+                    print("📋 Adding season_motm column...")
+                    await conn.execute("""
+                        ALTER TABLE players 
+                        ADD COLUMN season_motm INTEGER DEFAULT 0
+                    """)
+                    await conn.execute("""
+                        UPDATE players 
+                        SET season_motm = 0 
+                        WHERE season_motm IS NULL
+                    """)
+                    print("✅ season_motm column added")
+                else:
+                    print("✅ season_motm column already exists")
+        except Exception as e:
+            print(f"⚠️ Migration warning: {e}")
+        
+        # ============================================
+        # AUTO-MIGRATE: Add career_motm column
+        # ============================================
+        try:
+            async with db.pool.acquire() as conn:
+                result = await conn.fetchrow("""
+                    SELECT column_name 
+                    FROM information_schema.columns 
+                    WHERE table_name = 'players' AND column_name = 'career_motm'
+                """)
+                
+                if not result:
+                    print("📋 Adding career_motm column...")
+                    await conn.execute("""
+                        ALTER TABLE players 
+                        ADD COLUMN career_motm INTEGER DEFAULT 0
+                    """)
+                    await conn.execute("""
+                        UPDATE players 
+                        SET career_motm = 0 
+                        WHERE career_motm IS NULL
+                    """)
+                    print("✅ career_motm column added")
+                else:
+                    print("✅ career_motm column already exists")
+        except Exception as e:
+            print(f"⚠️ Migration warning: {e}")
         # ============================================
         # END AUTO-MIGRATE
         # ============================================
