@@ -54,10 +54,6 @@ async def advance_week():
         await end_season()
         return
 
-    # Close window if still open
-    if state['match_window_open']:
-        await close_match_window()
-
     new_week = current_week + 1
 
     print(f"\n{'=' * 60}")
@@ -189,9 +185,12 @@ async def close_match_window():
         unplayed = [dict(row) for row in rows]
 
     if unplayed:
-        print(f"🤖 Auto-simulating {len(unplayed)} unplayed matches...")
-        for fixture in unplayed:
-            await simulate_match(fixture)
+    print(f"🤖 Auto-simulating {len(unplayed)} unplayed matches for Week {current_week}...")
+    for fixture in unplayed:
+        await simulate_match(fixture)
+    print(f"✅ Week {current_week} simulation complete!")
+    else:
+    print(f"✅ Week {current_week}: All matches were played by users!")
 
     # Mark all fixtures as unplayable since week is over
     async with db.pool.acquire() as conn:
