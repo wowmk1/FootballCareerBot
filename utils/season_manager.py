@@ -3,6 +3,7 @@ SIMPLIFIED Season Manager - Fixed Schedule System
 Match windows: Mon/Wed/Sat 3-5 PM EST
 No complex date calculations, just check the clock
 """
+import discord
 from database import db
 from datetime import datetime, timedelta
 import pytz
