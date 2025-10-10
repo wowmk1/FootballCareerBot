@@ -24,7 +24,7 @@ class FootballBot(commands.Bot):
 
     async def setup_hook(self):
         """Called when bot is starting up"""
-        print("🔄 Setting up bot...")
+        print("📄 Setting up bot...")
 
         await db.connect()
 
@@ -99,7 +99,7 @@ class FootballBot(commands.Bot):
 
         # Sync commands (with rate limit protection)
         try:
-            print("🔄 Syncing commands with Discord...")
+            print("📄 Syncing commands with Discord...")
             synced = await self.tree.sync()
             print(f"✅ Synced {len(synced)} slash commands globally")
         except discord.HTTPException as e:
@@ -349,12 +349,12 @@ class FootballBot(commands.Bot):
             # CLOSE WINDOW: If it's end time and window is open
             elif is_end_time and window_open:
                 print("🔴 Closing match window (fixed schedule)")
-                await close_match_window()
+                await close_match_window(bot=self)  # ✅ FIXED: Pass bot instance for transfer notifications
             
             # AUTO-CLOSE: If window is open but it's NOT window time (safety check)
             elif window_open and not is_window_time:
                 print("⚠️ Window is open outside of match hours - auto-closing")
-                await close_match_window()
+                await close_match_window(bot=self)  # ✅ FIXED: Pass bot instance here too
                 
         except Exception as e:
             print(f"❌ Error in match window check: {e}")
