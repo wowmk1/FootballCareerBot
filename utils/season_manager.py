@@ -187,8 +187,11 @@ async def close_match_window():
     await advance_week()
 
 
-async def advance_week():
-    """Advance to next week - WITH AUTOMATIC TRANSFER GENERATION"""
+async def advance_week(bot=None):
+    """
+    Advance to next week - WITH AUTOMATIC TRANSFER GENERATION
+    NOTE: bot parameter added to pass to transfer functions
+    """
     state = await db.get_game_state()
     current_week = state['current_week']
     next_week = current_week + 1
@@ -212,7 +215,7 @@ async def advance_week():
         # 🎯 GENERATE TRANSFER OFFERS FOR ALL PLAYERS
         from utils.transfer_window_manager import process_weekly_transfer_offers
         try:
-            offers_generated = await process_weekly_transfer_offers(bot=None)
+            offers_generated = await process_weekly_transfer_offers(bot=bot)
             print(f"💼 Generated {offers_generated} transfer offers for players")
         except Exception as e:
             print(f"⚠️ Could not generate transfer offers: {e}")
@@ -226,9 +229,9 @@ async def advance_week():
     # If we're IN a transfer window (but not opening/closing), still generate offers
     elif next_week in config.TRANSFER_WINDOW_WEEKS:
         # Generate weekly offers during active transfer windows
-        from utils.transfer_window_manager import process_weekly_transfer_offers
+        from utils.transfer_window_manager import generate_offers_for_eligible_players
         try:
-            offers_generated = await process_weekly_transfer_offers(bot=None)
+            offers_generated = await generate_offers_for_eligible_players(bot=bot)
             if offers_generated > 0:
                 print(f"💼 Generated {offers_generated} new transfer offers (ongoing window)")
         except Exception as e:
