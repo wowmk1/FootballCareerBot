@@ -395,11 +395,11 @@ class PlayerCommands(commands.Cog):
         await interaction.followup.send(embed=embed)
 
     # ============================================
-    # ✅ NEW COMMAND: Career Statistics Dashboard
+    # ✅ NEW COMMAND: Enhanced Career Statistics Dashboard
     # ============================================
-    @app_commands.command(name="career", description="View your complete career history")
+    @app_commands.command(name="career", description="View your complete career progression and statistics")
     async def career(self, interaction: discord.Interaction):
-        """Show career progression over time"""
+        """Enhanced career dashboard with progression tracking"""
         await interaction.response.defer()
         
         player = await db.get_player(interaction.user.id)
@@ -407,34 +407,32 @@ class PlayerCommands(commands.Cog):
             await interaction.followup.send("❌ No player found!", ephemeral=True)
             return
         
-        embed = discord.Embed(
-            title=f"📈 {player['player_name']} - Career History",
-            description=f"Age {player['age']} • {player['position']}",
-            color=discord.Color.blue()
-        )
-        
-        # Career Stats
-        embed.add_field(
-            name="🏆 Career Statistics",
-            value=f"⚽ {player['career_goals']} goals\n"
-                  f"🅰️ {player['career_assists']} assists\n"
-                  f"👕 {player['career_apps']} appearances\n"
-                  f"⭐ {player.get('career_motm', 0)} MOTM awards",
-            inline=True
-        )
-        
-        # Progression
-        embed.add_field(
-            name="📊 Development",
-            value=f"Started: {player['age'] - (player['career_apps'] // 38)} years old\n"
-                  f"Current: {player['overall_rating']} OVR\n"
-                  f"Potential: ⭐ {player['potential']} POT\n"
-                  f"Peak Years: {38 - player['age']} remaining",
-            inline=True
-        )
-        
-        # Transfer History
+        # Get season-by-season stats
         async with db.pool.acquire() as conn:
+            # Career milestones
+            milestones = []
+            if player['career_goals'] >= 1:
+                milestones.append(f"⚽ **{player['career_goals']}** Career Goals")
+            if player['career_goals'] >= 50:
+                milestones.append("🎯 50 Goal Club")
+            if player['career_goals'] >= 100:
+                milestones.append("🔥 Century Maker")
+            
+            if player['career_assists'] >= 30:
+                milestones.append(f"🅰️ **{player['career_assists']}** Career Assists")
+            
+            if player['career_apps'] >= 100:
+                milestones.append(f"👕 **{player['career_apps']}** Appearances")
+            if player['career_apps'] >= 300:
+                milestones.append("🏆 Club Legend Status")
+            
+            if player.get('career_motm', 0) >= 10:
+                milestones.append(f"⭐ **{player['career_motm']}** MOTM Awards")
+            
+            if player['training_streak'] >= 30:
+                milestones.append(f"💪 **{player['training_streak']}** Day Training Streak")
+            
+            # Transfer history
             transfers = await conn.fetch("""
                 SELECT t.*, t1.team_name as from_team, t2.team_name as to_team
                 FROM transfers t
@@ -444,37 +442,93 @@ class PlayerCommands(commands.Cog):
                 ORDER BY t.transfer_date DESC
                 LIMIT 5
             """, player['user_id'])
+            
+            # Rating progression (estimate)
+            seasons_played = player['career_apps'] // 30
+            starting_rating = player['overall_rating'] - (seasons_played * 2)  # Rough estimate
         
+        import config
+        
+        embed = discord.Embed(
+            title=f"📈 {player['player_name']} - Career Dashboard",
+            description=f"**{player['position']}** • Age {player['age']} • {player['overall_rating']} OVR",
+            color=discord.Color.blue()
+        )
+        
+        # Career stats
+        goals_per_game = player['career_goals'] / player['career_apps'] if player['career_apps'] > 0 else 0
+        assists_per_game = player['career_assists'] / player['career_apps'] if player['career_apps'] > 0 else 0
+        
+        embed.add_field(
+            name="📊 Career Statistics",
+            value=f"⚽ **{player['career_goals']}** goals ({goals_per_game:.2f} per game)\n"
+                  f"🅰️ **{player['career_assists']}** assists ({assists_per_game:.2f} per game)\n"
+                  f"👕 **{player['career_apps']}** appearances\n"
+                  f"⭐ **{player.get('career_motm', 0)}** MOTM awards",
+            inline=False
+        )
+        
+        # Current season
+        embed.add_field(
+            name="🗓️ This Season",
+            value=f"⚽ {player['season_goals']} goals\n"
+                  f"🅰️ {player['season_assists']} assists\n"
+                  f"👕 {player['season_apps']} apps\n"
+                  f"⭐ {player.get('season_motm', 0)} MOTM",
+            inline=True
+        )
+        
+        # Peak years remaining
+        years_left = config.RETIREMENT_AGE - player['age']
+        peak_years = max(0, 30 - player['age'])
+        
+        embed.add_field(
+            name="⏳ Career Timeline",
+            value=f"**{years_left}** years until retirement\n"
+                  f"**{peak_years}** peak years remaining\n"
+                  f"Started: Age {starting_rating}",
+            inline=True
+        )
+        
+        # Progression
+        improvement = player['overall_rating'] - starting_rating
+        embed.add_field(
+            name="📈 Development",
+            value=f"**+{improvement}** OVR since debut\n"
+                  f"Current: **{player['overall_rating']}** OVR\n"
+                  f"Potential: ⭐ **{player['potential']}** POT\n"
+                  f"**{player['potential'] - player['overall_rating']}** OVR to reach peak",
+            inline=False
+        )
+        
+        # Transfer history
         if transfers:
             transfer_text = ""
             for t in transfers:
                 from_name = t['from_team'] or 'Free Agent'
                 to_name = t['to_team'] or 'Unknown'
-                transfer_text += f"• {from_name} → {to_name}\n"
+                fee_str = f"£{t['fee']:,}" if t['fee'] > 0 else "Free"
+                transfer_text += f"• {from_name} → {to_name} ({fee_str})\n"
             
             embed.add_field(
                 name="💼 Transfer History",
-                value=transfer_text,
+                value=transfer_text[:1024],  # Discord limit
                 inline=False
             )
         
         # Milestones
-        milestones = []
-        if player['career_goals'] >= 100:
-            milestones.append("🎯 100 Career Goals")
-        if player['career_assists'] >= 50:
-            milestones.append("🅰️ 50 Career Assists")
-        if player.get('career_motm', 0) >= 10:
-            milestones.append("⭐ 10 MOTM Awards")
-        if player['training_streak'] >= 30:
-            milestones.append("💪 30-Day Training Streak")
-        
         if milestones:
             embed.add_field(
-                name="🏅 Milestones",
-                value="\n".join(milestones),
+                name="🏅 Career Milestones",
+                value="\n".join(milestones[:10]),
                 inline=False
             )
+        
+        # Team crest
+        from utils.football_data_api import get_team_crest_url
+        crest = get_team_crest_url(player['team_id'])
+        if crest:
+            embed.set_thumbnail(url=crest)
         
         await interaction.followup.send(embed=embed)
 
