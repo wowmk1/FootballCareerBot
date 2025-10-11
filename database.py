@@ -253,53 +253,6 @@ class Database:
                 )
             ''')
             
-            # Cup competitions table
-            await conn.execute('''
-                CREATE TABLE IF NOT EXISTS cup_competitions (
-                    competition_id SERIAL PRIMARY KEY,
-                    competition_name TEXT NOT NULL,
-                    competition_type TEXT NOT NULL,
-                    season TEXT NOT NULL,
-                    current_round TEXT,
-                    is_active BOOLEAN DEFAULT FALSE
-                )
-            ''')
-            
-            # Cup fixtures table
-            await conn.execute('''
-                CREATE TABLE IF NOT EXISTS cup_fixtures (
-                    fixture_id SERIAL PRIMARY KEY,
-                    competition_id INTEGER REFERENCES cup_competitions(competition_id),
-                    round TEXT NOT NULL,
-                    home_team_id TEXT,
-                    away_team_id TEXT,
-                    home_score INTEGER,
-                    away_score INTEGER,
-                    played BOOLEAN DEFAULT FALSE,
-                    playable BOOLEAN DEFAULT FALSE,
-                    is_two_legged BOOLEAN DEFAULT FALSE,
-                    leg_number INTEGER DEFAULT 1,
-                    aggregate_home INTEGER DEFAULT 0,
-                    aggregate_away INTEGER DEFAULT 0,
-                    winner_team_id TEXT,
-                    match_date TEXT
-                )
-            ''')
-            
-            # Cup history table
-            await conn.execute('''
-                CREATE TABLE IF NOT EXISTS cup_history (
-                    history_id SERIAL PRIMARY KEY,
-                    competition_id INTEGER,
-                    season TEXT,
-                    winner_team_id TEXT,
-                    runner_up_team_id TEXT,
-                    top_scorer_user_id BIGINT,
-                    top_scorer_goals INTEGER,
-                    final_score TEXT
-                )
-            ''')
-            
             # Match events table
             await conn.execute('''
                 CREATE TABLE IF NOT EXISTS match_events (
