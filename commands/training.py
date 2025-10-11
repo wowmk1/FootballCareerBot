@@ -42,7 +42,7 @@ class TrainingCommands(commands.Cog):
             )
             return
 
-        # Check cooldown - IMPROVED VERSION
+        # Check cooldown
         streak_broken = False
         if player['last_training']:
             last_train = datetime.fromisoformat(player['last_training'])
@@ -106,14 +106,12 @@ class TrainingCommands(commands.Cog):
         else:
             age_multiplier = 0.3
 
-        # ============================================
         # MORALE AFFECTS TRAINING GAINS
-        # ============================================
         from utils.form_morale_system import get_morale_training_modifier
         morale_multiplier = get_morale_training_modifier(player['morale'])
 
-        # Base: 2 stat points per session
-        base_points = 2
+        # ⭐ OPTION A: Reduced base gain from 2 to 1
+        base_points = 1  # CHANGED FROM 2
 
         # Handle streak
         if streak_broken:
@@ -310,7 +308,7 @@ class TrainingCommands(commands.Cog):
             embed.add_field(
                 name="🎯 Potential Progress",
                 value=f"**{distance} OVR** from potential ({current_potential})\n"
-                      f"Estimated: ~{distance * 3} sessions",
+                      f"Estimated: ~{distance * 6} sessions (~{distance * 6} days)",
                 inline=False
             )
         else:
@@ -334,7 +332,7 @@ class TrainingCommands(commands.Cog):
             inline=True
         )
 
-        embed.set_footer(text=f"Age: {age_multiplier}x | Morale: {morale_multiplier}x | Consistency is key!")
+        embed.set_footer(text=f"Age: {age_multiplier}x | Morale: {morale_multiplier}x | Slower gains = more rewarding!")
 
         await interaction.followup.send(embed=embed)
 
