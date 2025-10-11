@@ -196,6 +196,26 @@ class MatchEngine:
         if home_crest:
             embed.set_thumbnail(url=home_crest)
 
+        # ============================================
+        # MEDIUM #13: CHECK FOR RIVALRY MATCH
+        # ============================================
+        rivalry = None
+        try:
+            from data.rivalries import get_rivalry
+            rivalry = get_rivalry(fixture['home_team_id'], fixture['away_team_id'])
+            if rivalry:
+                embed.add_field(
+                    name="🔥 RIVALRY MATCH!",
+                    value=f"**{rivalry['name']}**\nExpect fireworks in this heated derby!",
+                    inline=False
+                )
+                embed.color = discord.Color.red()
+        except ImportError:
+            print("⚠️ Rivalries module not found, skipping rivalry check")
+        # ============================================
+        # END RIVALRY CHECK
+        # ============================================
+
         embed.add_field(name="🏠 Home", value=f"**{home_team['team_name']}**\n{home_team['league']}", inline=True)
         embed.add_field(name="✈️ Away", value=f"**{away_team['team_name']}**\n{away_team['league']}", inline=True)
 
@@ -232,6 +252,9 @@ class MatchEngine:
                                          ''', fixture['fixture_id'], fixture['home_team_id'], fixture['away_team_id'],
                                          match_channel.id, message.id, 'in_progress', 0, datetime.now().isoformat())
             match_id = result['match_id']
+
+        # Store rivalry info for later use in end_match
+        self.active_matches[match_id] = {'rivalry': rivalry}
 
         for user_id in player_users:
             player = await db.get_player(user_id)
@@ -466,17 +489,32 @@ class MatchEngine:
         assister_name = None
         rating_change = 0
 
-        if action == 'shoot' and success:
-            if player_roll == 20 or player_total >= defender_total + 10:
-                result_embed.add_field(
-                    name="⚽ GOOOOAAAL!",
-                    value=f"**{player['player_name']}** SCORES! What a finish!",
-                    inline=False
-                )
+        # ============================================
+        # MEDIUM #12: ADVANCED MATCH EVENTS
+        # ============================================
+        
+        # 1. PENALTY CHECK (desperate foul in box)
+        if action == 'shoot' and not success and player_roll >= 15 and defender_roll <= 5:
+            # Defender made a desperate challenge - PENALTY!
+            result_embed.add_field(
+                name="⚽ PENALTY AWARDED!",
+                value=f"Foul by {defender['player_name']}! Penalty to {attacking_team['team_name']}!",
+                inline=False
+            )
+            
+            # Take penalty (75% base + shooting bonus)
+            penalty_success_chance = min(95, 75 + (adjusted_stats['shooting'] // 10))
+            if random.randint(1, 100) <= penalty_success_chance:
                 is_goal = True
                 scorer_name = player['player_name']
-                rating_change = 1.2
-
+                rating_change = 1.5
+                
+                result_embed.add_field(
+                    name="⚽ PENALTY SCORED!",
+                    value=f"**{player['player_name']}** converts from the spot!",
+                    inline=False
+                )
+                
                 async with db.pool.acquire() as conn:
                     await conn.execute(
                         "UPDATE players SET season_goals = season_goals + 1, career_goals = career_goals + 1 WHERE user_id = $1",
@@ -486,46 +524,108 @@ class MatchEngine:
                 await update_player_morale(player['user_id'], 'goal')
             else:
                 result_embed.add_field(
-                    name="🧤 SAVED!",
-                    value=f"Goalkeeper makes a brilliant save!",
+                    name="❌ PENALTY MISSED!",
+                    value=f"Saved or wide! What a let-off!",
                     inline=False
                 )
-                rating_change = -0.1
+                rating_change = -0.5
+        
+        # 2. RED CARD CHECK (dangerous tackle - 1% chance)
+        elif action == 'tackle' and not success and defender_total > player_total + 15 and random.random() < 0.01:
+            result_embed.add_field(
+                name="🟥 RED CARD!",
+                value=f"**{defender['player_name']}** sent off for a dangerous challenge!",
+                inline=False
+            )
+            rating_change += 0.5  # Bonus for drawing foul
+        
+        # 3. VAR CHECK (2% chance on close calls)
+        elif abs(player_total - defender_total) <= 2 and random.random() < 0.02:
+            result_embed.add_field(
+                name="📺 VAR CHECK...",
+                value="Officials reviewing the play...",
+                inline=False
+            )
+            
+            await suspense_msg.edit(embed=result_embed)
+            await asyncio.sleep(3)  # Suspense
+            
+            var_decision = random.choice(["upheld", "overturned"])
+            if var_decision == "overturned":
+                success = not success  # REVERSE THE CALL
+                result_embed.add_field(
+                    name="🔄 VAR: OVERTURNED!",
+                    value="The original decision has been reversed!",
+                    inline=False
+                )
+                result_embed.color = discord.Color.green() if success else discord.Color.red()
+        
+        # ============================================
+        # END ADVANCED EVENTS - Continue with normal logic
+        # ============================================
 
-        elif action in ['pass', 'through_ball', 'key_pass', 'cross'] and success:
-            assist_chance = {'pass': 0.35, 'through_ball': 0.40, 'key_pass': 0.45, 'cross': 0.40}
-            if random.random() < assist_chance.get(action, 0.35):
-                teammate_result = await self.handle_teammate_goal(channel, player, attacking_team, match_id)
-                if teammate_result:
-                    is_goal = True
-                    scorer_name = teammate_result['scorer_name']
-                    assister_name = player['player_name']
-                    rating_change = 0.8
-
+        # Normal goal/action logic (only if not already handled by penalty)
+        if not is_goal:
+            if action == 'shoot' and success:
+                if player_roll == 20 or player_total >= defender_total + 10:
                     result_embed.add_field(
-                        name="⚽ TEAMMATE SCORES FROM YOUR PASS!",
-                        value=f"**{scorer_name}** finishes it!\n🅰️ **ASSIST: {player['player_name']}**\nGreat {action.replace('_', ' ')}!",
+                        name="⚽ GOOOOAAAL!",
+                        value=f"**{player['player_name']}** SCORES! What a finish!",
                         inline=False
                     )
+                    is_goal = True
+                    scorer_name = player['player_name']
+                    rating_change = 1.2
+
+                    async with db.pool.acquire() as conn:
+                        await conn.execute(
+                            "UPDATE players SET season_goals = season_goals + 1, career_goals = career_goals + 1 WHERE user_id = $1",
+                            player['user_id']
+                        )
+                    from utils.form_morale_system import update_player_morale
+                    await update_player_morale(player['user_id'], 'goal')
                 else:
-                    result_embed.add_field(name="✅ SUCCESS!",
-                                           value=f"Great {action.replace('_', ' ')}! Chance created.", inline=False)
+                    result_embed.add_field(
+                        name="🧤 SAVED!",
+                        value=f"Goalkeeper makes a brilliant save!",
+                        inline=False
+                    )
+                    rating_change = -0.1
+
+            elif action in ['pass', 'through_ball', 'key_pass', 'cross'] and success:
+                assist_chance = {'pass': 0.35, 'through_ball': 0.40, 'key_pass': 0.45, 'cross': 0.40}
+                if random.random() < assist_chance.get(action, 0.35):
+                    teammate_result = await self.handle_teammate_goal(channel, player, attacking_team, match_id)
+                    if teammate_result:
+                        is_goal = True
+                        scorer_name = teammate_result['scorer_name']
+                        assister_name = player['player_name']
+                        rating_change = 0.8
+
+                        result_embed.add_field(
+                            name="⚽ TEAMMATE SCORES FROM YOUR PASS!",
+                            value=f"**{scorer_name}** finishes it!\n🅰️ **ASSIST: {player['player_name']}**\nGreat {action.replace('_', ' ')}!",
+                            inline=False
+                        )
+                    else:
+                        result_embed.add_field(name="✅ SUCCESS!",
+                                               value=f"Great {action.replace('_', ' ')}! Chance created.", inline=False)
+                        rating_change = 0.3
+                else:
+                    result_embed.add_field(name="✅ SUCCESS!", value=f"Perfect {action.replace('_', ' ')}!", inline=False)
                     rating_change = 0.3
-            else:
-                result_embed.add_field(name="✅ SUCCESS!", value=f"Perfect {action.replace('_', ' ')}!", inline=False)
+
+            elif action == 'dribble' and success:
+                result_embed.add_field(name="✅ BEATEN THE DEFENDER!", value=f"You've created space!", inline=False)
                 rating_change = 0.3
 
-        elif action == 'dribble' and success:
-            result_embed.add_field(name="✅ BEATEN THE DEFENDER!", value=f"You've created space!", inline=False)
-            rating_change = 0.3
+            elif success:
+                result_embed.add_field(name="✅ SUCCESS!", value=f"Great {action.replace('_', ' ')}!", inline=False)
+                rating_change = 0.3
 
-        elif success:
-            result_embed.add_field(name="✅ SUCCESS!", value=f"Great {action.replace('_', ' ')}!", inline=False)
-            rating_change = 0.3
-
-        else:
-            result_embed.add_field(name="❌ FAILED!", value=f"{action.replace('_', ' ')} unsuccessful!", inline=False)
-            rating_change = -0.1
+            else:
+                result_embed.add_field(name="❌ FAILED!", value=f"{action.replace('_', ' ')} unsuccessful!", inline=False)
+                rating_change = -0.1
 
         await suspense_msg.delete()
         await channel.send(embed=result_embed)
@@ -690,11 +790,57 @@ class MatchEngine:
                         print(f"  😐 Morale unchanged for user {participant['user_id']} (DRAW)")
 
         # ============================================
-        # END OF MORALE UPDATE
+        # MEDIUM #11: CHECK FOR TRAIT UNLOCKS AFTER MATCH
+        # ============================================
+        try:
+            from utils.traits_system import check_trait_unlocks
+            
+            for participant in participants:
+                if participant['user_id']:
+                    await check_trait_unlocks(participant['user_id'], bot=self.bot)
+        except ImportError:
+            print("⚠️ Traits system not found, skipping trait unlock checks")
+        # ============================================
+        # END TRAIT UNLOCK CHECK
         # ============================================
 
         # ============================================
-        # END OF FORM UPDATE
+        # MEDIUM #13: APPLY RIVALRY BONUSES
+        # ============================================
+        rivalry_info = self.active_matches.get(match_id, {}).get('rivalry')
+        
+        if rivalry_info:
+            try:
+                from data.rivalries import get_rivalry_bonuses
+                
+                winning_team_id = fixture['home_team_id'] if home_score > away_score else \
+                                  fixture['away_team_id'] if away_score > home_score else None
+                
+                if winning_team_id:
+                    bonuses = get_rivalry_bonuses(rivalry_info['intensity'])
+                    
+                    for participant in participants:
+                        if participant['user_id'] and participant['team_id'] == winning_team_id:
+                            # Apply extra bonuses for derby win
+                            await update_player_morale(participant['user_id'], 'win')  # Extra boost
+                            
+                            async with db.pool.acquire() as conn:
+                                await conn.execute(
+                                    "UPDATE players SET form = LEAST(100, form + $1) WHERE user_id = $2",
+                                    bonuses['form_boost'], participant['user_id']
+                                )
+                    
+                    # Announce derby victory
+                    rivalry_embed = discord.Embed(
+                        title=f"🔥 {rivalry_info['name']} VICTORY!",
+                        description=f"Massive derby win! Extra bonuses awarded to winners!",
+                        color=discord.Color.gold()
+                    )
+                    await channel.send(embed=rivalry_embed)
+            except ImportError:
+                print("⚠️ Rivalries module not found, skipping rivalry bonuses")
+        # ============================================
+        # END RIVALRY BONUSES
         # ============================================
 
         # ============================================
@@ -732,22 +878,12 @@ class MatchEngine:
                     inline=False
                 )
 
-                from utils.football_data_api import get_team_crest_url
                 team_crest = get_team_crest_url(motm_player['team_id'])
                 if team_crest:
                     motm_embed.set_thumbnail(url=team_crest)
 
                 await channel.send(embed=motm_embed)
                 print(f"⭐ MOTM: {motm_player['player_name']} ({motm['match_rating']:.1f}/10)")
-        # ============================================
-        # END OF MOTM DETERMINATION
-        # ============================================
-
-        embed = discord.Embed(
-            title="🏁 FULL TIME!",
-            description=f"## {home_team['team_name']} {home_score} - {away_score} {away_team['team_name']}",
-            color=discord.Color.gold()
-        )
 
         embed = discord.Embed(
             title="🏁 FULL TIME!",
