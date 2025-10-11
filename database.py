@@ -41,6 +41,9 @@ class Database:
                     'CREATE INDEX IF NOT EXISTS idx_npc_players_team ON npc_players(team_id, retired)',
                     'CREATE INDEX IF NOT EXISTS idx_transfer_offers_user ON transfer_offers(user_id, status)',
                     'CREATE INDEX IF NOT EXISTS idx_match_events_fixture ON match_events(fixture_id, minute)'
+                    'CREATE INDEX IF NOT EXISTS idx_players_last_reminded ON players(last_reminded)',
+                    'CREATE INDEX IF NOT EXISTS idx_transfer_offers_week ON transfer_offers(offer_week)',
+                    'CREATE INDEX IF NOT EXISTS idx_fixtures_week_playable ON fixtures(week_number, playable, played)',
                 ]
                 
                 for index_sql in indexes:
