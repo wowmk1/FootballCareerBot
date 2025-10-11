@@ -1,6 +1,6 @@
 """
 Transfer Window Manager - Handles transfer window logic and offer generation
-SMART VERSION - Only generates offers when needed
+FIXED VERSION - Now accepts bot parameter in generate_offers_for_player
 """
 
 from database import db
@@ -71,8 +71,8 @@ async def process_weekly_transfer_offers(bot=None):
             print(f"  {player['player_name']}: Not generating offers (rating too low or other factors)")
             continue
         
-        # Generate offers
-        created_offers = await generate_offers_for_player(player, current_week, num_offers)
+        # CRITICAL FIX: Pass bot parameter
+        created_offers = await generate_offers_for_player(player, current_week, num_offers, bot=bot)
         
         if created_offers:
             offers_generated += len(created_offers)
@@ -152,8 +152,8 @@ async def generate_offers_for_eligible_players(bot=None):
         if num_offers == 0:
             continue
         
-        # Generate offers
-        created_offers = await generate_offers_for_player(player, current_week, num_offers)
+        # CRITICAL FIX: Pass bot parameter
+        created_offers = await generate_offers_for_player(player, current_week, num_offers, bot=bot)
         
         if created_offers:
             offers_generated += len(created_offers)
@@ -212,7 +212,8 @@ def calculate_num_offers(player: dict) -> int:
     # Add some randomness
     return max(0, base_offers + random.randint(-1, 0))
 
-async def generate_offers_for_player(player: dict, current_week: int, num_offers: int = 3):
+# CRITICAL FIX: Added bot=None parameter
+async def generate_offers_for_player(player: dict, current_week: int, num_offers: int = 3, bot=None):
     """Generate transfer offers for a specific player"""
     
     rating = player['overall_rating']
@@ -373,6 +374,10 @@ async def generate_offers_for_player(player: dict, current_week: int, num_offers
             })
             
             print(f"    Created {offer_type} offer: {team['team_name']} - £{wage_offer:,}/wk")
+    
+    # CRITICAL FIX: Send notification if bot is available
+    if bot and created_offers:
+        await send_offer_notification(bot, user_id, len(created_offers))
     
     return created_offers
 
