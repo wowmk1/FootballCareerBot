@@ -4,6 +4,8 @@ Transfer Window Manager - FIXED VERSION
 - Ensures minimum 2-3 offers
 - Fixed eligible player detection
 - Fixed NPC transfer notifications
+- CRITICAL FIX #1: NPC transfers only during transfer windows
+- CRITICAL FIX #2: Stricter Premier League offer requirements
 """
 
 from database import db
@@ -222,6 +224,7 @@ async def generate_offers_for_player(player: dict, current_week: int, num_offers
     """
     Generate transfer offers for a specific player
     FIX: Added send_notification flag to prevent duplicate notifications
+    CRITICAL FIX #2: Stricter Premier League requirements
     """
     
     rating = player['overall_rating']
@@ -242,8 +245,26 @@ async def generate_offers_for_player(player: dict, current_week: int, num_offers
     
     interested_teams = []
     
-    # Get teams from appropriate leagues
-    if rating >= 75 or potential >= 82:
+    # CRITICAL FIX #2: STRICTER PREMIER LEAGUE REQUIREMENTS
+    # Premier League teams - much more selective
+    if rating >= 75:
+        # Definitely good enough for PL
+        async with db.pool.acquire() as conn:
+            rows = await conn.fetch(
+                "SELECT * FROM teams WHERE league = $1 ORDER BY RANDOM() LIMIT 5",
+                'Premier League'
+            )
+            interested_teams.extend([dict(row) for row in rows])
+    elif rating >= 70 and potential >= 85:
+        # High potential young players (70+ rating, 85+ potential)
+        async with db.pool.acquire() as conn:
+            rows = await conn.fetch(
+                "SELECT * FROM teams WHERE league = $1 ORDER BY RANDOM() LIMIT 5",
+                'Premier League'
+            )
+            interested_teams.extend([dict(row) for row in rows])
+    elif rating >= 68 and potential >= 90:
+        # Exceptional wonderkids only (68+ rating, 90+ potential)
         async with db.pool.acquire() as conn:
             rows = await conn.fetch(
                 "SELECT * FROM teams WHERE league = $1 ORDER BY RANDOM() LIMIT 5",
@@ -251,7 +272,8 @@ async def generate_offers_for_player(player: dict, current_week: int, num_offers
             )
             interested_teams.extend([dict(row) for row in rows])
     
-    if rating >= 65 or potential >= 72:
+    # Championship teams (65+ rating required)
+    if rating >= 65 or (rating >= 62 and potential >= 75):
         async with db.pool.acquire() as conn:
             rows = await conn.fetch(
                 "SELECT * FROM teams WHERE league = $1 ORDER BY RANDOM() LIMIT 5",
@@ -259,7 +281,8 @@ async def generate_offers_for_player(player: dict, current_week: int, num_offers
             )
             interested_teams.extend([dict(row) for row in rows])
     
-    if rating >= 55:
+    # League One teams (55+ rating required)
+    if rating >= 55 or (rating >= 52 and potential >= 65):
         async with db.pool.acquire() as conn:
             rows = await conn.fetch(
                 "SELECT * FROM teams WHERE league = $1 ORDER BY RANDOM() LIMIT 5",
@@ -578,8 +601,14 @@ async def send_offer_notification(bot, user_id: int, num_offers: int):
 
 async def simulate_npc_transfers():
     """
-    Simulate NPC transfers - FIXED to post to channels
+    Simulate NPC transfers - CRITICAL FIX #1: Only during transfer windows
     """
+    
+    # CRITICAL FIX #1: CHECK TRANSFER WINDOW AT THE TOP
+    state = await db.get_game_state()
+    if state['current_week'] not in config.TRANSFER_WINDOW_WEEKS:
+        print(f"⚠️ Week {state['current_week']}: Not a transfer window, skipping NPC transfers")
+        return 0
     
     print("\n=== Simulating NPC Transfers ===")
     
@@ -673,7 +702,6 @@ async def simulate_npc_transfers():
             )
         
         old_team_name = old_team['team_name'] if old_team else 'Unknown'
-        state = await db.get_game_state()
         
         # Add news
         await db.add_news(
