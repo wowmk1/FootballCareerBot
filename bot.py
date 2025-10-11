@@ -656,6 +656,21 @@ class FootballBot(commands.Bot):
             status=discord.Status.online
         )
 
+    # ============================================
+    # HIGH #4: AUTO-SETUP CHANNELS ON NEW SERVERS
+    # ============================================
+    
+    async def on_guild_join(self, guild):
+        """When bot joins a new server, auto-setup channels"""
+        print(f"📥 Joined new server: {guild.name}")
+        
+        from utils.channel_setup import setup_server_channels
+        try:
+            await setup_server_channels(guild)
+            print(f"✅ Auto-setup complete for {guild.name}")
+        except Exception as e:
+            print(f"⚠️ Could not auto-setup channels: {e}")
+
 
 # Create bot instance
 bot = FootballBot()
