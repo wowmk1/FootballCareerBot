@@ -66,8 +66,8 @@ def should_send_warning(warning_type):
     return False
 
 
-async def start_season():
-    """Start the season - FIXED: Don't auto-open match window"""
+async def start_season(bot=None):
+    """Start the season - FIXED: Don't auto-open match window + Notify all servers"""
     state = await db.get_game_state()
 
     if state['season_started']:
@@ -76,10 +76,12 @@ async def start_season():
 
     # ✅ FIX: Explicitly set match_window_open=False
     # Don't auto-open window - wait for next Mon/Wed/Sat at 3PM
+    new_season = state.get('current_season', '2027/28')
+    
     await db.update_game_state(
         season_started=True,
         current_week=1,
-        current_season='2027/28',
+        current_season=new_season,
         season_start_date=datetime.now(EST).isoformat(),
         match_window_open=False  # ✅ CRITICAL: Don't auto-open
     )
@@ -88,8 +90,49 @@ async def start_season():
 
     # Calculate next valid match window
     next_window = get_next_match_window()
-    print(f"✅ Season started! Next match window: {next_window.strftime('%A, %B %d at %I:%M %p EST')}")
+    next_window_str = next_window.strftime('%A, %B %d at %I:%M %p EST')
+    
+    print(f"✅ Season started! Next match window: {next_window_str}")
     print(f"   Match window will ONLY open on Mon/Wed/Sat at 3:00 PM EST")
+
+    # ✅ FIX #3: NOTIFY ALL SERVERS ABOUT SEASON START
+    if bot:
+        for guild in bot.guilds:
+            try:
+                # Try to find appropriate channel
+                channel = discord.utils.get(guild.text_channels, name="general")
+                if not channel:
+                    channel = discord.utils.get(guild.text_channels, name="announcements")
+                if not channel:
+                    # Fall back to first text channel bot can send to
+                    channel = next((c for c in guild.text_channels if c.permissions_for(guild.me).send_messages), None)
+                
+                if channel:
+                    embed = discord.Embed(
+                        title="🏁 SEASON STARTED!",
+                        description=f"**Season {new_season}** begins!\n\nGet ready for an exciting season ahead!",
+                        color=discord.Color.green()
+                    )
+                    embed.add_field(
+                        name="📅 First Match Window",
+                        value=f"**{next_window_str}**",
+                        inline=False
+                    )
+                    embed.add_field(
+                        name="⚽ Match Schedule",
+                        value="Matches: **Mon/Wed/Sat** at **3:00-5:00 PM EST**",
+                        inline=False
+                    )
+                    embed.add_field(
+                        name="🎮 How to Play",
+                        value="Use `/play_match` during match windows!",
+                        inline=False
+                    )
+                    await channel.send(embed=embed)
+                    print(f"  📢 Notified {guild.name} about season start")
+            except Exception as e:
+                print(f"  ⚠️ Could not notify {guild.name}: {e}")
+    
     return True
 
 
@@ -102,13 +145,9 @@ async def generate_season_fixtures():
 
 async def open_match_window():
     """Open the match window - with race condition protection"""
-
-    # Use bot's lock if available
+    # ✅ CRITICAL FIX #3: Simplified lock usage (bot.py guarantees lock exists)
     from bot import bot
-    if hasattr(bot, 'match_window_lock'):
-        async with bot.match_window_lock:
-            return await _open_match_window_internal()
-    else:
+    async with bot.match_window_lock:
         return await _open_match_window_internal()
 
 
@@ -201,7 +240,7 @@ async def check_contract_morale(bot=None):
 
     async with db.pool.acquire() as conn:
         expiring_players = await conn.fetch("""
-                                            SELECT user_id, player_name, contract_years, contract_wage, team_id
+                                            SELECT user_id, player_name, contract_years, contract_wage, team_id, morale
                                             FROM players
                                             WHERE retired = FALSE
                                               AND contract_years <= 1
@@ -213,11 +252,10 @@ async def check_contract_morale(bot=None):
 
     for player in expiring_players:
         # Apply morale penalty
-        new_morale = db.clamp_value(player['morale'] - 5, 0, 100)
         await update_player_morale(player['user_id'], 'contract_expiring')
         affected += 1
 
-        # ✅ NEW: SEND WARNING DM
+        # ✅ SEND WARNING DM
         if player['contract_years'] == 1 and bot:
             try:
                 user = await bot.fetch_user(player['user_id'])
@@ -359,7 +397,7 @@ async def end_season(bot=None):
     print(f"🏆 Season {current_season} complete!")
 
     # ============================================
-    # ✅ NEW: CALCULATE SEASON AWARDS
+    # ✅ CALCULATE SEASON AWARDS
     # ============================================
     awards = {}
 
@@ -514,7 +552,7 @@ async def end_season(bot=None):
                     print(f"  ⚠️ Could not send award DM: {e}")
 
     # ============================================
-    # END OF AWARDS - Continue with existing code
+    # END OF AWARDS - Continue with season reset
     # ============================================
 
     await db.age_all_players()
