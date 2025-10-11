@@ -1,6 +1,7 @@
 """
-Transfer Commands - FIXED VERSION
+Transfer Commands - ENHANCED VERSION
 Critical fix: Line 116 changed from interaction.response.edit_message to interaction.edit_original_response
+Enhancement #19: Better Transfer Offer Display with team stats and league info
 """
 import discord
 from discord import app_commands
@@ -45,6 +46,16 @@ class TransferOfferView(discord.ui.View):
 
         self.selected_offer_id = None
 
+    def get_league_color(self, league):
+        """Return appropriate color for league tier"""
+        colors = {
+            'Premier League': discord.Color.purple(),
+            'Championship': discord.Color.blue(),
+            'League One': discord.Color.green(),
+            'League Two': discord.Color.orange()
+        }
+        return colors.get(league, discord.Color.gold())
+
     async def select_callback(self, interaction: discord.Interaction):
         """Handle offer selection"""
         if interaction.user.id != self.user_id:
@@ -66,10 +77,21 @@ class TransferOfferView(discord.ui.View):
         # Get current player info
         player = await db.get_player(self.user_id)
 
-        # Create detailed embed for selected offer
+        # ENHANCEMENT #19: Get team stats
+        async with db.pool.acquire() as conn:
+            team_stats = await conn.fetchrow("""
+                SELECT t.position, t.points, t.played,
+                       AVG(n.overall_rating) as squad_quality
+                FROM teams t
+                LEFT JOIN npc_players n ON t.team_id = n.team_id AND n.retired = FALSE
+                WHERE t.team_id = $1
+                GROUP BY t.team_id, t.position, t.points, t.played
+            """, selected_offer['team_id'])
+
+        # Create detailed embed for selected offer with league color
         embed = discord.Embed(
             title=f"📋 Offer from {selected_offer['team_name']}",
-            color=discord.Color.gold()
+            color=self.get_league_color(selected_offer['league'])
         )
 
         # Offer type indicator
@@ -83,6 +105,37 @@ class TransferOfferView(discord.ui.View):
             embed.add_field(
                 name="🔄 CONTRACT RENEWAL",
                 value="Your current club wants to extend your contract!",
+                inline=False
+            )
+
+        # ENHANCEMENT #19: League tier indicator with team position
+        tier_emoji = {
+            'Premier League': '👑',
+            'Championship': '🥈',
+            'League One': '🥉',
+            'League Two': '🎖️'
+        }
+        
+        if team_stats:
+            embed.add_field(
+                name=f"{tier_emoji.get(selected_offer['league'], '⚽')} {selected_offer['league']}",
+                value=f"Position: **{team_stats['position']}** | Points: **{team_stats['points']}** ({team_stats['played']} played)",
+                inline=False
+            )
+
+            # ENHANCEMENT #19: Squad quality indicator
+            if team_stats['squad_quality']:
+                quality = float(team_stats['squad_quality'])
+                quality_desc = "Elite" if quality >= 80 else "Strong" if quality >= 75 else "Good" if quality >= 70 else "Average"
+                embed.add_field(
+                    name="🏆 Squad Quality",
+                    value=f"**{quality:.1f}** OVR ({quality_desc})",
+                    inline=True
+                )
+        else:
+            embed.add_field(
+                name=f"{tier_emoji.get(selected_offer['league'], '⚽')} {selected_offer['league']}",
+                value="League information available",
                 inline=False
             )
 
@@ -103,12 +156,6 @@ class TransferOfferView(discord.ui.View):
             name="📄 Contract Length",
             value=f"**{selected_offer['contract_length']} years**\n"
                   f"Current: {player['contract_years']} years left",
-            inline=True
-        )
-
-        embed.add_field(
-            name="🏟️ League",
-            value=selected_offer['league'],
             inline=True
         )
 
