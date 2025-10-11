@@ -176,6 +176,25 @@ async def close_match_window(bot=None):
     
     if simulated_count > 0:
         print(f"⚽ Simulated {simulated_count} unplayed matches")
+
+    # Get all week results
+    async with db.pool.acquire() as conn:
+        results = await conn.fetch("""
+        SELECT f.*, 
+               t1.team_name as home_team_name,
+               t2.team_name as away_team_name
+        FROM fixtures f
+        JOIN teams t1 ON f.home_team_id = t1.team_id
+        JOIN teams t2 ON f.away_team_id = t2.team_id
+        WHERE f.week_number = $1 AND f.played = TRUE
+        ORDER BY f.fixture_id DESC
+        LIMIT 10
+    """, current_week)
+    week_results = [dict(r) for r in results]
+
+    # Notify about window closing
+    if bot:
+        await bot.notify_match_window_closed(week_results)
     
     # Close window
     await db.update_game_state(match_window_open=False)
