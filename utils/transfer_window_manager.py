@@ -6,6 +6,7 @@ Transfer Window Manager - FIXED VERSION
 - Fixed NPC transfer notifications
 - CRITICAL FIX #1: NPC transfers only during transfer windows
 - CRITICAL FIX #2: Stricter Premier League offer requirements
+- PHASE 4: Contract Failsafe - Forces free agency for stranded players
 """
 
 from database import db
@@ -591,6 +592,121 @@ async def cleanup_old_offers(current_week: int):
             current_week - 5
         )
     print(f"Cleaned up old offers: {result}")
+
+async def close_transfer_window(bot=None):
+    """
+    PHASE 4: Contract Failsafe
+    - Expire all pending offers
+    - Check for players with 0 years left who didn't transfer
+    - Force them to free agency
+    - Generate immediate offers
+    """
+    print("\n=== Closing Transfer Window ===")
+    
+    # Expire all pending offers
+    await expire_all_pending_offers()
+    
+    # PHASE 4: Contract Failsafe
+    print("\n=== Contract Failsafe: Checking for Stranded Players ===")
+    
+    state = await db.get_game_state()
+    current_week = state['current_week']
+    
+    async with db.pool.acquire() as conn:
+        stranded = await conn.fetch("""
+            SELECT user_id, player_name, team_id, contract_years, overall_rating, potential, age
+            FROM players  
+            WHERE contract_years <= 0
+            AND team_id != 'free_agent'
+            AND retired = FALSE
+        """)
+    
+    if not stranded:
+        print("✅ No stranded players found")
+    else:
+        print(f"⚠️ Found {len(stranded)} stranded player(s)")
+    
+    for player_row in stranded:
+        player = dict(player_row)
+        
+        # Get old team name for news
+        old_team = await db.get_team(player['team_id'])
+        old_team_name = old_team['team_name'] if old_team else 'Unknown'
+        
+        print(f"\n  🆘 {player['player_name']} ({old_team_name}) - Contract expired!")
+        
+        # Force free agency
+        async with db.pool.acquire() as conn:
+            await conn.execute("""
+                UPDATE players
+                SET team_id = 'free_agent',
+                    league = NULL,
+                    contract_wage = 0,
+                    contract_years = 0
+                WHERE user_id = $1
+            """, player['user_id'])
+        
+        # Add news about becoming free agent
+        await db.add_news(
+            f"FREE AGENT: {player['player_name']} leaves {old_team_name}",
+            f"{player['player_name']}'s contract with {old_team_name} has expired. They are now a free agent and available for transfer.",
+            "transfer_news",
+            player['user_id'],
+            7,
+            current_week
+        )
+        
+        print(f"  ✅ Moved to free agency")
+        
+        # Send notification to player
+        if bot:
+            try:
+                user = await bot.fetch_user(player['user_id'])
+                if user:
+                    import discord
+                    embed = discord.Embed(
+                        title="⚠️ CONTRACT EXPIRED - FREE AGENT",
+                        description=f"Your contract with **{old_team_name}** has expired!\n\n"
+                                   f"You are now a **free agent**. New offers will be generated in the next transfer window.",
+                        color=discord.Color.orange()
+                    )
+                    embed.add_field(
+                        name="What happens next?",
+                        value="• You'll receive offers in the next transfer window\n"
+                              "• You can negotiate with any club\n"
+                              "• No transfer fee required",
+                        inline=False
+                    )
+                    await user.send(embed=embed)
+                    print(f"  📨 Sent free agency notification")
+            except Exception as e:
+                print(f"  ❌ Could not notify user {player['user_id']}: {e}")
+        
+        # Update player dict with free agent status for offer generation
+        player['team_id'] = 'free_agent'
+        player['contract_years'] = 0
+        player['contract_wage'] = 0
+        
+        # Generate 3 new offers immediately
+        print(f"  💼 Generating immediate offers...")
+        created_offers = await generate_offers_for_player(
+            player, 
+            current_week, 
+            num_offers=3,
+            bot=None,
+            send_notification=False
+        )
+        
+        if created_offers:
+            print(f"  ✅ Generated {len(created_offers)} offers")
+            
+            # Send offer notification
+            if bot:
+                await send_offer_notification(bot, player['user_id'], len(created_offers))
+        else:
+            print(f"  ⚠️ Failed to generate offers")
+    
+    print("\n=== Transfer Window Closed ===\n")
 
 def get_current_transfer_window(week: int) -> int:
     """Get transfer window ID"""
