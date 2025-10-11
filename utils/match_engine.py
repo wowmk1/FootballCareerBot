@@ -3,6 +3,9 @@ CRITICAL FIXES:
 1. ✅ Match stats now properly increment (goals, assists, actions)
 2. ✅ Match rating properly retrieved for MOTM display
 3. ✅ All counters working correctly
+4. ✅ MOTM DM notification added
+5. ✅ Hat-trick notification added
+6. ✅ Red card suspension notification added
 """
 import discord
 from discord.ext import commands
@@ -501,7 +504,7 @@ class MatchEngine:
                     inline=False
                 )
                 
-                # ✅ FIX #1: INCREMENT GOALS IN MATCH_PARTICIPANTS
+                # ✅ INCREMENT GOALS
                 async with db.pool.acquire() as conn:
                     await conn.execute("""
                         UPDATE match_participants 
@@ -513,6 +516,15 @@ class MatchEngine:
                         "UPDATE players SET season_goals = season_goals + 1, career_goals = career_goals + 1 WHERE user_id = $1",
                         player['user_id']
                     )
+                    
+                    # ✅ CHECK FOR HAT-TRICK
+                    goals_row = await conn.fetchrow(
+                        "SELECT goals_scored FROM match_participants WHERE match_id = $1 AND user_id = $2",
+                        match_id, player['user_id']
+                    )
+                    if goals_row and goals_row['goals_scored'] == 3:
+                        await self.send_hattrick_notification(player, attacking_team)
+                
                 from utils.form_morale_system import update_player_morale
                 await update_player_morale(player['user_id'], 'goal')
             else:
@@ -531,6 +543,9 @@ class MatchEngine:
                 inline=False
             )
             rating_change += 0.5
+            
+            # ✅ SEND RED CARD NOTIFICATION TO PLAYER
+            await self.send_red_card_notification(player, attacking_team, defending_team)
         
         # VAR CHECK
         elif abs(player_total - defender_total) <= 2 and random.random() < 0.02:
@@ -566,7 +581,7 @@ class MatchEngine:
                     scorer_name = player['player_name']
                     rating_change = 1.2
 
-                    # ✅ FIX #1: INCREMENT GOALS IN MATCH_PARTICIPANTS
+                    # ✅ INCREMENT GOALS
                     async with db.pool.acquire() as conn:
                         await conn.execute("""
                             UPDATE match_participants 
@@ -578,6 +593,15 @@ class MatchEngine:
                             "UPDATE players SET season_goals = season_goals + 1, career_goals = career_goals + 1 WHERE user_id = $1",
                             player['user_id']
                         )
+                        
+                        # ✅ CHECK FOR HAT-TRICK
+                        goals_row = await conn.fetchrow(
+                            "SELECT goals_scored FROM match_participants WHERE match_id = $1 AND user_id = $2",
+                            match_id, player['user_id']
+                        )
+                        if goals_row and goals_row['goals_scored'] == 3:
+                            await self.send_hattrick_notification(player, attacking_team)
+                    
                     from utils.form_morale_system import update_player_morale
                     await update_player_morale(player['user_id'], 'goal')
                 else:
@@ -598,7 +622,7 @@ class MatchEngine:
                         assister_name = player['player_name']
                         rating_change = 0.8
 
-                        # ✅ FIX #1: INCREMENT ASSISTS IN MATCH_PARTICIPANTS
+                        # ✅ INCREMENT ASSISTS
                         async with db.pool.acquire() as conn:
                             await conn.execute("""
                                 UPDATE match_participants 
@@ -634,7 +658,7 @@ class MatchEngine:
         await suspense_msg.delete()
         await channel.send(embed=result_embed)
 
-        # ✅ FIX #1: INCREMENT ACTIONS_TAKEN IN MATCH_PARTICIPANTS
+        # ✅ INCREMENT ACTIONS
         async with db.pool.acquire() as conn:
             await conn.execute("""
                 UPDATE match_participants 
@@ -650,6 +674,47 @@ class MatchEngine:
             'scorer_name': scorer_name,
             'assister_name': assister_name
         }
+
+    async def send_hattrick_notification(self, player, team):
+        """✅ NEW: Send DM when player scores hat-trick"""
+        try:
+            user = await self.bot.fetch_user(player['user_id'])
+            embed = discord.Embed(
+                title="🎩⚽⚽⚽ HAT-TRICK!",
+                description=f"**{player['player_name']}**, you scored 3 goals in one match!\n\n**{team['team_name']}** will remember this legendary performance!",
+                color=discord.Color.purple()
+            )
+            team_crest = get_team_crest_url(team['team_id'])
+            if team_crest:
+                embed.set_thumbnail(url=team_crest)
+            embed.set_footer(text="⭐ A historic achievement!")
+            await user.send(embed=embed)
+            print(f"🎩 Hat-trick notification sent to {player['player_name']}")
+        except Exception as e:
+            print(f"❌ Could not send hat-trick DM to {player['user_id']}: {e}")
+
+    async def send_red_card_notification(self, player, attacking_team, defending_team):
+        """✅ NEW: Send DM when player receives red card"""
+        try:
+            user = await self.bot.fetch_user(player['user_id'])
+            embed = discord.Embed(
+                title="🟥 RED CARD - SUSPENSION!",
+                description=f"**{player['player_name']}**, you've been sent off!\n\n**YOU WILL MISS THE NEXT MATCH** due to suspension.",
+                color=discord.Color.red()
+            )
+            embed.add_field(
+                name="⚠️ What This Means",
+                value="• Cannot participate in next fixture\n• Team plays without you\n• Impacts your form rating",
+                inline=False
+            )
+            team_crest = get_team_crest_url(attacking_team['team_id'])
+            if team_crest:
+                embed.set_thumbnail(url=team_crest)
+            embed.set_footer(text=f"Match: {attacking_team['team_name']} vs {defending_team['team_name']}")
+            await user.send(embed=embed)
+            print(f"🟥 Red card notification sent to {player['player_name']}")
+        except Exception as e:
+            print(f"❌ Could not send red card DM to {player['user_id']}: {e}")
 
     async def handle_teammate_goal(self, channel, player, attacking_team, match_id):
         """Handle teammate scoring after assist"""
@@ -813,7 +878,7 @@ class MatchEngine:
             except ImportError:
                 pass
 
-        # ✅ FIX #2: PROPERLY RETRIEVE MATCH_RATING FOR MOTM
+        # ✅ FIX #2: MOTM WITH DM NOTIFICATION
         if participants:
             user_participants = [p for p in participants if p['user_id']]
 
@@ -839,6 +904,7 @@ class MatchEngine:
 
                     motm_player = await db.get_player(motm['user_id'])
 
+                    # Send to channel
                     motm_embed = discord.Embed(
                         title="⭐ MAN OF THE MATCH",
                         description=f"**{motm_player['player_name']}**\nMatch Rating: **{motm['match_rating']:.1f}/10**",
@@ -857,6 +923,27 @@ class MatchEngine:
 
                     await channel.send(embed=motm_embed)
                     print(f"⭐ MOTM: {motm_player['player_name']} ({motm['match_rating']:.1f}/10)")
+
+                    # ✅ SEND DM TO MOTM WINNER
+                    try:
+                        user = await self.bot.fetch_user(motm['user_id'])
+                        dm_embed = discord.Embed(
+                            title="⭐ YOU WON MAN OF THE MATCH!",
+                            description=f"**{motm['match_rating']:.1f}/10** rating in {home_team['team_name']} vs {away_team['team_name']}",
+                            color=discord.Color.gold()
+                        )
+                        dm_embed.add_field(
+                            name="📊 Your Performance",
+                            value=f"⚽ Goals: **{motm['goals_scored']}**\n🅰️ Assists: **{motm['assists']}**\n⚡ Actions: **{motm['actions_taken']}**",
+                            inline=False
+                        )
+                        if team_crest:
+                            dm_embed.set_thumbnail(url=team_crest)
+                        dm_embed.set_footer(text="🏆 Career MOTM awards increased!")
+                        await user.send(embed=dm_embed)
+                        print(f"✅ MOTM DM sent to {motm_player['player_name']}")
+                    except Exception as e:
+                        print(f"❌ Could not DM MOTM to {motm['user_id']}: {e}")
 
         embed = discord.Embed(
             title="🏁 FULL TIME!",
