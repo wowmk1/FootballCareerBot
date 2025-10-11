@@ -140,6 +140,31 @@ class FootballBot(commands.Bot):
         # END AUTO-MIGRATE
         # ============================================
 
+        try:
+            from utils.cup_manager import initialize_cup_season
+            state = await db.get_game_state()
+
+            if state['season_started']:
+                # Check if cups exist for current season
+                async with db.pool.acquire() as conn:
+                    result = await conn.fetchrow("""
+                                                 SELECT COUNT(*) as count
+                                                 FROM cup_draws
+                                                 WHERE season = $1
+                                                 """, state['current_season'])
+
+                    if result['count'] == 0:
+                        print("🏆 Initializing cup competitions...")
+                        await initialize_cup_season(state['current_season'])
+                        print("✅ Cup competitions initialized")
+                    else:
+                        print("✅ Cup competitions already initialized")
+        except Exception as e:
+            print(f"⚠️ Cup initialization warning: {e}")
+        # ============================================
+        # END CUP INITIALIZATION
+        # ============================================
+
         await self.initialize_data()
         await self.load_cogs()
 
