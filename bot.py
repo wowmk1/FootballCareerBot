@@ -21,7 +21,7 @@ class FootballBot(commands.Bot):
             help_command=None
         )
         self.season_task_started = False
-        self.match_window_lock = asyncio.Lock()  # Race condition prevention
+        self.match_window_lock = asyncio.Lock()  # CRITICAL FIX #3: Always initialize lock
 
     async def setup_hook(self):
         """Called when bot is starting up"""
@@ -452,7 +452,7 @@ class FootballBot(commands.Bot):
             print(f"⚠️ Could not post window closed notification: {e}")
 
     # ============================================
-    # SIMPLIFIED BACKGROUND TASKS
+    # SIMPLIFIED BACKGROUND TASKS (CRITICAL FIX #1 APPLIED)
     # ============================================
 
     @tasks.loop(hours=168)  # Weekly (7 days)
@@ -462,7 +462,9 @@ class FootballBot(commands.Bot):
             await db.cleanup_old_retired_players()
             print("✅ Weekly data cleanup complete")
         except Exception as e:
-            print(f"❌ Error in cleanup: {e}")
+            print(f"❌ CRITICAL ERROR in cleanup_old_data: {e}")
+            import traceback
+            traceback.print_exc()
 
     @cleanup_old_data.before_loop
     async def before_cleanup_old_data(self):
@@ -473,6 +475,7 @@ class FootballBot(commands.Bot):
         """
         Simple 5-minute check: Is it time to open/close windows?
         Checks: Mon/Wed/Sat 3-5 PM EST
+        CRITICAL FIX #1: Wrapped in try-except for error recovery
         """
         try:
             from utils.season_manager import (
@@ -496,27 +499,58 @@ class FootballBot(commands.Bot):
                 print("🟢 Opening match window (fixed schedule)")
                 await open_match_window()
                 await self.notify_match_window_open()
+                
+                # FIX #4: Update bot presence when window opens
+                await self.change_presence(
+                    activity=discord.Game(name=f"🟢 WINDOW OPEN | Week {state['current_week']}"),
+                    status=discord.Status.online
+                )
             
             # CLOSE WINDOW: If it's end time and window is open
             elif is_end_time and window_open:
                 print("🔴 Closing match window (fixed schedule)")
                 await close_match_window(bot=self)
+                
+                # FIX #4: Update bot presence when window closes
+                state = await db.get_game_state()  # Refresh state after close
+                from utils.season_manager import get_next_match_window
+                try:
+                    next_window = get_next_match_window()
+                    day = next_window.strftime('%a')
+                    await self.change_presence(
+                        activity=discord.Game(name=f"Next: {day} 3PM EST | Week {state['current_week']}"),
+                        status=discord.Status.online
+                    )
+                except:
+                    await self.change_presence(
+                        activity=discord.Game(name=f"⚽ Week {state['current_week']} | /season"),
+                        status=discord.Status.online
+                    )
             
             # AUTO-CLOSE: If window is open but it's NOT window time (safety check)
             elif window_open and not is_window_time:
                 print("⚠️ Window is open outside of match hours - auto-closing")
                 await close_match_window(bot=self)
                 
+                # FIX #4: Update bot presence after auto-close
+                state = await db.get_game_state()
+                await self.change_presence(
+                    activity=discord.Game(name=f"⚽ Week {state['current_week']} | /season"),
+                    status=discord.Status.online
+                )
+                
         except Exception as e:
-            print(f"❌ Error in match window check: {e}")
+            print(f"❌ CRITICAL ERROR in check_match_windows: {e}")
             import traceback
             traceback.print_exc()
+            # Task continues running despite error
 
     @tasks.loop(minutes=5)
     async def check_warnings(self):
         """
         Check if we should send warnings
         Times: 2:00 PM, 2:30 PM, 2:45 PM (before open), 4:45 PM (before close)
+        CRITICAL FIX #1: Wrapped in try-except for error recovery
         """
         try:
             from utils.season_manager import (
@@ -546,19 +580,32 @@ class FootballBot(commands.Bot):
                 await send_closing_warning(self)
                 
         except Exception as e:
-            print(f"❌ Error in warning check: {e}")
+            print(f"❌ CRITICAL ERROR in check_warnings: {e}")
+            import traceback
+            traceback.print_exc()
+            # Task continues running despite error
 
     @tasks.loop(hours=24)
     async def check_retirements(self):
-        """Daily retirement check"""
+        """
+        Daily retirement check
+        CRITICAL FIX #1: Wrapped in try-except for error recovery
+        """
         try:
             await db.retire_old_players()
         except Exception as e:
-            print(f"❌ Error in retirement check: {e}")
+            print(f"❌ CRITICAL ERROR in check_retirements: {e}")
+            import traceback
+            traceback.print_exc()
+            # Task continues running despite error
 
     @tasks.loop(hours=1)
     async def check_training_reminders(self):
-        """Check for players whose training is ready and send reminders"""
+        """
+        Check for players whose training is ready and send reminders
+        CRITICAL FIX #1: Wrapped in try-except for error recovery
+        CRITICAL FIX #2: Update timestamp BEFORE attempting DM to prevent spam
+        """
         try:
             async with db.pool.acquire() as conn:
                 # Get players who can train now (24h+ since last training)
@@ -573,19 +620,21 @@ class FootballBot(commands.Bot):
                 """)
 
                 for row in rows:
-                    # Send reminder
-                    success = await self.send_training_reminder(row['user_id'])
+                    # CRITICAL FIX #2: Update timestamp FIRST to prevent infinite retries
+                    await conn.execute("""
+                        UPDATE players 
+                        SET last_reminded = $1 
+                        WHERE user_id = $2
+                    """, datetime.now().isoformat(), row['user_id'])
                     
-                    if success:
-                        # Update last_reminded to avoid spam
-                        await conn.execute("""
-                            UPDATE players 
-                            SET last_reminded = $1 
-                            WHERE user_id = $2
-                        """, datetime.now().isoformat(), row['user_id'])
+                    # Then attempt to send reminder (failure won't cause retry storm)
+                    await self.send_training_reminder(row['user_id'])
                         
         except Exception as e:
-            print(f"❌ Error in training reminder check: {e}")
+            print(f"❌ CRITICAL ERROR in check_training_reminders: {e}")
+            import traceback
+            traceback.print_exc()
+            # Task continues running despite error
 
     async def send_training_reminder(self, user_id: int):
         """Send DM when training is available"""
