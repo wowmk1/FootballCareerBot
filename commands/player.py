@@ -117,6 +117,38 @@ class PlayerCommands(commands.Cog):
         # END OF FORM SECTION
         # ============================================
         
+        # ============================================
+        # ✅ NEW: TRAINING COOLDOWN INFO
+        # ============================================
+        from datetime import datetime, timedelta
+        import config
+        
+        if player['last_training']:
+            last_train = datetime.fromisoformat(player['last_training'])
+            time_since = datetime.now() - last_train
+            
+            if time_since < timedelta(hours=config.TRAINING_COOLDOWN_HOURS):
+                # Still on cooldown
+                next_train = last_train + timedelta(hours=config.TRAINING_COOLDOWN_HOURS)
+                time_until = next_train - datetime.now()
+                
+                hours_left = int(time_until.total_seconds() // 3600)
+                minutes_left = int((time_until.total_seconds() % 3600) // 60)
+                
+                cooldown_text = f"⏰ Training available in **{hours_left}h {minutes_left}m**"
+            else:
+                # Ready to train
+                cooldown_text = "✅ **TRAINING READY!** Use `/train`"
+        else:
+            cooldown_text = "✅ **TRAINING READY!** Use `/train`"
+        
+        embed.add_field(
+            name="💪 Training Status",
+            value=cooldown_text,
+            inline=False
+        )
+        # ============================================
+        
         embed.set_footer(text=f"Player ID: {target_user.id}")
         
         await interaction.response.send_message(embed=embed)
@@ -359,6 +391,90 @@ class PlayerCommands(commands.Cog):
         )
         
         embed.set_footer(text="👤 = User-controlled player")
+        
+        await interaction.followup.send(embed=embed)
+
+    # ============================================
+    # ✅ NEW COMMAND: Career Statistics Dashboard
+    # ============================================
+    @app_commands.command(name="career", description="View your complete career history")
+    async def career(self, interaction: discord.Interaction):
+        """Show career progression over time"""
+        await interaction.response.defer()
+        
+        player = await db.get_player(interaction.user.id)
+        if not player:
+            await interaction.followup.send("❌ No player found!", ephemeral=True)
+            return
+        
+        embed = discord.Embed(
+            title=f"📈 {player['player_name']} - Career History",
+            description=f"Age {player['age']} • {player['position']}",
+            color=discord.Color.blue()
+        )
+        
+        # Career Stats
+        embed.add_field(
+            name="🏆 Career Statistics",
+            value=f"⚽ {player['career_goals']} goals\n"
+                  f"🅰️ {player['career_assists']} assists\n"
+                  f"👕 {player['career_apps']} appearances\n"
+                  f"⭐ {player.get('career_motm', 0)} MOTM awards",
+            inline=True
+        )
+        
+        # Progression
+        embed.add_field(
+            name="📊 Development",
+            value=f"Started: {player['age'] - (player['career_apps'] // 38)} years old\n"
+                  f"Current: {player['overall_rating']} OVR\n"
+                  f"Potential: ⭐ {player['potential']} POT\n"
+                  f"Peak Years: {38 - player['age']} remaining",
+            inline=True
+        )
+        
+        # Transfer History
+        async with db.pool.acquire() as conn:
+            transfers = await conn.fetch("""
+                SELECT t.*, t1.team_name as from_team, t2.team_name as to_team
+                FROM transfers t
+                LEFT JOIN teams t1 ON t.from_team = t1.team_id
+                LEFT JOIN teams t2 ON t.to_team = t2.team_id
+                WHERE t.user_id = $1
+                ORDER BY t.transfer_date DESC
+                LIMIT 5
+            """, player['user_id'])
+        
+        if transfers:
+            transfer_text = ""
+            for t in transfers:
+                from_name = t['from_team'] or 'Free Agent'
+                to_name = t['to_team'] or 'Unknown'
+                transfer_text += f"• {from_name} → {to_name}\n"
+            
+            embed.add_field(
+                name="💼 Transfer History",
+                value=transfer_text,
+                inline=False
+            )
+        
+        # Milestones
+        milestones = []
+        if player['career_goals'] >= 100:
+            milestones.append("🎯 100 Career Goals")
+        if player['career_assists'] >= 50:
+            milestones.append("🅰️ 50 Career Assists")
+        if player.get('career_motm', 0) >= 10:
+            milestones.append("⭐ 10 MOTM Awards")
+        if player['training_streak'] >= 30:
+            milestones.append("💪 30-Day Training Streak")
+        
+        if milestones:
+            embed.add_field(
+                name="🏅 Milestones",
+                value="\n".join(milestones),
+                inline=False
+            )
         
         await interaction.followup.send(embed=embed)
 
