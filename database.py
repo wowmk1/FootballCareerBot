@@ -361,6 +361,17 @@ class Database:
                 )
             ''')
             
+            # ✅ NEW: Player Traits table
+            await conn.execute('''
+                CREATE TABLE IF NOT EXISTS player_traits (
+                    id SERIAL PRIMARY KEY,
+                    user_id BIGINT NOT NULL,
+                    trait_id TEXT NOT NULL,
+                    unlocked_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE(user_id, trait_id)
+                )
+            ''')
+            
             # Settings table
             await conn.execute('''
                 CREATE TABLE IF NOT EXISTS user_settings (
@@ -594,7 +605,7 @@ class Database:
             passing = max(50, base_rating - random.randint(5, 10))
             dribbling = max(45, base_rating - random.randint(10, 15))
             defending = min(99, base_rating + random.randint(5, 15))
-            physical = max(60, base_rating + random.randint(-5, 5))
+            physical = min(99, base_rating + random.randint(-5, 5))
         elif position in ['ST', 'W']:
             pace = min(99, base_rating + random.randint(0, 10))
             shooting = min(99, base_rating + random.randint(5, 10))
