@@ -152,13 +152,13 @@ async def close_match_window(bot=None):
     
     await advance_week(bot=bot)
 
-async def check_contract_morale():
-    """Apply morale penalty to players with expiring contracts"""
+async def check_contract_morale(bot=None):
+    """Apply morale penalty AND send warnings for expiring contracts"""
     from utils.form_morale_system import update_player_morale
     
     async with db.pool.acquire() as conn:
         expiring_players = await conn.fetch("""
-            SELECT user_id, player_name, contract_years
+            SELECT user_id, player_name, contract_years, contract_wage, team_id
             FROM players
             WHERE retired = FALSE
             AND contract_years <= 1
@@ -166,12 +166,57 @@ async def check_contract_morale():
         """)
     
     affected = 0
+    warned = 0
+    
     for player in expiring_players:
+        # Apply morale penalty
         await update_player_morale(player['user_id'], 'contract_expiring')
         affected += 1
+        
+        # ✅ NEW: SEND WARNING DM
+        if player['contract_years'] == 1 and bot:
+            try:
+                user = await bot.fetch_user(player['user_id'])
+                
+                embed = discord.Embed(
+                    title="⚠️ CONTRACT EXPIRING SOON!",
+                    description=f"**{player['player_name']}**\nYour contract expires in **1 year**!",
+                    color=discord.Color.orange()
+                )
+                
+                # Get team name
+                team = await db.get_team(player['team_id'])
+                team_name = team['team_name'] if team else player['team_id']
+                
+                embed.add_field(
+                    name="💼 Current Contract",
+                    value=f"**{team_name}**\n£{player['contract_wage']:,}/week\n1 year remaining",
+                    inline=True
+                )
+                
+                embed.add_field(
+                    name="📋 Next Steps",
+                    value="• Wait for renewal offer during transfer windows\n"
+                          "• Or explore other clubs\n"
+                          "• Transfer windows: Weeks 15-17, 30-32",
+                    inline=False
+                )
+                
+                embed.add_field(
+                    name="⚠️ Warning",
+                    value="Expiring contracts reduce morale!\nSecure your future soon.",
+                    inline=False
+                )
+                
+                await user.send(embed=embed)
+                warned += 1
+                print(f"  ✉️ Warned {player['player_name']} about expiring contract")
+            except Exception as e:
+                print(f"  ⚠️ Could not warn user {player['user_id']}: {e}")
     
     if affected > 0:
         print(f"  😰 {affected} players affected by contract uncertainty")
+        print(f"  ✉️ Sent {warned} contract warnings")
 
 async def advance_week(bot=None):
     """Advance to next week with auto-posting news"""
@@ -180,12 +225,12 @@ async def advance_week(bot=None):
     next_week = current_week + 1
     
     if next_week > config.SEASON_TOTAL_WEEKS:
-        await end_season()
+        await end_season(bot=bot)
         return
     
     await db.update_game_state(current_week=next_week)
     
-    await check_contract_morale()
+    await check_contract_morale(bot=bot)
     
     # ============================================
     # 🆕 AUTO-POST WEEKLY NEWS DIGEST
@@ -258,12 +303,173 @@ async def close_transfer_window():
     
     print("💼 Transfer window CLOSED")
 
-async def end_season():
-    """End the season"""
+async def end_season(bot=None):
+    """End the season with awards ceremony"""
     state = await db.get_game_state()
     current_season = state['current_season']
     
     print(f"🏆 Season {current_season} complete!")
+    
+    # ============================================
+    # ✅ NEW: CALCULATE SEASON AWARDS
+    # ============================================
+    awards = {}
+    
+    async with db.pool.acquire() as conn:
+        # Golden Boot (Top Scorer)
+        golden_boot = await conn.fetchrow("""
+            SELECT p.player_name, p.season_goals, p.user_id, t.team_name
+            FROM players p
+            LEFT JOIN teams t ON p.team_id = t.team_id
+            WHERE p.retired = FALSE
+            ORDER BY p.season_goals DESC
+            LIMIT 1
+        """)
+        if golden_boot and golden_boot['season_goals'] > 0:
+            awards['golden_boot'] = dict(golden_boot)
+        
+        # Most Assists
+        most_assists = await conn.fetchrow("""
+            SELECT p.player_name, p.season_assists, p.user_id, t.team_name
+            FROM players p
+            LEFT JOIN teams t ON p.team_id = t.team_id
+            WHERE p.retired = FALSE
+            ORDER BY p.season_assists DESC
+            LIMIT 1
+        """)
+        if most_assists and most_assists['season_assists'] > 0:
+            awards['most_assists'] = dict(most_assists)
+        
+        # Player of the Year (Highest Average Rating)
+        poty = await conn.fetchrow("""
+            SELECT p.player_name, p.season_rating, p.season_apps, p.user_id, t.team_name
+            FROM players p
+            LEFT JOIN teams t ON p.team_id = t.team_id
+            WHERE p.retired = FALSE AND p.season_apps >= 10
+            ORDER BY p.season_rating DESC
+            LIMIT 1
+        """)
+        if poty and poty['season_rating'] > 0:
+            awards['poty'] = dict(poty)
+        
+        # Most MOTM Awards
+        most_motm = await conn.fetchrow("""
+            SELECT p.player_name, p.season_motm, p.user_id, t.team_name
+            FROM players p
+            LEFT JOIN teams t ON p.team_id = t.team_id
+            WHERE p.retired = FALSE
+            ORDER BY p.season_motm DESC
+            LIMIT 1
+        """)
+        if most_motm and most_motm['season_motm'] > 0:
+            awards['most_motm'] = dict(most_motm)
+        
+        # Young Player of the Year (Under 23)
+        ypoty = await conn.fetchrow("""
+            SELECT p.player_name, p.overall_rating, p.age, p.user_id, t.team_name
+            FROM players p
+            LEFT JOIN teams t ON p.team_id = t.team_id
+            WHERE p.retired = FALSE AND p.age < 23 AND p.season_apps >= 5
+            ORDER BY p.overall_rating DESC, p.season_rating DESC
+            LIMIT 1
+        """)
+        if ypoty:
+            awards['ypoty'] = dict(ypoty)
+    
+    # ✅ POST AWARDS TO ALL SERVERS
+    if bot:
+        for guild in bot.guilds:
+            try:
+                news_channel = discord.utils.get(guild.text_channels, name="news-feed")
+                if not news_channel:
+                    news_channel = discord.utils.get(guild.text_channels, name="general")
+                
+                if news_channel:
+                    embed = discord.Embed(
+                        title=f"🏆 Season {current_season} AWARDS",
+                        description="Celebrating the best performers of the season!",
+                        color=discord.Color.gold()
+                    )
+                    
+                    if 'golden_boot' in awards:
+                        a = awards['golden_boot']
+                        embed.add_field(
+                            name="👟 GOLDEN BOOT",
+                            value=f"**{a['player_name']}** ({a['team_name']})\n{a['season_goals']} goals",
+                            inline=False
+                        )
+                    
+                    if 'most_assists' in awards:
+                        a = awards['most_assists']
+                        embed.add_field(
+                            name="🅰️ MOST ASSISTS",
+                            value=f"**{a['player_name']}** ({a['team_name']})\n{a['season_assists']} assists",
+                            inline=False
+                        )
+                    
+                    if 'poty' in awards:
+                        a = awards['poty']
+                        embed.add_field(
+                            name="⭐ PLAYER OF THE YEAR",
+                            value=f"**{a['player_name']}** ({a['team_name']})\n{a['season_rating']:.2f} avg rating ({a['season_apps']} apps)",
+                            inline=False
+                        )
+                    
+                    if 'most_motm' in awards:
+                        a = awards['most_motm']
+                        embed.add_field(
+                            name="🌟 MOST MOTM AWARDS",
+                            value=f"**{a['player_name']}** ({a['team_name']})\n{a['season_motm']} MOTM awards",
+                            inline=False
+                        )
+                    
+                    if 'ypoty' in awards:
+                        a = awards['ypoty']
+                        embed.add_field(
+                            name="🎯 YOUNG PLAYER OF THE YEAR",
+                            value=f"**{a['player_name']}** ({a['team_name']})\nAge {a['age']} • {a['overall_rating']} OVR",
+                            inline=False
+                        )
+                    
+                    embed.set_footer(text=f"Season {current_season} Complete • Next season starts soon!")
+                    
+                    await news_channel.send(embed=embed)
+                    print(f"  🏆 Posted awards to {guild.name}")
+            except Exception as e:
+                print(f"  ⚠️ Could not post awards to {guild.name}: {e}")
+        
+        # ✅ SEND DMs TO AWARD WINNERS
+        for award_name, award_data in awards.items():
+            if 'user_id' in award_data:
+                try:
+                    user = await bot.fetch_user(award_data['user_id'])
+                    
+                    award_titles = {
+                        'golden_boot': '👟 GOLDEN BOOT',
+                        'most_assists': '🅰️ MOST ASSISTS',
+                        'poty': '⭐ PLAYER OF THE YEAR',
+                        'most_motm': '🌟 MOST MOTM AWARDS',
+                        'ypoty': '🎯 YOUNG PLAYER OF THE YEAR'
+                    }
+                    
+                    embed = discord.Embed(
+                        title=f"🏆 CONGRATULATIONS!",
+                        description=f"You won: **{award_titles.get(award_name, award_name.replace('_', ' ').title())}**!",
+                        color=discord.Color.gold()
+                    )
+                    embed.add_field(
+                        name="🎉 Amazing Achievement",
+                        value=f"You were the best in the league this season!",
+                        inline=False
+                    )
+                    await user.send(embed=embed)
+                    print(f"  🏆 Sent award DM to {award_data['player_name']}")
+                except Exception as e:
+                    print(f"  ⚠️ Could not send award DM: {e}")
+    
+    # ============================================
+    # END OF AWARDS - Continue with existing code
+    # ============================================
     
     await db.age_all_players()
     retired_count = await db.retire_old_players()
