@@ -336,38 +336,115 @@ class FootballBot(commands.Bot):
     async def notify_match_window_open(self):
         """Notify all guilds that match window is open"""
         try:
+            state = await db.get_game_state()
+
             for guild in self.guilds:
                 channel = discord.utils.get(guild.text_channels, name="match-results")
                 if not channel:
                     channel = discord.utils.get(guild.text_channels, name="general")
-                
+
                 if channel:
-                    state = await db.get_game_state()
                     embed = discord.Embed(
                         title="🟢 MATCH WINDOW OPEN!",
                         description=f"**Week {state['current_week']}** matches are now playable!\n\n"
-                                   f"Use `/play_match` to play your match!",
+                                    f"Use `/play_match` to play your match!",
                         color=discord.Color.green()
                     )
-                    
+
                     embed.add_field(
                         name="⏰ Window Open",
                         value="**3:00 PM - 5:00 PM EST**\n2 hour window",
                         inline=True
                     )
-                    
+
                     embed.add_field(
                         name="⚡ Quick Commands",
                         value="`/play_match` - Play your match\n`/season` - Check schedule",
                         inline=True
                     )
-                    
+
+                    # Get players in this server who have matches
+                    async with db.pool.acquire() as conn:
+                        players = await conn.fetch("""
+                            SELECT DISTINCT p.user_id, p.player_name, t.team_name
+                            FROM players p
+                            JOIN teams t ON p.team_id = t.team_id
+                            WHERE p.retired = FALSE
+                              AND p.team_id != 'free_agent'
+                              AND EXISTS (
+                                SELECT 1 FROM fixtures f
+                                WHERE (f.home_team_id = p.team_id OR f.away_team_id = p.team_id)
+                                AND f.week_number = $1
+                                AND f.played = FALSE
+                              )
+                        """, state['current_week'])
+
+                    # Mention players who need to play
+                    player_mentions = []
+                    for p in players:
+                        member = guild.get_member(p['user_id'])
+                        if member:
+                            player_mentions.append(f"{member.mention} ({p['team_name']})")
+
+                    if player_mentions:
+                        mentions_text = "\n".join(player_mentions[:10])  # Max 10
+                        if len(player_mentions) > 10:
+                            mentions_text += f"\n*...and {len(player_mentions) - 10} more*"
+
+                        embed.add_field(
+                            name="👥 Players with Matches",
+                            value=mentions_text,
+                            inline=False
+                        )
+
                     embed.set_footer(text="Window closes at 5:00 PM EST!")
-                    
+
                     await channel.send(embed=embed)
                     print(f"✅ Posted match window notification to {guild.name}")
         except Exception as e:
             print(f"⚠️ Could not post match window notification: {e}")
+
+    async def notify_match_window_closed(self, week_results):
+        """Notify all guilds that match window has closed with results"""
+        try:
+            state = await db.get_game_state()
+
+            for guild in self.guilds:
+                channel = discord.utils.get(guild.text_channels, name="match-results")
+                if not channel:
+                    channel = discord.utils.get(guild.text_channels, name="general")
+
+                if channel:
+                    embed = discord.Embed(
+                        title="🔴 MATCH WINDOW CLOSED",
+                        description=f"**Week {state['current_week']}** is complete! Advancing to Week {state['current_week'] + 1}...",
+                        color=discord.Color.red()
+                    )
+
+                    # Show match summary
+                    if week_results:
+                        results_text = ""
+                        for result in week_results[:5]:  # Show top 5
+                            results_text += f"**{result['home_team_name']}** {result['home_score']} - {result['away_score']} **{result['away_team_name']}**\n"
+
+                        embed.add_field(
+                            name="📊 Recent Results",
+                            value=results_text,
+                            inline=False
+                        )
+
+                    embed.add_field(
+                        name="📅 Next Match Window",
+                        value="Check `/season` for schedule",
+                        inline=False
+                    )
+
+                    embed.set_footer(text="Use /league table to see updated standings!")
+
+                    await channel.send(embed=embed)
+                    print(f"✅ Posted window closed notification to {guild.name}")
+        except Exception as e:
+            print(f"⚠️ Could not post window closed notification: {e}")
 
     # ============================================
     # SIMPLIFIED BACKGROUND TASKS
@@ -405,12 +482,12 @@ class FootballBot(commands.Bot):
             # CLOSE WINDOW: If it's end time and window is open
             elif is_end_time and window_open:
                 print("🔴 Closing match window (fixed schedule)")
-                await close_match_window(bot=self)  # ✅ FIXED: Pass bot instance for transfer notifications
+                await close_match_window(bot=self)
             
             # AUTO-CLOSE: If window is open but it's NOT window time (safety check)
             elif window_open and not is_window_time:
                 print("⚠️ Window is open outside of match hours - auto-closing")
-                await close_match_window(bot=self)  # ✅ FIXED: Pass bot instance here too
+                await close_match_window(bot=self)
                 
         except Exception as e:
             print(f"❌ Error in match window check: {e}")
@@ -557,7 +634,7 @@ class FootballBot(commands.Bot):
 
         print("=" * 50 + "\n")
 
-        # 🔥 NEW: Dynamic bot presence based on window status
+        # Dynamic bot presence based on window status
         if state['season_started']:
             if state['match_window_open']:
                 # Window is OPEN - show green status
