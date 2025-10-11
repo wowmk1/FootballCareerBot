@@ -1,3 +1,7 @@
+"""
+Transfer Commands - FIXED VERSION
+Critical fix: Line 116 changed from interaction.response.edit_message to interaction.edit_original_response
+"""
 import discord
 from discord import app_commands
 from discord.ext import commands
@@ -47,7 +51,7 @@ class TransferOfferView(discord.ui.View):
             await interaction.response.send_message("❌ These aren't your offers!", ephemeral=True)
             return
 
-        # CRITICAL: Defer immediately
+        # CRITICAL FIX: Defer immediately
         await interaction.response.defer()
 
         self.selected_offer_id = int(self.offer_select.values[0])
@@ -56,7 +60,7 @@ class TransferOfferView(discord.ui.View):
         selected_offer = next((o for o in self.offers if o['offer_id'] == self.selected_offer_id), None)
 
         if not selected_offer:
-            await interaction.response.send_message("❌ Offer not found!", ephemeral=True)
+            await interaction.followup.send("❌ Offer not found!", ephemeral=True)
             return
 
         # Get current player info
@@ -113,7 +117,8 @@ class TransferOfferView(discord.ui.View):
             if isinstance(item, discord.ui.Button):
                 item.disabled = False
 
-        await interaction.response.edit_message(embed=embed, view=self)
+        # CRITICAL FIX: Use edit_original_response instead of interaction.response.edit_message
+        await interaction.edit_original_response(embed=embed, view=self)
 
     @discord.ui.button(label="✅ Accept Offer", style=discord.ButtonStyle.success, disabled=True, row=1)
     async def accept_button(self, interaction: discord.Interaction, button: discord.ui.Button):
