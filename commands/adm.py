@@ -1,5 +1,6 @@
 """
 Admin Command - Single command with all admin actions in dropdown
+FIXED VERSION - Now passes bot instance to season manager functions
 """
 import discord
 from discord import app_commands
@@ -90,7 +91,8 @@ class AdminCommands(commands.Cog):
         await interaction.response.defer()
         
         from utils.season_manager import advance_week as adv_week
-        await adv_week()
+        # CRITICAL FIX: Pass bot instance so DMs can be sent
+        await adv_week(bot=self.bot)
         
         state = await db.get_game_state()
         
@@ -111,9 +113,11 @@ class AdminCommands(commands.Cog):
         await interaction.response.defer()
         
         from utils.season_manager import advance_week as adv_week
-        for _ in range(weeks):
-            await adv_week()
+        for i in range(weeks):
+            # CRITICAL FIX: Pass bot instance so DMs can be sent
+            await adv_week(bot=self.bot)
             await asyncio.sleep(1)
+            print(f"  Advanced week {i+1}/{weeks}")
         
         state = await db.get_game_state()
         
@@ -170,7 +174,7 @@ class AdminCommands(commands.Cog):
         await interaction.response.defer()
         
         from utils.season_manager import close_match_window
-        await close_match_window()
+        await close_match_window(bot=self.bot)
         
         embed = discord.Embed(
             title="✅ Match Window Closed",
@@ -294,7 +298,8 @@ class AdminCommands(commands.Cog):
         from utils.transfer_window_manager import generate_offers_for_player
         state = await db.get_game_state()
         
-        offers = await generate_offers_for_player(player, state['current_week'], num_offers=5)
+        # CRITICAL FIX: Pass bot instance so notifications can be sent
+        offers = await generate_offers_for_player(player, state['current_week'], num_offers=5, bot=self.bot)
         
         embed = discord.Embed(
             title="✅ Test Offers Generated",
@@ -318,8 +323,9 @@ class AdminCommands(commands.Cog):
                 color=discord.Color.gold()
             )
             await user.send(embed=dm_embed)
-        except:
-            pass
+            print(f"✅ Sent DM notification to {user.name}")
+        except Exception as e:
+            print(f"⚠️ Could not send DM to {user.name}: {e}")
     
     async def _debug_crests(self, interaction: discord.Interaction, team_id: str):
         """Debug crests"""
