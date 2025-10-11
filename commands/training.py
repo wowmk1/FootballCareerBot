@@ -142,6 +142,20 @@ class TrainingCommands(commands.Cog):
         total_points = int((base_points + streak_bonus) * age_multiplier * morale_multiplier)
         total_points = max(1, total_points)
 
+        # FIX #25: Add randomness to training
+        bad_day_message = ""
+        surprise_stat = None
+        
+        # 15% chance of "bad training day" (reduced gains)
+        if random.random() < 0.15:
+            total_points = max(1, total_points - 1)
+            bad_day_message = "\n⚠️ **Tough session today!** Gains reduced."
+        
+        # 10% chance of unexpected stat gain
+        unexpected_bonus = False
+        if random.random() < 0.10:
+            unexpected_bonus = True
+
         # Position-focused training
         position_focus = {
             'ST': ['shooting', 'physical', 'pace'],
@@ -165,6 +179,11 @@ class TrainingCommands(commands.Cog):
                 stat = random.choice(all_stats)
 
             stat_gains[stat] = stat_gains.get(stat, 0) + 1
+
+        # Add unexpected stat gain
+        if unexpected_bonus:
+            surprise_stat = random.choice(all_stats)
+            stat_gains[surprise_stat] = stat_gains.get(surprise_stat, 0) + 1
 
         # Apply stat gains with diminishing returns
         update_parts = []
@@ -245,29 +264,83 @@ class TrainingCommands(commands.Cog):
         from utils.form_morale_system import update_player_morale
         await update_player_morale(interaction.user.id, 'training')
 
-        # Build response embed
+        # FIX #18: Enhanced Training Feedback
         from utils.form_morale_system import get_morale_description
         morale_desc = get_morale_description(player['morale'])
 
+        # Calculate progress to next level
+        progress_to_next = 100 - ((new_overall % 10) * 10) if new_overall < 99 else 0
+        progress_bar_length = 20
+        filled = int((100 - progress_to_next) / 100 * progress_bar_length)
+        progress_bar = "█" * filled + "░" * (progress_bar_length - filled)
+
         embed = discord.Embed(
             title="💪 Training Complete!",
-            description=f"Hard work and dedication!" + streak_lost_message,
+            description=f"Hard work and dedication!" + streak_lost_message + bad_day_message,
             color=discord.Color.gold()
         )
 
+        # Progress to next OVR
+        if new_overall < 99:
+            next_ovr = new_overall + 1
+            embed.add_field(
+                name=f"📊 Progress to {next_ovr} OVR",
+                value=f"{progress_bar} {100 - progress_to_next}%",
+                inline=False
+            )
+
+        # Show gains with highlights and milestones
         if actual_gains:
-            gains_text = "\n".join([
-                f"{'⭐' if stat in primary_stats else '•'} +{gain} {stat.capitalize()}"
-                for stat, gain in actual_gains.items()
-            ])
+            gains_text = ""
+            for stat, gain in actual_gains.items():
+                is_primary = stat in primary_stats
+                emoji = "⭐" if is_primary else "•"
+                
+                # Highlight milestone gains
+                new_val = player[stat] + gain
+                milestone = ""
+                if new_val >= 90 and player[stat] < 90:
+                    milestone = " 🔥 **WORLD CLASS!**"
+                elif new_val >= 80 and player[stat] < 80:
+                    milestone = " ⚡ **ELITE!**"
+                
+                gains_text += f"{emoji} +{gain} {stat.capitalize()}{milestone}\n"
 
             past_potential = any(player[stat] >= player['potential'] for stat in actual_gains.keys())
             if past_potential:
-                gains_text += "\n\n✨ **Pushing beyond limits!**"
+                gains_text += "\n✨ **Pushing beyond limits!**"
         else:
             gains_text = "Tough session! Keep working - gains will come."
 
         embed.add_field(name="📈 Stat Gains", value=gains_text, inline=False)
+
+        # Show surprise development
+        if surprise_stat and actual_gains.get(surprise_stat, 0) > 0:
+            embed.add_field(
+                name="💡 Surprise Development",
+                value=f"Unexpected improvement in {surprise_stat}!",
+                inline=False
+            )
+
+        # League comparison
+        async with db.pool.acquire() as conn:
+            league_avg = await conn.fetchrow("""
+                SELECT AVG(overall_rating) as avg_rating
+                FROM players
+                WHERE league = $1 AND retired = FALSE
+            """, player['league'])
+            
+            if league_avg and league_avg['avg_rating']:
+                avg = float(league_avg['avg_rating'])
+                diff = new_overall - avg
+                comparison = "above" if diff > 0 else "below"
+                
+                embed.add_field(
+                    name="📊 League Comparison",
+                    value=f"You: **{new_overall}** | League Avg: **{avg:.1f}**\n"
+                          f"You are {abs(diff):.1f} OVR {comparison} average",
+                    inline=False
+                )
 
         if new_overall > player['overall_rating']:
             embed.add_field(
