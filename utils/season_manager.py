@@ -2,6 +2,8 @@
 SIMPLIFIED Season Manager - Fixed Schedule System
 Match windows: Mon/Wed/Sat 3-5 PM EST
 WITH FIXED AUTOMATIC TRANSFER OFFER GENERATION
++ CONTRACT MORALE SYSTEM
++ SEASON END FORM/MORALE RESET
 """
 import discord
 from database import db
@@ -206,6 +208,33 @@ async def close_match_window(bot=None):
     await advance_week(bot=bot)
 
 
+async def check_contract_morale():
+    """
+    🆕 NEW FEATURE: Apply morale penalty to players with expiring contracts
+    Players with 1 year or less remaining get -5 morale each week
+    This creates pressure to renew or seek transfers
+    """
+    from utils.form_morale_system import update_player_morale
+    
+    async with db.pool.acquire() as conn:
+        # Find players with 1 year or less on contract
+        expiring_players = await conn.fetch("""
+            SELECT user_id, player_name, contract_years
+            FROM players
+            WHERE retired = FALSE
+            AND contract_years <= 1
+            AND team_id != 'free_agent'
+        """)
+    
+    affected = 0
+    for player in expiring_players:
+        await update_player_morale(player['user_id'], 'contract_expiring')
+        affected += 1
+    
+    if affected > 0:
+        print(f"  😰 {affected} players affected by contract uncertainty")
+
+
 async def advance_week(bot=None):
     """
     Advance to next week - WITH FIXED TRANSFER GENERATION LOGIC
@@ -222,6 +251,9 @@ async def advance_week(bot=None):
     
     # Update week
     await db.update_game_state(current_week=next_week)
+    
+    # 🆕 Check contract morale weekly (NEW FEATURE)
+    await check_contract_morale()
     
     # ============================================
     # 🔥 FIXED TRANSFER WINDOW MANAGEMENT
@@ -318,12 +350,13 @@ async def end_season():
     retired_count = await db.retire_old_players()
     print(f"👴 {retired_count} players retired")
     
-    # Reset season stats
+    # 🆕 FIXED: Reset season stats AND form/morale for fresh start
     async with db.pool.acquire() as conn:
         await conn.execute("""
             UPDATE players SET 
             season_goals = 0, season_assists = 0, 
-            season_apps = 0, season_rating = 0.0, season_motm = 0
+            season_apps = 0, season_rating = 0.0, season_motm = 0,
+            form = 50, morale = 75
         """)
         
         await conn.execute("""
@@ -336,6 +369,8 @@ async def end_season():
             played = 0, won = 0, drawn = 0, lost = 0,
             goals_for = 0, goals_against = 0, points = 0, form = ''
         """)
+    
+    print(f"✅ All players reset - fresh start for next season!")
     
     # Start new season
     year = int(current_season.split('/')[0])
