@@ -77,6 +77,48 @@ class SeasonCommands(commands.Cog):
                 inline=False
             )
 
+        # ============================================
+        # TRANSFER WINDOW STATUS
+        # ============================================
+        current_week = state['current_week']
+        
+        if current_week in config.TRANSFER_WINDOW_WEEKS:
+            # Window is ACTIVE
+            window_weeks = config.TRANSFER_WINDOW_WEEKS
+            if current_week in window_weeks[:3]:
+                window_name = "Winter Window"
+                end_week = window_weeks[2]
+            else:
+                window_name = "Summer Window"
+                end_week = window_weeks[5]
+            
+            embed.add_field(
+                name="🔥 TRANSFER WINDOW ACTIVE",
+                value=f"**{window_name}** (Weeks {window_weeks[0 if current_week <= 17 else 3]}-{end_week})\n"
+                      f"Closes: End of Week {end_week}\n\n"
+                      f"💼 Use `/offers` to view club interest!",
+                inline=False
+            )
+        else:
+            # Window is CLOSED - show when it opens
+            if current_week < 15:
+                opens_week = 15
+                window_name = "Winter Window"
+            elif current_week >= 17 and current_week < 30:
+                opens_week = 30
+                window_name = "Summer Window"
+            else:
+                opens_week = "Next season (Week 15)"
+                window_name = "Winter Window"
+            
+            embed.add_field(
+                name="💼 Transfer Window Closed",
+                value=f"**{window_name}** opens: Week {opens_week}\n"
+                      f"Weeks remaining: {opens_week - current_week if isinstance(opens_week, int) else 'N/A'}",
+                inline=False
+            )
+        # ============================================
+
         # MATCH SCHEDULE INFO
         embed.add_field(
             name="📅 Fixed Schedule",
