@@ -14,7 +14,6 @@ async def post_match_result_to_channel(bot, guild, fixture, home_score, away_sco
         if not home_team or not away_team:
             return
         
-        # Determine result emoji
         if home_score > away_score:
             result = "🟢 HOME WIN"
             color = discord.Color.green()
@@ -34,14 +33,12 @@ async def post_match_result_to_channel(bot, guild, fixture, home_score, away_sco
         embed.add_field(name="Competition", value=fixture['competition'], inline=True)
         embed.add_field(name="League", value=fixture['league'], inline=True)
         
-        # Add team crests
         from utils.football_data_api import get_team_crest_url
         home_crest = get_team_crest_url(fixture['home_team_id'])
         
         if home_crest:
             embed.set_thumbnail(url=home_crest)
         
-        # Get player participants and their ratings
         async with db.pool.acquire() as conn:
             participants = await conn.fetch(
                 """SELECT mp.*, p.player_name 
@@ -79,7 +76,6 @@ async def post_transfer_news_to_channel(bot, guild, transfer_info):
         from_team_name = transfer_info['from_team']
         to_team_name = transfer_info['to_team']
         
-        # Determine transfer type
         if transfer_info['fee'] > 0:
             transfer_type = "💼 TRANSFER"
             color = discord.Color.blue()
@@ -102,11 +98,9 @@ async def post_transfer_news_to_channel(bot, guild, transfer_info):
             inline=True
         )
         
-        # Add team crest
         from utils.football_data_api import get_team_crest_url
         from data.teams import ALL_TEAMS
         
-        # Find the team_id from team name
         to_team_id = None
         for team in ALL_TEAMS:
             if team['team_name'] == to_team_name:
@@ -126,7 +120,7 @@ async def post_transfer_news_to_channel(bot, guild, transfer_info):
 
 
 async def post_new_player_announcement(bot, guild, player_info):
-    """Post new player joining announcement to transfer-news channel"""
+    """Post new player joining announcement"""
     try:
         transfer_channel = discord.utils.get(guild.text_channels, name="transfer-news")
         if not transfer_channel:
@@ -138,7 +132,6 @@ async def post_new_player_announcement(bot, guild, player_info):
             color=discord.Color.green()
         )
         
-        # Player stats
         embed.add_field(
             name="📊 Player Profile",
             value=f"**Position:** {player_info['position']}\n"
@@ -148,7 +141,6 @@ async def post_new_player_announcement(bot, guild, player_info):
             inline=True
         )
         
-        # Contract details
         embed.add_field(
             name="💼 Contract",
             value=f"**£{player_info['wage']:,}/week**\n"
@@ -157,11 +149,9 @@ async def post_new_player_announcement(bot, guild, player_info):
             inline=True
         )
         
-        # Add team crest
         from utils.football_data_api import get_team_crest_url
         from data.teams import ALL_TEAMS
         
-        # Find the team_id from team name
         to_team_id = None
         for team in ALL_TEAMS:
             if team['team_name'] == player_info['to_team']:
@@ -173,7 +163,6 @@ async def post_new_player_announcement(bot, guild, player_info):
             if to_crest:
                 embed.set_thumbnail(url=to_crest)
         
-        # Add user avatar
         embed.set_author(
             name=f"{player_info['user'].display_name} creates their player!",
             icon_url=player_info['user'].display_avatar.url if player_info['user'].display_avatar else None
@@ -188,61 +177,78 @@ async def post_new_player_announcement(bot, guild, player_info):
         print(f"❌ Error posting new player announcement: {e}")
 
 
-async def post_weekly_news_digest(bot, guild):
-    """Post weekly news digest to news-feed channel"""
+async def post_weekly_news_digest(bot, week_number: int):
+    """
+    🆕 AUTO-POST WEEKLY NEWS DIGEST
+    Posts top news from the completed week to news-feed channel
+    """
     try:
-        news_channel = discord.utils.get(guild.text_channels, name="news-feed")
-        if not news_channel:
-            return
-        
         state = await db.get_game_state()
-        current_week = state['current_week']
         
+        # Get news from completed week
         async with db.pool.acquire() as conn:
             rows = await conn.fetch(
                 """SELECT * FROM news 
                    WHERE week_number = $1 
                    ORDER BY importance DESC, created_at DESC 
-                   LIMIT 10""",
-                current_week
+                   LIMIT 12""",
+                week_number
             )
             news_items = [dict(row) for row in rows]
         
         if not news_items:
+            print(f"  📰 No news items for Week {week_number}")
             return
         
-        embed = discord.Embed(
-            title=f"📰 Week {current_week} News Digest",
-            description=f"**Season {state['current_season']}**\nTop stories from this week",
-            color=discord.Color.blue()
-        )
-        
-        category_emojis = {
-            'player_news': '⭐',
-            'league_news': '🏆',
-            'match_news': '⚽',
-            'transfer_news': '💼',
-            'injury_news': '🤕'
-        }
-        
-        for news in news_items[:8]:
-            emoji = category_emojis.get(news['category'], '📌')
-            
-            # Truncate long content
-            content = news['content'][:200]
-            if len(news['content']) > 200:
-                content += "..."
-            
-            embed.add_field(
-                name=f"{emoji} {news['headline']}",
-                value=content,
-                inline=False
-            )
-        
-        embed.set_footer(text=f"Use /news for personalized feed")
-        
-        await news_channel.send(embed=embed)
-        print(f"✅ Posted weekly news digest for Week {current_week}")
+        # Post to all guilds
+        for guild in bot.guilds:
+            try:
+                news_channel = discord.utils.get(guild.text_channels, name="news-feed")
+                if not news_channel:
+                    news_channel = discord.utils.get(guild.text_channels, name="general")
+                
+                if not news_channel:
+                    continue
+                
+                embed = discord.Embed(
+                    title=f"📰 Week {week_number} News Digest",
+                    description=f"**Season {state['current_season']}**\nTop stories from Week {week_number}",
+                    color=discord.Color.blue()
+                )
+                
+                category_emojis = {
+                    'player_news': '⭐',
+                    'league_news': '🏆',
+                    'match_news': '⚽',
+                    'transfer_news': '💼',
+                    'injury_news': '🤕'
+                }
+                
+                # Add top 10 news items
+                for news in news_items[:10]:
+                    emoji = category_emojis.get(news['category'], '📌')
+                    
+                    # Truncate long content
+                    content = news['content'][:180]
+                    if len(news['content']) > 180:
+                        content += "..."
+                    
+                    embed.add_field(
+                        name=f"{emoji} {news['headline']}",
+                        value=content,
+                        inline=False
+                    )
+                
+                # Add footer showing progression
+                embed.set_footer(text=f"Week {state['current_week']}/{38} • Use /news for your personalized feed")
+                
+                await news_channel.send(embed=embed)
+                print(f"  ✅ Posted news digest to {guild.name}")
+                
+            except Exception as e:
+                print(f"  ❌ Could not post news to {guild.name}: {e}")
         
     except Exception as e:
-        print(f"❌ Error posting news digest: {e}")
+        print(f"❌ Error in weekly news digest: {e}")
+        import traceback
+        traceback.print_exc()
