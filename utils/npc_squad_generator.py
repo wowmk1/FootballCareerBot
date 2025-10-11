@@ -1,48 +1,66 @@
 """
 NPC Squad Generator - Creates complete squads for all teams
 Ensures every team has players in all positions
+FIXED: Prevents duplicate NPC names
 """
 from database import db
 import random
 
-def generate_random_player_name():
-    """Generate a random player name"""
-    first_names = [
-        "James", "John", "Robert", "Michael", "William", "David", "Richard", "Joseph",
-        "Thomas", "Charles", "Daniel", "Matthew", "Anthony", "Mark", "Donald", "Steven",
-        "Paul", "Andrew", "Joshua", "Kenneth", "Kevin", "Brian", "George", "Edward",
-        "Ronald", "Timothy", "Jason", "Jeffrey", "Ryan", "Jacob", "Gary", "Nicholas",
-        "Eric", "Jonathan", "Stephen", "Larry", "Justin", "Scott", "Brandon", "Benjamin",
-        "Samuel", "Raymond", "Gregory", "Frank", "Alexander", "Patrick", "Jack", "Dennis",
-        "Jerry", "Tyler", "Aaron", "Jose", "Adam", "Henry", "Nathan", "Douglas", "Zachary",
-        "Peter", "Kyle", "Walter", "Ethan", "Jeremy", "Harold", "Keith", "Christian", "Roger",
-        "Noah", "Gerald", "Carl", "Terry", "Sean", "Austin", "Arthur", "Lawrence", "Jesse",
-        "Dylan", "Bryan", "Joe", "Jordan", "Billy", "Bruce", "Albert", "Willie", "Gabriel",
-        "Logan", "Alan", "Juan", "Wayne", "Roy", "Ralph", "Randy", "Eugene", "Vincent",
-        "Russell", "Elijah", "Louis", "Bobby", "Philip", "Johnny"
-    ]
+# CHANGE #1: Move name lists OUTSIDE the function to module level
+FIRST_NAMES = [
+    "James", "John", "Robert", "Michael", "William", "David", "Richard", "Joseph",
+    "Thomas", "Charles", "Daniel", "Matthew", "Anthony", "Mark", "Donald", "Steven",
+    "Paul", "Andrew", "Joshua", "Kenneth", "Kevin", "Brian", "George", "Edward",
+    "Ronald", "Timothy", "Jason", "Jeffrey", "Ryan", "Jacob", "Gary", "Nicholas",
+    "Eric", "Jonathan", "Stephen", "Larry", "Justin", "Scott", "Brandon", "Benjamin",
+    "Samuel", "Raymond", "Gregory", "Frank", "Alexander", "Patrick", "Jack", "Dennis",
+    "Jerry", "Tyler", "Aaron", "Jose", "Adam", "Henry", "Nathan", "Douglas", "Zachary",
+    "Peter", "Kyle", "Walter", "Ethan", "Jeremy", "Harold", "Keith", "Christian", "Roger",
+    "Noah", "Gerald", "Carl", "Terry", "Sean", "Austin", "Arthur", "Lawrence", "Jesse",
+    "Dylan", "Bryan", "Joe", "Jordan", "Billy", "Bruce", "Albert", "Willie", "Gabriel",
+    "Logan", "Alan", "Juan", "Wayne", "Roy", "Ralph", "Randy", "Eugene", "Vincent",
+    "Russell", "Elijah", "Louis", "Bobby", "Philip", "Johnny"
+]
+
+LAST_NAMES = [
+    "Smith", "Johnson", "Williams", "Brown", "Jones", "Garcia", "Miller", "Davis",
+    "Rodriguez", "Martinez", "Hernandez", "Lopez", "Gonzalez", "Wilson", "Anderson",
+    "Thomas", "Taylor", "Moore", "Jackson", "Martin", "Lee", "Perez", "Thompson",
+    "White", "Harris", "Sanchez", "Clark", "Ramirez", "Lewis", "Robinson", "Walker",
+    "Young", "Allen", "King", "Wright", "Scott", "Torres", "Nguyen", "Hill", "Flores",
+    "Green", "Adams", "Nelson", "Baker", "Hall", "Rivera", "Campbell", "Mitchell",
+    "Carter", "Roberts", "Gomez", "Phillips", "Evans", "Turner", "Diaz", "Parker",
+    "Cruz", "Edwards", "Collins", "Reyes", "Stewart", "Morris", "Morales", "Murphy",
+    "Cook", "Rogers", "Gutierrez", "Ortiz", "Morgan", "Cooper", "Peterson", "Bailey",
+    "Reed", "Kelly", "Howard", "Ramos", "Kim", "Cox", "Ward", "Richardson", "Watson",
+    "Brooks", "Chavez", "Wood", "James", "Bennett", "Gray", "Mendoza", "Ruiz", "Hughes",
+    "Price", "Alvarez", "Castillo", "Sanders", "Patel", "Myers", "Long", "Ross", "Foster",
+    "Jimenez"
+]
+
+# CHANGE #2: Make function async and add duplicate checking
+async def generate_random_player_name(team_id: str = None, max_attempts: int = 10):
+    """Generate unique random player name"""
+    for attempt in range(max_attempts):
+        name = f"{random.choice(FIRST_NAMES)} {random.choice(LAST_NAMES)}"
+        
+        # Check uniqueness in database
+        async with db.pool.acquire() as conn:
+            existing = await conn.fetchrow(
+                "SELECT 1 FROM npc_players WHERE player_name = $1",
+                name
+            )
+            
+            if not existing:
+                return name
     
-    last_names = [
-        "Smith", "Johnson", "Williams", "Brown", "Jones", "Garcia", "Miller", "Davis",
-        "Rodriguez", "Martinez", "Hernandez", "Lopez", "Gonzalez", "Wilson", "Anderson",
-        "Thomas", "Taylor", "Moore", "Jackson", "Martin", "Lee", "Perez", "Thompson",
-        "White", "Harris", "Sanchez", "Clark", "Ramirez", "Lewis", "Robinson", "Walker",
-        "Young", "Allen", "King", "Wright", "Scott", "Torres", "Nguyen", "Hill", "Flores",
-        "Green", "Adams", "Nelson", "Baker", "Hall", "Rivera", "Campbell", "Mitchell",
-        "Carter", "Roberts", "Gomez", "Phillips", "Evans", "Turner", "Diaz", "Parker",
-        "Cruz", "Edwards", "Collins", "Reyes", "Stewart", "Morris", "Morales", "Murphy",
-        "Cook", "Rogers", "Gutierrez", "Ortiz", "Morgan", "Cooper", "Peterson", "Bailey",
-        "Reed", "Kelly", "Howard", "Ramos", "Kim", "Cox", "Ward", "Richardson", "Watson",
-        "Brooks", "Chavez", "Wood", "James", "Bennett", "Gray", "Mendoza", "Ruiz", "Hughes",
-        "Price", "Alvarez", "Castillo", "Sanders", "Patel", "Myers", "Long", "Ross", "Foster",
-        "Jimenez"
-    ]
-    
-    return f"{random.choice(first_names)} {random.choice(last_names)}"
+    # Fallback: add number suffix if all attempts failed
+    base_name = f"{random.choice(FIRST_NAMES)} {random.choice(LAST_NAMES)}"
+    return f"{base_name} {random.randint(1, 999)}"
 
 async def generate_squad_for_team(team_id: str, league: str):
     """Generate a complete squad for a team"""
-    
+
     # Determine rating range based on league
     if league == 'Premier League':
         rating_range = (72, 85)
@@ -50,7 +68,7 @@ async def generate_squad_for_team(team_id: str, league: str):
         rating_range = (65, 75)
     else:  # League One
         rating_range = (58, 68)
-    
+
     # Squad composition: 25 players total
     squad_composition = {
         'GK': 3,   # 3 goalkeepers
@@ -62,14 +80,15 @@ async def generate_squad_for_team(team_id: str, league: str):
         'W': 3,    # 3 wingers
         'ST': 3    # 3 strikers
     }
-    
+
     players = []
-    
+
     for position, count in squad_composition.items():
         for i in range(count):
-            name = generate_random_player_name()
+            # CHANGE #3: Add await since function is now async
+            name = await generate_random_player_name(team_id)
             age = random.randint(18, 35)
-            
+
             # Adjust rating based on age (prime years 24-29)
             age_modifier = 0
             if 24 <= age <= 29:
@@ -78,10 +97,10 @@ async def generate_squad_for_team(team_id: str, league: str):
                 age_modifier = random.randint(-3, 0)
             else:  # age > 29
                 age_modifier = random.randint(-5, -2)
-            
+
             overall = random.randint(rating_range[0], rating_range[1]) + age_modifier
             overall = max(50, min(90, overall))
-            
+
             # Calculate individual stats based on position
             if position == 'GK':
                 pace = max(40, overall - random.randint(10, 15))
@@ -90,7 +109,7 @@ async def generate_squad_for_team(team_id: str, league: str):
                 dribbling = max(45, overall - random.randint(10, 15))
                 defending = min(99, overall + random.randint(5, 15))
                 physical = max(60, overall + random.randint(-5, 5))
-            
+
             elif position in ['ST', 'W']:
                 pace = min(99, overall + random.randint(0, 10))
                 shooting = min(99, overall + random.randint(5, 10))
@@ -98,7 +117,7 @@ async def generate_squad_for_team(team_id: str, league: str):
                 dribbling = min(99, overall + random.randint(0, 10))
                 defending = max(30, overall - random.randint(20, 30))
                 physical = max(50, overall - random.randint(0, 10))
-            
+
             elif position in ['CAM', 'CM']:
                 pace = max(50, overall - random.randint(0, 5))
                 shooting = max(55, overall - random.randint(0, 10))
@@ -106,7 +125,7 @@ async def generate_squad_for_team(team_id: str, league: str):
                 dribbling = min(99, overall + random.randint(0, 10))
                 defending = max(45, overall - random.randint(10, 20))
                 physical = max(55, overall - random.randint(0, 10))
-            
+
             elif position == 'CDM':
                 pace = max(50, overall - random.randint(5, 10))
                 shooting = max(50, overall - random.randint(10, 15))
@@ -114,7 +133,7 @@ async def generate_squad_for_team(team_id: str, league: str):
                 dribbling = max(55, overall - random.randint(5, 10))
                 defending = min(99, overall + random.randint(5, 15))
                 physical = min(99, overall + random.randint(5, 10))
-            
+
             elif position in ['CB', 'FB']:
                 if position == 'FB':
                     pace = min(99, overall + random.randint(0, 5))
@@ -125,7 +144,7 @@ async def generate_squad_for_team(team_id: str, league: str):
                 dribbling = max(45, overall - random.randint(10, 20))
                 defending = min(99, overall + random.randint(5, 15))
                 physical = min(99, overall + random.randint(5, 10))
-            
+
             else:
                 pace = overall
                 shooting = overall
@@ -133,7 +152,7 @@ async def generate_squad_for_team(team_id: str, league: str):
                 dribbling = overall
                 defending = overall
                 physical = overall
-            
+
             players.append({
                 'name': name,
                 'position': position,
@@ -146,7 +165,7 @@ async def generate_squad_for_team(team_id: str, league: str):
                 'defending': defending,
                 'physical': physical
             })
-    
+
     # Insert all players into database
     async with db.pool.acquire() as conn:
         for player in players:
@@ -169,15 +188,15 @@ async def generate_squad_for_team(team_id: str, league: str):
                 player['defending'],
                 player['physical']
             )
-    
+
     return len(players)
 
 async def populate_all_teams():
     """Populate all teams with complete squads"""
     from data.teams import ALL_TEAMS
-    
+
     total_players = 0
-    
+
     for team in ALL_TEAMS:
         # Check if team already has players
         async with db.pool.acquire() as conn:
@@ -186,11 +205,11 @@ async def populate_all_teams():
                 team['team_id']
             )
             count = result['count']
-        
+
         if count == 0:
             players_added = await generate_squad_for_team(team['team_id'], team['league'])
             total_players += players_added
             print(f"✅ Generated {players_added} players for {team['team_name']}")
-    
+
     print(f"✅ Total NPC players created: {total_players}")
     return total_players
