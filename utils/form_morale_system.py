@@ -4,9 +4,13 @@ Form: Based on recent match performances
 Morale: Affected by results, transfers, contract situation
 """
 
+import discord
 from database import db
 
-async def update_player_form(user_id: int, match_rating: float):
+# Import bot instance - adjust this import based on your project structure
+# from main import bot  # or wherever your bot instance is defined
+
+async def update_player_form(user_id: int, match_rating: float, bot=None):
     """Update player form based on match performance"""
     player = await db.get_player(user_id)
     if not player:
@@ -34,9 +38,22 @@ async def update_player_form(user_id: int, match_rating: float):
             new_form, user_id
         )
     
+    # ISSUE #4 FIX: Warn if form drops below critical threshold
+    if new_form < 30 and current_form >= 30 and bot is not None:
+        try:
+            user = await bot.fetch_user(user_id)
+            embed = discord.Embed(
+                title="⚠️ POOR FORM WARNING",
+                description=f"Your form has dropped to {new_form:.1f}%\n\nTrain to improve your stats!",
+                color=discord.Color.orange()
+            )
+            await user.send(embed=embed)
+        except:
+            pass  # User might have DMs disabled
+    
     return new_form
 
-async def update_player_morale(user_id: int, event_type: str, value: int = 0):
+async def update_player_morale(user_id: int, event_type: str, value: int = 0, bot=None):
     """Update player morale based on events
     
     event_type: 'win', 'loss', 'draw', 'goal', 'transfer', 'contract_expiring', 'training'
@@ -69,6 +86,19 @@ async def update_player_morale(user_id: int, event_type: str, value: int = 0):
             "UPDATE players SET morale = $1 WHERE user_id = $2",
             new_morale, user_id
         )
+    
+    # ISSUE #4 FIX: Warn if morale drops below critical threshold
+    if new_morale < 30 and current_morale >= 30 and bot is not None:
+        try:
+            user = await bot.fetch_user(user_id)
+            embed = discord.Embed(
+                title="😞 LOW MORALE WARNING",
+                description=f"Your morale has dropped to {new_morale:.1f}%\n\nReason: {event_type.replace('_', ' ').title()}",
+                color=discord.Color.red()
+            )
+            await user.send(embed=embed)
+        except:
+            pass  # User might have DMs disabled
     
     return new_morale
 
