@@ -40,7 +40,7 @@ class Database:
                     'CREATE INDEX IF NOT EXISTS idx_players_retired ON players(retired, age)',
                     'CREATE INDEX IF NOT EXISTS idx_npc_players_team ON npc_players(team_id, retired)',
                     'CREATE INDEX IF NOT EXISTS idx_transfer_offers_user ON transfer_offers(user_id, status)',
-                    'CREATE INDEX IF NOT EXISTS idx_match_events_fixture ON match_events(fixture_id, minute)'
+                    'CREATE INDEX IF NOT EXISTS idx_match_events_fixture ON match_events(fixture_id, minute)',
                     'CREATE INDEX IF NOT EXISTS idx_players_last_reminded ON players(last_reminded)',
                     'CREATE INDEX IF NOT EXISTS idx_transfer_offers_week ON transfer_offers(offer_week)',
                     'CREATE INDEX IF NOT EXISTS idx_fixtures_week_playable ON fixtures(week_number, playable, played)',
@@ -531,8 +531,12 @@ class Database:
             await conn.execute("UPDATE npc_players SET age = age + 1 WHERE retired = FALSE")
         print("✅ All players aged by 1 year")
     
-    async def retire_old_players(self):
-        """Retire players who reach retirement age and create regens"""
+    async def retire_old_players(self, bot=None):
+        """Retire players who reach retirement age and create regens
+        
+        Args:
+            bot: Optional Discord bot instance for sending retirement notifications
+        """
         from data.player_names import get_random_player_name
         
         async with self.pool.acquire() as conn:
@@ -558,6 +562,22 @@ class Database:
                     player['user_id'],
                     10
                 )
+                
+                # ISSUE #1 FIX: Send retirement notification DM
+                if bot:
+                    try:
+                        import discord
+                        user = await bot.fetch_user(player['user_id'])
+                        embed = discord.Embed(
+                            title="🏆 CAREER COMPLETE",
+                            description=f"After {player['career_apps']} appearances and {player['career_goals']} goals, you've retired at age {player['age']}!",
+                            color=discord.Color.gold()
+                        )
+                        embed.add_field(name="Final Rating", value=f"{player['overall_rating']}", inline=True)
+                        embed.add_field(name="Career Stats", value=f"{player['career_goals']}G / {player['career_assists']}A", inline=True)
+                        await user.send(embed=embed)
+                    except Exception as e:
+                        print(f"Could not DM retirement to {player['user_id']}: {e}")
             
             # Retire NPC players and create regens
             old_npcs = await conn.fetch(
@@ -596,7 +616,7 @@ class Database:
             return len(old_players) + len(old_npcs)
     
     async def cleanup_old_retired_players(self):
-        """Delete players retired for 2+ seasons"""
+        """Delete players retired for 2+ seasons and clean up stale match data"""
         async with self.pool.acquire() as conn:
             # Delete user players retired 2+ seasons ago
             await conn.execute("""
@@ -623,6 +643,18 @@ class Database:
             await conn.execute("""
                 DELETE FROM match_events
                 WHERE created_at < NOW() - INTERVAL '6 months'
+            """)
+            
+            # DATABASE ISSUE #2 FIX: Clean up old active matches (7+ days old)
+            await conn.execute("""
+                DELETE FROM active_matches
+                WHERE created_at < NOW() - INTERVAL '7 days'
+            """)
+            
+            # DATABASE ISSUE #2 FIX: Clean up orphaned match participants
+            await conn.execute("""
+                DELETE FROM match_participants
+                WHERE match_id NOT IN (SELECT match_id FROM active_matches)
             """)
             
             print("✅ Cleaned up old retired players and historical data")
