@@ -208,6 +208,7 @@ async def check_contract_morale(bot=None):
 
     for player in expiring_players:
         # Apply morale penalty
+        new_morale = db.clamp_value(player['morale'] - 5, 0, 100)
         await update_player_morale(player['user_id'], 'contract_expiring')
         affected += 1
 
