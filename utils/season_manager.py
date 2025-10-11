@@ -67,24 +67,29 @@ def should_send_warning(warning_type):
 
 
 async def start_season():
-    """Start the season"""
+    """Start the season - FIXED: Don't auto-open match window"""
     state = await db.get_game_state()
 
     if state['season_started']:
         print("⚠️ Season already started")
         return False
 
+    # ✅ FIX: Explicitly set match_window_open=False
+    # Don't auto-open window - wait for next Mon/Wed/Sat at 3PM
     await db.update_game_state(
         season_started=True,
         current_week=1,
         current_season='2027/28',
-        season_start_date=datetime.now(EST).isoformat()
+        season_start_date=datetime.now(EST).isoformat(),
+        match_window_open=False  # ✅ CRITICAL: Don't auto-open
     )
 
     await generate_season_fixtures()
 
+    # Calculate next valid match window
     next_window = get_next_match_window()
     print(f"✅ Season started! Next match window: {next_window.strftime('%A, %B %d at %I:%M %p EST')}")
+    print(f"   Match window will ONLY open on Mon/Wed/Sat at 3:00 PM EST")
     return True
 
 
