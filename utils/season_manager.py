@@ -1,9 +1,5 @@
 """
-SIMPLIFIED Season Manager - Fixed Schedule System
-Match windows: Mon/Wed/Sat 3-5 PM EST
-WITH FIXED AUTOMATIC TRANSFER OFFER GENERATION
-+ CONTRACT MORALE SYSTEM
-+ SEASON END FORM/MORALE RESET
+Season Manager - With Auto-Posting Weekly News Digest
 """
 import discord
 from database import db
@@ -11,60 +7,36 @@ from datetime import datetime, timedelta
 import pytz
 import config
 
-# Timezone setup
 EST = pytz.timezone('America/New_York')
 
-# Fixed schedule
 MATCH_DAYS = [0, 2, 5]  # Monday=0, Wednesday=2, Saturday=5
 MATCH_START_HOUR = 15  # 3 PM
 MATCH_END_HOUR = 17    # 5 PM
 
 def is_match_window_time():
-    """
-    Simple check: Is it Mon/Wed/Sat between 3-5 PM EST?
-    Returns: (is_window_time, is_start_time, is_end_time)
-    """
+    """Simple check: Is it Mon/Wed/Sat between 3-5 PM EST?"""
     now = datetime.now(EST)
-    
-    # Check if it's a match day
     is_match_day = now.weekday() in MATCH_DAYS
-    
-    # Check if it's within match hours
     is_match_hours = MATCH_START_HOUR <= now.hour < MATCH_END_HOUR
-    
-    # Check if it's exactly start time (within 5 min window for opening)
     is_start = (now.hour == MATCH_START_HOUR and now.minute < 5)
-    
-    # Check if it's exactly end time (within 5 min window for closing)
     is_end = (now.hour == MATCH_END_HOUR and now.minute < 5)
-    
     return (is_match_day and is_match_hours), is_start, is_end
 
-
 def get_next_match_window():
-    """
-    Get next match window time (for display purposes)
-    Returns: datetime of next Mon/Wed/Sat 3 PM EST
-    """
+    """Get next match window time"""
     now = datetime.now(EST)
-    
-    # Find next match day
     current_day = now.weekday()
     days_ahead = None
     
     for match_day in MATCH_DAYS:
         days_until = (match_day - current_day) % 7
-        
-        # If it's today but before 3 PM, use today
         if days_until == 0 and now.hour < MATCH_START_HOUR:
             days_ahead = 0
             break
-        # If it's a future day this week
         elif days_until > 0:
             if days_ahead is None or days_until < days_ahead:
                 days_ahead = days_until
     
-    # If no day found, use next week's first match day
     if days_ahead is None:
         days_ahead = (MATCH_DAYS[0] - current_day) % 7
         if days_ahead == 0:
@@ -72,43 +44,26 @@ def get_next_match_window():
     
     next_match = now + timedelta(days=days_ahead)
     next_match = next_match.replace(hour=MATCH_START_HOUR, minute=0, second=0, microsecond=0)
-    
     return next_match
 
-
 def should_send_warning(warning_type):
-    """
-    Check if we should send a warning right now
-    warning_type: 'pre_1h', 'pre_30m', 'pre_15m', 'closing_soon'
-    Returns: True if we should send this warning now
-    """
+    """Check if we should send a warning right now"""
     now = datetime.now(EST)
-    
-    # Only send warnings on match days
     if now.weekday() not in MATCH_DAYS:
         return False
     
     if warning_type == 'pre_1h':
-        # 2:00-2:05 PM (1 hour before)
         return now.hour == 14 and now.minute < 5
-    
     elif warning_type == 'pre_30m':
-        # 2:30-2:35 PM (30 min before)
         return now.hour == 14 and 30 <= now.minute < 35
-    
     elif warning_type == 'pre_15m':
-        # 2:45-2:50 PM (15 min before)
         return now.hour == 14 and 45 <= now.minute < 50
-    
     elif warning_type == 'closing_soon':
-        # 4:45-4:50 PM (15 min before close)
         return now.hour == 16 and 45 <= now.minute < 50
-    
     return False
 
-
 async def start_season():
-    """Start the season - simplified"""
+    """Start the season"""
     state = await db.get_game_state()
     
     if state['season_started']:
@@ -122,13 +77,11 @@ async def start_season():
         season_start_date=datetime.now(EST).isoformat()
     )
     
-    # Generate fixtures for all teams
     await generate_season_fixtures()
     
     next_window = get_next_match_window()
     print(f"✅ Season started! Next match window: {next_window.strftime('%A, %B %d at %I:%M %p EST')}")
     return True
-
 
 async def generate_season_fixtures():
     """Generate fixtures for all leagues"""
@@ -136,13 +89,11 @@ async def generate_season_fixtures():
     await generate_all_fixtures()
     print(f"✅ Generated {config.SEASON_TOTAL_WEEKS} weeks of fixtures")
 
-
 async def open_match_window():
-    """Open the match window - no date calculations needed"""
+    """Open the match window"""
     state = await db.get_game_state()
     current_week = state['current_week']
     
-    # Make this week's fixtures playable
     async with db.pool.acquire() as conn:
         await conn.execute(
             "UPDATE fixtures SET playable = TRUE WHERE week_number = $1 AND played = FALSE",
@@ -155,13 +106,11 @@ async def open_match_window():
     print(f"   Time: {datetime.now(EST).strftime('%A %I:%M %p EST')}")
     return True
 
-
 async def close_match_window(bot=None):
     """Close match window and simulate unplayed matches"""
     state = await db.get_game_state()
     current_week = state['current_week']
     
-    # Simulate all unplayed matches
     async with db.pool.acquire() as conn:
         unplayed = await conn.fetch(
             """SELECT * FROM fixtures 
@@ -179,7 +128,6 @@ async def close_match_window(bot=None):
     if simulated_count > 0:
         print(f"⚽ Simulated {simulated_count} unplayed matches")
 
-    # Get all week results
     async with db.pool.acquire() as conn:
         results = await conn.fetch("""
         SELECT f.*, 
@@ -194,30 +142,21 @@ async def close_match_window(bot=None):
     """, current_week)
     week_results = [dict(r) for r in results]
 
-    # Notify about window closing
     if bot:
         await bot.notify_match_window_closed(week_results)
     
-    # Close window
     await db.update_game_state(match_window_open=False)
     
     print(f"✅ Match window CLOSED for Week {current_week}")
     print(f"   Time: {datetime.now(EST).strftime('%A %I:%M %p EST')}")
     
-    # Advance to next week
     await advance_week(bot=bot)
 
-
 async def check_contract_morale():
-    """
-    🆕 NEW FEATURE: Apply morale penalty to players with expiring contracts
-    Players with 1 year or less remaining get -5 morale each week
-    This creates pressure to renew or seek transfers
-    """
+    """Apply morale penalty to players with expiring contracts"""
     from utils.form_morale_system import update_player_morale
     
     async with db.pool.acquire() as conn:
-        # Find players with 1 year or less on contract
         expiring_players = await conn.fetch("""
             SELECT user_id, player_name, contract_years
             FROM players
@@ -234,39 +173,39 @@ async def check_contract_morale():
     if affected > 0:
         print(f"  😰 {affected} players affected by contract uncertainty")
 
-
 async def advance_week(bot=None):
-    """
-    Advance to next week - WITH FIXED TRANSFER GENERATION LOGIC
-    NOTE: bot parameter added to pass to transfer functions
-    """
+    """Advance to next week with auto-posting news"""
     state = await db.get_game_state()
     current_week = state['current_week']
     next_week = current_week + 1
     
-    # Check if season ended
     if next_week > config.SEASON_TOTAL_WEEKS:
         await end_season()
         return
     
-    # Update week
     await db.update_game_state(current_week=next_week)
     
-    # 🆕 Check contract morale weekly (NEW FEATURE)
     await check_contract_morale()
     
     # ============================================
-    # 🔥 FIXED TRANSFER WINDOW MANAGEMENT
+    # 🆕 AUTO-POST WEEKLY NEWS DIGEST
     # ============================================
+    if bot:
+        from utils.event_poster import post_weekly_news_digest
+        try:
+            await post_weekly_news_digest(bot, current_week)
+            print(f"📰 Posted weekly news digest for Week {current_week}")
+        except Exception as e:
+            print(f"⚠️ Could not post news digest: {e}")
     
-    # Define first weeks of each transfer window
-    FIRST_WEEK_OF_WINDOWS = [15, 30]  # Summer (week 15) & Winter (week 30) window starts
+    # ============================================
+    # TRANSFER WINDOW MANAGEMENT
+    # ============================================
+    FIRST_WEEK_OF_WINDOWS = [15, 30]
     
-    # Check if we're OPENING a transfer window (first week only)
     if next_week in FIRST_WEEK_OF_WINDOWS:
         await open_transfer_window()
         
-        # 🎯 GENERATE INITIAL OFFERS FOR ALL PLAYERS (FIRST WEEK ONLY)
         from utils.transfer_window_manager import process_weekly_transfer_offers
         try:
             offers_generated = await process_weekly_transfer_offers(bot=bot)
@@ -276,13 +215,10 @@ async def advance_week(bot=None):
             import traceback
             traceback.print_exc()
     
-    # Check if transfer window should CLOSE
     elif current_week in config.TRANSFER_WINDOW_WEEKS and next_week not in config.TRANSFER_WINDOW_WEEKS:
         await close_transfer_window()
     
-    # If we're IN an ongoing transfer window (NOT first week), generate offers for eligible players only
     elif next_week in config.TRANSFER_WINDOW_WEEKS and next_week not in FIRST_WEEK_OF_WINDOWS:
-        # 🔥 ONLY generate for players who declined ALL offers or have no pending offers
         from utils.transfer_window_manager import generate_offers_for_eligible_players
         try:
             offers_generated = await generate_offers_for_eligible_players(bot=bot)
@@ -293,27 +229,17 @@ async def advance_week(bot=None):
         except Exception as e:
             print(f"⚠️ Could not generate eligible player offers: {e}")
     
-    # ============================================
-    # END FIXED TRANSFER WINDOW MANAGEMENT
-    # ============================================
-    
     print(f"📅 Advanced to Week {next_week}")
     next_window = get_next_match_window()
     print(f"   Next match: {next_window.strftime('%A, %B %d at %I:%M %p EST')}")
-
 
 async def open_transfer_window():
     """Open transfer window"""
     await db.update_game_state(transfer_window_active=True)
     print("💼 Transfer window OPENED")
 
-
 async def close_transfer_window():
-    """Close transfer window and trigger NPC transfers"""
-    
-    # ============================================
-    # 🔥 SIMULATE NPC TRANSFERS
-    # ============================================
+    """Close transfer window"""
     from utils.transfer_window_manager import simulate_npc_transfers
     try:
         npc_transfers = await simulate_npc_transfers()
@@ -323,18 +249,14 @@ async def close_transfer_window():
         import traceback
         traceback.print_exc()
     
-    # ============================================
-    
     await db.update_game_state(transfer_window_active=False)
     
-    # Expire all pending offers
     async with db.pool.acquire() as conn:
         await conn.execute(
             "UPDATE transfer_offers SET status = 'expired' WHERE status = 'pending'"
         )
     
     print("💼 Transfer window CLOSED")
-
 
 async def end_season():
     """End the season"""
@@ -343,14 +265,10 @@ async def end_season():
     
     print(f"🏆 Season {current_season} complete!")
     
-    # Age all players
     await db.age_all_players()
-    
-    # Retire old players
     retired_count = await db.retire_old_players()
     print(f"👴 {retired_count} players retired")
     
-    # 🆕 FIXED: Reset season stats AND form/morale for fresh start
     async with db.pool.acquire() as conn:
         await conn.execute("""
             UPDATE players SET 
@@ -372,7 +290,6 @@ async def end_season():
     
     print(f"✅ All players reset - fresh start for next season!")
     
-    # Start new season
     year = int(current_season.split('/')[0])
     new_season = f"{year + 1}/{str(year + 2)[-2:]}"
     
@@ -385,17 +302,15 @@ async def end_season():
     
     print(f"✅ Ready for Season {new_season}")
 
-
 # ============================================
-# WARNING FUNCTIONS - Called by bot.py
+# WARNING FUNCTIONS
 # ============================================
 
 async def send_1h_warning(bot):
-    """Send 1 hour warning to all servers"""
+    """Send 1 hour warning"""
     state = await db.get_game_state()
-    
     if state['match_window_open']:
-        return  # Already open, no warning needed
+        return
     
     for guild in bot.guilds:
         try:
@@ -409,31 +324,26 @@ async def send_1h_warning(bot):
                     description=f"**Week {state['current_week']}** matches start at **3:00 PM EST**!",
                     color=discord.Color.orange()
                 )
-                
                 embed.add_field(
                     name="🕒 Opens At",
                     value="**3:00 PM EST** (in 1 hour)",
                     inline=False
                 )
-                
                 embed.add_field(
                     name="⚡ Get Ready",
                     value="Use `/play_match` when the window opens!",
                     inline=False
                 )
-                
                 await channel.send(embed=embed)
                 print(f"✅ Sent 1h warning to {guild.name}")
         except Exception as e:
             print(f"⚠️ Could not send 1h warning to {guild.name}: {e}")
 
-
 async def send_30m_warning(bot):
     """Send 30 minute warning via DM"""
     state = await db.get_game_state()
-    
     if state['match_window_open']:
-        return  # Already open
+        return
     
     async with db.pool.acquire() as conn:
         players = await conn.fetch("""
@@ -445,32 +355,27 @@ async def send_30m_warning(bot):
     for player in players:
         try:
             user = await bot.fetch_user(player['user_id'])
-            
             embed = discord.Embed(
                 title="⏰ Match Starting in 30 Minutes!",
                 description=f"**Week {state['current_week']}** match window opens at **3:00 PM EST**!",
                 color=discord.Color.orange()
             )
-            
             embed.add_field(
                 name="🕒 Opens At",
                 value="**3:00 PM EST** (in 30 minutes)",
                 inline=False
             )
-            
             await user.send(embed=embed)
         except:
             pass
     
     print(f"✅ Sent 30min warnings to {len(players)} players")
 
-
 async def send_15m_warning(bot):
     """Send 15 minute warning"""
     state = await db.get_game_state()
-    
     if state['match_window_open']:
-        return  # Already open
+        return
     
     for guild in bot.guilds:
         try:
@@ -484,18 +389,15 @@ async def send_15m_warning(bot):
                     description=f"**Week {state['current_week']}** matches start in **15 minutes**!",
                     color=discord.Color.red()
                 )
-                
                 embed.add_field(
                     name="🕒 Opens At",
                     value="**3:00 PM EST** (in 15 minutes)",
                     inline=False
                 )
-                
                 await channel.send(embed=embed)
                 print(f"✅ Sent 15min warning to {guild.name}")
         except Exception as e:
             print(f"⚠️ Could not send 15min warning to {guild.name}: {e}")
-
 
 async def send_closing_warning(bot):
     """Send warning that window is closing soon"""
@@ -503,9 +405,8 @@ async def send_closing_warning(bot):
     current_week = state['current_week']
     
     if not state['match_window_open']:
-        return  # Not open
+        return
     
-    # Find players who haven't played
     async with db.pool.acquire() as conn:
         all_players = await conn.fetch("""
             SELECT user_id, player_name
@@ -528,25 +429,21 @@ async def send_closing_warning(bot):
         if player['user_id'] not in played_ids:
             try:
                 user = await bot.fetch_user(player['user_id'])
-                
                 embed = discord.Embed(
                     title="⚠️ Match Window Closing in 15 Minutes!",
                     description=f"**You haven't played your Week {current_week} match!**",
                     color=discord.Color.red()
                 )
-                
                 embed.add_field(
                     name="⏰ Closes At",
                     value="**5:00 PM EST** (in 15 minutes)",
                     inline=False
                 )
-                
                 embed.add_field(
                     name="🚨 URGENT",
                     value="Use `/play_match` **NOW** or your match will be auto-simulated!",
                     inline=False
                 )
-                
                 await user.send(embed=embed)
                 warned += 1
             except:
