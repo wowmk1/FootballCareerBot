@@ -1,7 +1,7 @@
 """
 SIMPLIFIED Season Manager - Fixed Schedule System
 Match windows: Mon/Wed/Sat 3-5 PM EST
-WITH AUTOMATIC TRANSFER OFFER GENERATION
+WITH FIXED AUTOMATIC TRANSFER OFFER GENERATION
 """
 import discord
 from database import db
@@ -208,7 +208,7 @@ async def close_match_window(bot=None):
 
 async def advance_week(bot=None):
     """
-    Advance to next week - WITH AUTOMATIC TRANSFER GENERATION
+    Advance to next week - WITH FIXED TRANSFER GENERATION LOGIC
     NOTE: bot parameter added to pass to transfer functions
     """
     state = await db.get_game_state()
@@ -224,18 +224,21 @@ async def advance_week(bot=None):
     await db.update_game_state(current_week=next_week)
     
     # ============================================
-    # 🔥 TRANSFER WINDOW MANAGEMENT
+    # 🔥 FIXED TRANSFER WINDOW MANAGEMENT
     # ============================================
     
-    # Check if transfer window should OPEN
-    if next_week in config.TRANSFER_WINDOW_WEEKS:
+    # Define first weeks of each transfer window
+    FIRST_WEEK_OF_WINDOWS = [15, 30]  # Summer (week 15) & Winter (week 30) window starts
+    
+    # Check if we're OPENING a transfer window (first week only)
+    if next_week in FIRST_WEEK_OF_WINDOWS:
         await open_transfer_window()
         
-        # 🎯 GENERATE TRANSFER OFFERS FOR ALL PLAYERS
+        # 🎯 GENERATE INITIAL OFFERS FOR ALL PLAYERS (FIRST WEEK ONLY)
         from utils.transfer_window_manager import process_weekly_transfer_offers
         try:
             offers_generated = await process_weekly_transfer_offers(bot=bot)
-            print(f"💼 Generated {offers_generated} transfer offers for players")
+            print(f"💼 Week {next_week}: Generated {offers_generated} initial transfer offers (WINDOW OPENS)")
         except Exception as e:
             print(f"⚠️ Could not generate transfer offers: {e}")
             import traceback
@@ -245,19 +248,21 @@ async def advance_week(bot=None):
     elif current_week in config.TRANSFER_WINDOW_WEEKS and next_week not in config.TRANSFER_WINDOW_WEEKS:
         await close_transfer_window()
     
-    # If we're IN a transfer window (but not opening/closing), still generate offers
-    elif next_week in config.TRANSFER_WINDOW_WEEKS:
-        # Generate weekly offers during active transfer windows
+    # If we're IN an ongoing transfer window (NOT first week), generate offers for eligible players only
+    elif next_week in config.TRANSFER_WINDOW_WEEKS and next_week not in FIRST_WEEK_OF_WINDOWS:
+        # 🔥 ONLY generate for players who declined ALL offers or have no pending offers
         from utils.transfer_window_manager import generate_offers_for_eligible_players
         try:
             offers_generated = await generate_offers_for_eligible_players(bot=bot)
             if offers_generated > 0:
-                print(f"💼 Generated {offers_generated} new transfer offers (ongoing window)")
+                print(f"💼 Week {next_week}: Generated {offers_generated} offers for eligible players (ONGOING WINDOW)")
+            else:
+                print(f"💼 Week {next_week}: No eligible players for new offers (ONGOING WINDOW)")
         except Exception as e:
-            print(f"⚠️ Could not generate transfer offers: {e}")
+            print(f"⚠️ Could not generate eligible player offers: {e}")
     
     # ============================================
-    # END TRANSFER WINDOW MANAGEMENT
+    # END FIXED TRANSFER WINDOW MANAGEMENT
     # ============================================
     
     print(f"📅 Advanced to Week {next_week}")
