@@ -149,7 +149,7 @@ class FootballBot(commands.Bot):
                 async with db.pool.acquire() as conn:
                     result = await conn.fetchrow("""
                                                  SELECT COUNT(*) as count
-                                                 FROM cup_draws
+                                                 FROM cup_competitions
                                                  WHERE season = $1
                                                  """, state['current_season'])
 
