@@ -38,7 +38,9 @@ class Database:
                     'CREATE INDEX IF NOT EXISTS idx_news_user_created ON news(user_id, created_at DESC)',
                     'CREATE INDEX IF NOT EXISTS idx_training_user_date ON training_history(user_id, training_date DESC)',
                     'CREATE INDEX IF NOT EXISTS idx_players_retired ON players(retired, age)',
-                    'CREATE INDEX IF NOT EXISTS idx_npc_players_team ON npc_players(team_id, retired)'
+                    'CREATE INDEX IF NOT EXISTS idx_npc_players_team ON npc_players(team_id, retired)',
+                    'CREATE INDEX IF NOT EXISTS idx_transfer_offers_user ON transfer_offers(user_id, status)',
+                    'CREATE INDEX IF NOT EXISTS idx_match_events_fixture ON match_events(fixture_id, minute)'
                 ]
                 
                 for index_sql in indexes:
@@ -251,6 +253,53 @@ class Database:
                 )
             ''')
             
+            # Cup competitions table
+            await conn.execute('''
+                CREATE TABLE IF NOT EXISTS cup_competitions (
+                    competition_id SERIAL PRIMARY KEY,
+                    competition_name TEXT NOT NULL,
+                    competition_type TEXT NOT NULL,
+                    season TEXT NOT NULL,
+                    current_round TEXT,
+                    is_active BOOLEAN DEFAULT FALSE
+                )
+            ''')
+            
+            # Cup fixtures table
+            await conn.execute('''
+                CREATE TABLE IF NOT EXISTS cup_fixtures (
+                    fixture_id SERIAL PRIMARY KEY,
+                    competition_id INTEGER REFERENCES cup_competitions(competition_id),
+                    round TEXT NOT NULL,
+                    home_team_id TEXT,
+                    away_team_id TEXT,
+                    home_score INTEGER,
+                    away_score INTEGER,
+                    played BOOLEAN DEFAULT FALSE,
+                    playable BOOLEAN DEFAULT FALSE,
+                    is_two_legged BOOLEAN DEFAULT FALSE,
+                    leg_number INTEGER DEFAULT 1,
+                    aggregate_home INTEGER DEFAULT 0,
+                    aggregate_away INTEGER DEFAULT 0,
+                    winner_team_id TEXT,
+                    match_date TEXT
+                )
+            ''')
+            
+            # Cup history table
+            await conn.execute('''
+                CREATE TABLE IF NOT EXISTS cup_history (
+                    history_id SERIAL PRIMARY KEY,
+                    competition_id INTEGER,
+                    season TEXT,
+                    winner_team_id TEXT,
+                    runner_up_team_id TEXT,
+                    top_scorer_user_id BIGINT,
+                    top_scorer_goals INTEGER,
+                    final_score TEXT
+                )
+            ''')
+            
             # Match events table
             await conn.execute('''
                 CREATE TABLE IF NOT EXISTS match_events (
@@ -361,7 +410,7 @@ class Database:
                 )
             ''')
             
-            # ✅ NEW: Player Traits table
+            # Player Traits table
             await conn.execute('''
                 CREATE TABLE IF NOT EXISTS player_traits (
                     id SERIAL PRIMARY KEY,
@@ -369,6 +418,30 @@ class Database:
                     trait_id TEXT NOT NULL,
                     unlocked_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     UNIQUE(user_id, trait_id)
+                )
+            ''')
+            
+            # Achievements table
+            await conn.execute('''
+                CREATE TABLE IF NOT EXISTS achievements (
+                    achievement_id TEXT PRIMARY KEY,
+                    achievement_name TEXT NOT NULL,
+                    description TEXT,
+                    icon TEXT,
+                    category TEXT,
+                    rarity TEXT DEFAULT 'common'
+                )
+            ''')
+            
+            # Player achievements table
+            await conn.execute('''
+                CREATE TABLE IF NOT EXISTS player_achievements (
+                    id SERIAL PRIMARY KEY,
+                    user_id BIGINT NOT NULL,
+                    achievement_id TEXT NOT NULL,
+                    unlocked_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    progress INTEGER DEFAULT 0,
+                    UNIQUE(user_id, achievement_id)
                 )
             ''')
             
@@ -384,6 +457,11 @@ class Database:
             ''')
         
         print("✅ Database tables created")
+    
+    @staticmethod
+    def clamp_value(value: int, min_val: int = 0, max_val: int = 100) -> int:
+        """Clamp a value between min and max"""
+        return max(min_val, min(max_val, value))
     
     async def get_game_state(self):
         """Get current game state"""
@@ -560,6 +638,38 @@ class Database:
                 print(f"✅ Created {len(old_npcs)} regen players")
             
             return len(old_players) + len(old_npcs)
+    
+    async def cleanup_old_retired_players(self):
+        """Delete players retired for 2+ seasons"""
+        async with self.pool.acquire() as conn:
+            # Delete user players retired 2+ seasons ago
+            await conn.execute("""
+                DELETE FROM players 
+                WHERE retired = TRUE 
+                AND retirement_date IS NOT NULL
+                AND retirement_date::date < NOW() - INTERVAL '2 years'
+            """)
+            
+            # Delete NPC players retired 2+ seasons ago
+            await conn.execute("""
+                DELETE FROM npc_players
+                WHERE retired = TRUE
+                AND team_id = 'retired'
+            """)
+            
+            # Delete old training history (>1 year)
+            await conn.execute("""
+                DELETE FROM training_history
+                WHERE training_date < NOW() - INTERVAL '1 year'
+            """)
+            
+            # Delete old match events (>6 months)
+            await conn.execute("""
+                DELETE FROM match_events
+                WHERE created_at < NOW() - INTERVAL '6 months'
+            """)
+            
+            print("✅ Cleaned up old retired players and historical data")
     
     async def create_regen_player(self, team_id: str, position: str, original_rating: int = None):
         """Create regenerated player to replace retired player"""
