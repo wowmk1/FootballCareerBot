@@ -21,6 +21,7 @@ class FootballBot(commands.Bot):
             help_command=None
         )
         self.season_task_started = False
+        self.match_window_lock = asyncio.Lock()  # Race condition prevention
 
     async def setup_hook(self):
         """Called when bot is starting up"""
@@ -171,6 +172,7 @@ class FootballBot(commands.Bot):
             self.check_warnings.start()
             self.check_retirements.start()
             self.check_training_reminders.start()
+            self.cleanup_old_data.start()  # Weekly cleanup
             self.season_task_started = True
             print("✅ Background tasks started (simplified system)")
 
@@ -188,6 +190,7 @@ class FootballBot(commands.Bot):
             'commands.interactive_match',
             'commands.adm',  # Admin commands
             'commands.organized',  # Organized player/league commands
+            'commands.achievements',  # Achievement system
         ]
 
         for cog in cogs:
@@ -449,6 +452,19 @@ class FootballBot(commands.Bot):
     # ============================================
     # SIMPLIFIED BACKGROUND TASKS
     # ============================================
+
+    @tasks.loop(hours=168)  # Weekly (7 days)
+    async def cleanup_old_data(self):
+        """Weekly cleanup of old data"""
+        try:
+            await db.cleanup_old_retired_players()
+            print("✅ Weekly data cleanup complete")
+        except Exception as e:
+            print(f"❌ Error in cleanup: {e}")
+
+    @cleanup_old_data.before_loop
+    async def before_cleanup_old_data(self):
+        await self.wait_until_ready()
 
     @tasks.loop(minutes=5)
     async def check_match_windows(self):
