@@ -618,10 +618,10 @@ class FootballBot(commands.Bot):
     async def check_training_reminders(self):
         """
         Check for players whose training is ready and send reminders
-        FIXED: Pass datetime objects directly, not ISO strings
+        FIXED: Pass datetime objects, not ISO strings
         """
         try:
-            # Calculate thresholds as datetime objects
+            # Calculate thresholds
             cooldown_threshold = datetime.now() - timedelta(
                 hours=config.TRAINING_COOLDOWN_HOURS,
                 minutes=5
@@ -629,8 +629,6 @@ class FootballBot(commands.Bot):
             reminder_threshold = datetime.now() - timedelta(hours=12)
 
             async with db.pool.acquire() as conn:
-                # Get players who can train now
-                # Pass datetime objects directly to asyncpg
                 rows = await conn.fetch("""
                                         SELECT user_id, player_name, last_training
                                         FROM players
@@ -640,44 +638,36 @@ class FootballBot(commands.Bot):
                                           AND (last_reminded IS NULL
                                            OR last_reminded:: timestamp
                                             < $2)
-                                        """, cooldown_threshold, reminder_threshold)
+                                        """, cooldown_threshold, reminder_threshold)  # ✅ Pass datetime objects directly
 
                 for row in rows:
-                    # Double-check they can actually train
                     last_train = datetime.fromisoformat(row['last_training'])
                     time_since = datetime.now() - last_train
 
-                    # Only send reminder if they can DEFINITELY train
                     if time_since >= timedelta(hours=config.TRAINING_COOLDOWN_HOURS):
-                        # Update timestamp FIRST to prevent spam
                         await conn.execute("""
                                            UPDATE players
                                            SET last_reminded = $1
                                            WHERE user_id = $2
                                            """, datetime.now().isoformat(), row['user_id'])
 
-                        # Send reminder
-                        success = await self.send_training_reminder(row['user_id'])
-                        if success:
-                            logger.info(f"✅ Sent training reminder to user {row['user_id']}")
+                        await self.send_training_reminder(row['user_id'])
+                        logger.info(f"✅ Sent training reminder to user {row['user_id']}")
 
         except Exception as e:
             logger.error(f"❌ ERROR in check_training_reminders: {e}", exc_info=True)
 
     async def send_training_reminder(self, user_id: int):
-        """Send DM when training is available - ENHANCED with exact timing"""
+        """Send DM when training is available"""
         try:
-            # Get player to show exact status
             player = await db.get_player(user_id)
             if not player or not player['last_training']:
                 return False
 
-            # Verify training is actually ready
             last_train = datetime.fromisoformat(player['last_training'])
             time_since = datetime.now() - last_train
 
             if time_since < timedelta(hours=config.TRAINING_COOLDOWN_HOURS):
-                # Training not ready yet - don't send notification
                 logger.warning(f"⚠️ Skipped premature reminder for user {user_id}")
                 return False
 
@@ -696,7 +686,6 @@ class FootballBot(commands.Bot):
                 inline=False
             )
 
-            # Show how long it's been
             hours_since = int(time_since.total_seconds() // 3600)
             embed.add_field(
                 name="⏱️ Cooldown Info",
