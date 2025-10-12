@@ -19,8 +19,8 @@ def is_match_window_time():
     now = datetime.now(EST)
     is_match_day = now.weekday() in MATCH_DAYS
     is_match_hours = MATCH_START_HOUR <= now.hour < MATCH_END_HOUR
-    is_start = (now.hour == MATCH_START_HOUR and now.minute < 5)
-    is_end = (now.hour == MATCH_END_HOUR and now.minute < 5)
+    is_start = (is_match_day and now.hour == MATCH_START_HOUR and now.minute < 5)  # ✅ Added is_match_day check
+    is_end = (is_match_day and now.hour == MATCH_END_HOUR and now.minute < 5)      # ✅ Added is_match_day check
     return (is_match_day and is_match_hours), is_start, is_end
 
 
