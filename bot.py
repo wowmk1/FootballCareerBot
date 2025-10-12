@@ -189,6 +189,7 @@ class FootballBot(commands.Bot):
             self.check_retirements.start()
             self.check_training_reminders.start()
             self.cleanup_old_data.start()
+            self.check_database_health.start()  # NEW: Database health monitoring
             self.monitor_task_health.start()  # NEW: Health monitoring
             self.season_task_started = True
             logger.info("✅ Background tasks started (simplified system with health monitoring)")
@@ -685,6 +686,21 @@ class FootballBot(commands.Bot):
             logger.warning(f"⚠️ Could not send training reminder to {user_id}: {e}")
             return False
 
+    @tasks.loop(minutes=5)
+    async def check_database_health(self):
+        """Monitor database connection health"""
+        try:
+            is_healthy = await db.health_check()
+            if not is_healthy:
+                logger.critical("🚨 Database unhealthy - connection issues detected!")
+        except Exception as e:
+            logger.critical(f"❌ Database health check failed: {e}", exc_info=True)
+            # Task continues - will retry in 5 minutes
+
+    @check_database_health.before_loop
+    async def before_check_database_health(self):
+        await self.wait_until_ready()
+
     # ============================================
     # TASK HEALTH MONITORING (NEW)
     # ============================================
@@ -698,7 +714,8 @@ class FootballBot(commands.Bot):
                 'warnings': self.check_warnings.is_running(),
                 'retirements': self.check_retirements.is_running(),
                 'training_reminders': self.check_training_reminders.is_running(),
-                'cleanup': self.cleanup_old_data.is_running()
+                'cleanup': self.cleanup_old_data.is_running(),
+                'database_health': self.check_database_health.is_running()
             }
             
             failed_tasks = [name for name, running in tasks_status.items() if not running]
@@ -728,6 +745,10 @@ class FootballBot(commands.Bot):
                         elif task_name == 'cleanup' and not self.cleanup_old_data.is_running():
                             self.cleanup_old_data.start()
                             logger.info("✅ Restarted cleanup_old_data")
+                            
+                        elif task_name == 'database_health' and not self.check_database_health.is_running():
+                            self.check_database_health.start()
+                            logger.info("✅ Restarted check_database_health")
                             
                     except Exception as restart_error:
                         logger.error(f"❌ Failed to restart {task_name}: {restart_error}", exc_info=True)
