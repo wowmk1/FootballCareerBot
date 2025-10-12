@@ -389,6 +389,117 @@ async def close_transfer_window():
     print("💼 Transfer window CLOSED")
 
 
+async def promote_team(team_id: str, from_league: str, to_league: str, bot=None):
+    """Promote a team to higher league"""
+    team = await db.get_team(team_id)
+    
+    # Update team league
+    async with db.pool.acquire() as conn:
+        await conn.execute(
+            "UPDATE teams SET league = $1 WHERE team_id = $2",
+            to_league, team_id
+        )
+        
+        # Update all players on this team
+        await conn.execute(
+            "UPDATE players SET league = $1 WHERE team_id = $2",
+            to_league, team_id
+        )
+        
+        # Update NPC players
+        await conn.execute(
+            "UPDATE npc_players SET league = $1 WHERE team_id = $2",
+            to_league, team_id
+        )
+    
+    # Add news
+    await db.add_news(
+        f"PROMOTION: {team['team_name']} promoted to {to_league}!",
+        f"{team['team_name']} have earned promotion from {from_league} to {to_league}!",
+        "league_news", None, 10
+    )
+    
+    # Notify user players
+    if bot:
+        async with db.pool.acquire() as conn:
+            players = await conn.fetch(
+                "SELECT user_id, player_name FROM players WHERE team_id = $1 AND retired = FALSE",
+                team_id
+            )
+        
+        for player in players:
+            try:
+                user = await bot.fetch_user(player['user_id'])
+                embed = discord.Embed(
+                    title="🎉 PROMOTION!",
+                    description=f"**{team['team_name']}** promoted to **{to_league}**!",
+                    color=discord.Color.gold()
+                )
+                await user.send(embed=embed)
+            except:
+                pass
+    
+    print(f"  ⬆️ {team['team_name']}: {from_league} → {to_league}")
+
+
+async def relegate_team(team_id: str, from_league: str, to_league: str, bot=None):
+    """Relegate a team to lower league"""
+    team = await db.get_team(team_id)
+    
+    # Update team league
+    async with db.pool.acquire() as conn:
+        await conn.execute(
+            "UPDATE teams SET league = $1 WHERE team_id = $2",
+            to_league, team_id
+        )
+        
+        # Update all players on this team
+        await conn.execute(
+            "UPDATE players SET league = $1 WHERE team_id = $2",
+            to_league, team_id
+        )
+    
+    # Add news
+    await db.add_news(
+        f"RELEGATION: {team['team_name']} relegated to {to_league}",
+        f"{team['team_name']} have been relegated from {from_league} to {to_league}.",
+        "league_news", None, 10
+    )
+    
+    # Notify and offer exit clause to user players
+    if bot:
+        async with db.pool.acquire() as conn:
+            players = await conn.fetch(
+                "SELECT user_id, player_name FROM players WHERE team_id = $1 AND retired = FALSE",
+                team_id
+            )
+        
+        for player in players:
+            try:
+                user = await bot.fetch_user(player['user_id'])
+                embed = discord.Embed(
+                    title="⬇️ RELEGATION",
+                    description=f"**{team['team_name']}** relegated to **{to_league}**",
+                    color=discord.Color.red()
+                )
+                embed.add_field(
+                    name="📋 What Now?",
+                    value="You can request a transfer in the next window",
+                    inline=False
+                )
+                await user.send(embed=embed)
+                
+                # Reduce contract by 1 year (release clause)
+                await conn.execute(
+                    "UPDATE players SET contract_years = GREATEST(0, contract_years - 1) WHERE user_id = $1",
+                    player['user_id']
+                )
+            except:
+                pass
+    
+    print(f"  ⬇️ {team['team_name']}: {from_league} → {to_league}")
+
+
 async def end_season(bot=None):
     """End the season with awards ceremony"""
     state = await db.get_game_state()
@@ -552,7 +663,40 @@ async def end_season(bot=None):
                     print(f"  ⚠️ Could not send award DM: {e}")
 
     # ============================================
-    # END OF AWARDS - Continue with season reset
+    # PROMOTIONS & RELEGATIONS
+    # ============================================
+    print("\n=== Processing Promotions & Relegations ===")
+
+    # Get final standings for all leagues
+    pl_table = await db.get_league_table('Premier League')
+    champ_table = await db.get_league_table('Championship')
+    l1_table = await db.get_league_table('League One')
+
+    # PREMIER LEAGUE RELEGATION (Bottom 3)
+    if len(pl_table) >= 20:
+        relegated_from_pl = pl_table[-3:]  # Teams 18, 19, 20
+        for team in relegated_from_pl:
+            await relegate_team(team['team_id'], 'Premier League', 'Championship', bot)
+
+    # CHAMPIONSHIP PROMOTION (Top 2) & RELEGATION (Bottom 3)
+    if len(champ_table) >= 24:
+        promoted_from_champ = champ_table[:2]  # Top 2
+        relegated_from_champ = champ_table[-3:]  # Bottom 3
+        
+        for team in promoted_from_champ:
+            await promote_team(team['team_id'], 'Championship', 'Premier League', bot)
+        
+        for team in relegated_from_champ:
+            await relegate_team(team['team_id'], 'Championship', 'League One', bot)
+
+    # LEAGUE ONE PROMOTION (Top 2)
+    if len(l1_table) >= 24:
+        promoted_from_l1 = l1_table[:2]
+        for team in promoted_from_l1:
+            await promote_team(team['team_id'], 'League One', 'Championship', bot)
+
+    # ============================================
+    # END OF AWARDS & PROMOTIONS - Continue with season reset
     # ============================================
 
     await db.age_all_players()
