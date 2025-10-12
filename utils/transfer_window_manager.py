@@ -259,24 +259,28 @@ async def generate_offers_for_player(player: dict, current_week: int, num_offers
 
     # CRITICAL FIX #2: STRICTER PREMIER LEAGUE REQUIREMENTS
     # Premier League teams - much more selective
-    if rating >= 78:
-        # Definitely good enough for PL
+    
+    # Get position-specific minimum
+    position_minimum = POSITION_PL_MINIMUMS.get(player['position'], 75)
+    
+    if rating >= position_minimum:
+        # Meets position-specific requirement
         async with db.pool.acquire() as conn:
             rows = await conn.fetch(
                 "SELECT * FROM teams WHERE league = $1 ORDER BY RANDOM() LIMIT 5",
                 'Premier League'
             )
             interested_teams.extend([dict(row) for row in rows])
-    elif rating >= 73 and potential >= 87:
-        # High potential young players (70+ rating, 85+ potential)
+    elif rating >= (position_minimum - 5) and potential >= 87:
+        # High potential young players (within 5 of position minimum + high potential)
         async with db.pool.acquire() as conn:
             rows = await conn.fetch(
                 "SELECT * FROM teams WHERE league = $1 ORDER BY RANDOM() LIMIT 5",
                 'Premier League'
             )
             interested_teams.extend([dict(row) for row in rows])
-    elif rating >= 70 and potential >= 92:
-        # Exceptional wonderkids only (68+ rating, 90+ potential)
+    elif rating >= (position_minimum - 8) and potential >= 93:
+        # Exceptional wonderkids only (within 8 of position minimum + elite potential)
         async with db.pool.acquire() as conn:
             rows = await conn.fetch(
                 "SELECT * FROM teams WHERE league = $1 ORDER BY RANDOM() LIMIT 5",
