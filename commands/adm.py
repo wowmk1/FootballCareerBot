@@ -235,7 +235,7 @@ class AdminCommands(commands.Cog):
         """Check retirements"""
         await interaction.response.defer()
         
-        retirements = await db.retire_old_players()
+        retirements = await db.retire_old_players(bot=self.bot)
         
         embed = discord.Embed(
             title="✅ Retirement Check Complete",
