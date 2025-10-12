@@ -314,6 +314,18 @@ class TrainingCommands(commands.Cog):
 
         embed.add_field(name="📈 Stat Gains", value=gains_text, inline=False)
 
+        # 🆕 PROGRESS BAR TO 30-DAY STREAK
+        if new_streak < 30:
+            streak_progress = new_streak / 30
+            progress_bar_filled = int(streak_progress * 20)
+            streak_progress_bar = "█" * progress_bar_filled + "░" * (20 - progress_bar_filled)
+            embed.add_field(
+                name="🎯 Progress to 30-Day Streak",
+                value=f"{streak_progress_bar} **{new_streak}/30 days**\n"
+                      f"Unlock: +3 Potential permanently!",
+                inline=False
+            )
+
         # Show surprise development
         if surprise_stat and actual_gains.get(surprise_stat, 0) > 0:
             embed.add_field(
