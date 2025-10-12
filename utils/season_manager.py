@@ -346,6 +346,14 @@ async def advance_week(bot=None):
     elif current_week in config.TRANSFER_WINDOW_WEEKS and next_week not in config.TRANSFER_WINDOW_WEEKS:
         await close_transfer_window()
 
+        from utils.npc_transfer_system import balance_team_squads
+        try:
+            balanced = await balance_team_squads()
+            if balanced > 0:
+                print(f"⚖️ Balanced {balanced} NPC players across squads")
+        except Exception as e:
+            print(f"⚠️ Could not balance squads: {e}")
+    
     elif next_week in config.TRANSFER_WINDOW_WEEKS and next_week not in FIRST_WEEK_OF_WINDOWS:
         from utils.transfer_window_manager import generate_offers_for_eligible_players
         try:
