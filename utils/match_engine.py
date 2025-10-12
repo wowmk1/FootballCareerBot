@@ -8,14 +8,19 @@ CRITICAL FIXES:
 6. ✅ Red card suspension notification added
 7. ✅ Form update now uses CORRECT match ratings from database
 8. ✅ Action buttons now verify user identity - prevents cross-player interference
+9. ✅ MEMORY LEAK FIXED - Auto-cleanup of old matches every hour
 """
 import discord
 from discord.ext import commands
 import asyncio
 from database import db
-from datetime import datetime
+from datetime import datetime, timedelta
 import random
 import config
+import logging
+from typing import Dict
+
+logger = logging.getLogger(__name__)
 
 try:
     from utils.football_data_api import get_team_crest_url, get_competition_logo
@@ -31,8 +36,50 @@ except ImportError:
 class MatchEngine:
     def __init__(self, bot):
         self.bot = bot
-        self.active_matches = {}
-        self.pinned_messages = {}
+        self.active_matches: Dict[int, dict] = {}
+        self.pinned_messages: Dict[int, discord.Message] = {}
+        self._last_cleanup = datetime.now()
+        self._match_timestamps: Dict[int, datetime] = {}  # Track when matches started
+
+    async def cleanup_old_matches(self):
+        """Remove matches older than 6 hours from memory"""
+        cutoff = datetime.now() - timedelta(hours=6)
+        removed_matches = 0
+        removed_messages = 0
+        
+        # Clean up active_matches
+        for match_id in list(self.active_matches.keys()):
+            match_time = self._match_timestamps.get(match_id, datetime.now())
+            if match_time < cutoff:
+                del self.active_matches[match_id]
+                removed_matches += 1
+                
+                # Also clean up timestamp
+                if match_id in self._match_timestamps:
+                    del self._match_timestamps[match_id]
+        
+        # Clean up pinned_messages
+        for match_id in list(self.pinned_messages.keys()):
+            if match_id not in self.active_matches:
+                try:
+                    # Try to unpin old message
+                    msg = self.pinned_messages[match_id]
+                    await msg.unpin()
+                except:
+                    pass  # Message might be deleted already
+                
+                del self.pinned_messages[match_id]
+                removed_messages += 1
+        
+        if removed_matches > 0 or removed_messages > 0:
+            logger.info(f"🧹 Cleaned up {removed_matches} old matches and {removed_messages} pinned messages")
+        
+        self._last_cleanup = datetime.now()
+
+    async def maybe_cleanup(self):
+        """Cleanup every hour"""
+        if datetime.now() - self._last_cleanup > timedelta(hours=1):
+            await self.cleanup_old_matches()
 
     def get_action_description_detailed(self, action):
         """Get detailed description with follow-up info"""
@@ -252,6 +299,9 @@ class MatchEngine:
                 match_channel.id, message.id, 'in_progress', 0, datetime.now().isoformat())
             match_id = result['match_id']
 
+        # Track when this match started for cleanup
+        self._match_timestamps[match_id] = datetime.now()
+
         self.active_matches[match_id] = {'rivalry': rivalry}
 
         for user_id in player_users:
@@ -266,6 +316,9 @@ class MatchEngine:
         await self.run_match(match_id, fixture, match_channel, num_events)
 
     async def run_match(self, match_id: int, fixture: dict, channel: discord.TextChannel, num_events: int):
+        # Check if cleanup needed (runs every hour)
+        await self.maybe_cleanup()
+        
         home_team = await db.get_team(fixture['home_team_id'])
         away_team = await db.get_team(fixture['away_team_id'])
         home_score = 0
@@ -422,7 +475,6 @@ class MatchEngine:
         embed.add_field(name="⚡ AVAILABLE ACTIONS", value=actions_text, inline=False)
         embed.add_field(name="⏱️ TIME LIMIT", value="**30 SECONDS** to choose!", inline=False)
 
-        # ✅ FIX #3: Pass user_id to view to verify button clicks
         view = EnhancedActionView(available_actions, player['user_id'], timeout=30)
         message = await channel.send(content=f"📢 {member.mention}", embed=embed, view=view)
         await view.wait()
@@ -507,7 +559,6 @@ class MatchEngine:
                     inline=False
                 )
                 
-                # ✅ INCREMENT GOALS
                 async with db.pool.acquire() as conn:
                     await conn.execute("""
                         UPDATE match_participants 
@@ -520,7 +571,6 @@ class MatchEngine:
                         player['user_id']
                     )
                     
-                    # ✅ CHECK FOR HAT-TRICK
                     goals_row = await conn.fetchrow(
                         "SELECT goals_scored FROM match_participants WHERE match_id = $1 AND user_id = $2",
                         match_id, player['user_id']
@@ -547,7 +597,6 @@ class MatchEngine:
             )
             rating_change += 0.5
             
-            # ✅ SEND RED CARD NOTIFICATION TO PLAYER
             await self.send_red_card_notification(player, attacking_team, defending_team)
         
         # VAR CHECK
@@ -584,7 +633,6 @@ class MatchEngine:
                     scorer_name = player['player_name']
                     rating_change = 1.2
 
-                    # ✅ INCREMENT GOALS
                     async with db.pool.acquire() as conn:
                         await conn.execute("""
                             UPDATE match_participants 
@@ -597,7 +645,6 @@ class MatchEngine:
                             player['user_id']
                         )
                         
-                        # ✅ CHECK FOR HAT-TRICK
                         goals_row = await conn.fetchrow(
                             "SELECT goals_scored FROM match_participants WHERE match_id = $1 AND user_id = $2",
                             match_id, player['user_id']
@@ -625,7 +672,6 @@ class MatchEngine:
                         assister_name = player['player_name']
                         rating_change = 0.8
 
-                        # ✅ INCREMENT ASSISTS
                         async with db.pool.acquire() as conn:
                             await conn.execute("""
                                 UPDATE match_participants 
@@ -661,7 +707,6 @@ class MatchEngine:
         await suspense_msg.delete()
         await channel.send(embed=result_embed)
 
-        # ✅ INCREMENT ACTIONS
         async with db.pool.acquire() as conn:
             await conn.execute("""
                 UPDATE match_participants 
@@ -679,7 +724,7 @@ class MatchEngine:
         }
 
     async def send_hattrick_notification(self, player, team):
-        """✅ NEW: Send DM when player scores hat-trick"""
+        """Send DM when player scores hat-trick"""
         try:
             user = await self.bot.fetch_user(player['user_id'])
             embed = discord.Embed(
@@ -697,7 +742,7 @@ class MatchEngine:
             print(f"❌ Could not send hat-trick DM to {player['user_id']}: {e}")
 
     async def send_red_card_notification(self, player, attacking_team, defending_team):
-        """✅ NEW: Send DM when player receives red card"""
+        """Send DM when player receives red card"""
         try:
             user = await self.bot.fetch_user(player['user_id'])
             embed = discord.Embed(
@@ -820,7 +865,6 @@ class MatchEngine:
 
         from utils.form_morale_system import update_player_form, update_player_morale
 
-        # ✅ FIX #2: Re-fetch updated match ratings for form calculations
         async with db.pool.acquire() as conn:
             updated_ratings = await conn.fetch("""
                 SELECT user_id, match_rating
@@ -828,18 +872,15 @@ class MatchEngine:
                 WHERE match_id = $1 AND user_id IS NOT NULL
             """, match_id)
 
-        # Create a lookup dict for fast access
         rating_lookup = {row['user_id']: row['match_rating'] for row in updated_ratings}
 
-        # NOW update form with CORRECT ratings
         for participant in participants:
             if participant['user_id']:
-                # Use the UPDATED rating from database, not stale participant data
                 actual_rating = rating_lookup.get(participant['user_id'], participant['match_rating'])
                 
                 new_form = await update_player_form(
                     participant['user_id'],
-                    actual_rating  # ✅ Now using correct rating
+                    actual_rating
                 )
                 print(f"  📊 Form updated for user {participant['user_id']}: Rating {actual_rating:.1f} → Form {new_form}")
 
@@ -896,12 +937,10 @@ class MatchEngine:
             except ImportError:
                 pass
 
-        # ✅ FIX #2: MOTM WITH DM NOTIFICATION
         if participants:
             user_participants = [p for p in participants if p['user_id']]
 
             if user_participants:
-                # Re-fetch from database to get UPDATED ratings
                 async with db.pool.acquire() as conn:
                     updated_participants = await conn.fetch("""
                         SELECT user_id, match_rating, goals_scored, assists, actions_taken
@@ -922,7 +961,6 @@ class MatchEngine:
 
                     motm_player = await db.get_player(motm['user_id'])
 
-                    # Send to channel
                     motm_embed = discord.Embed(
                         title="⭐ MAN OF THE MATCH",
                         description=f"**{motm_player['player_name']}**\nMatch Rating: **{motm['match_rating']:.1f}/10**",
@@ -942,7 +980,6 @@ class MatchEngine:
                     await channel.send(embed=motm_embed)
                     print(f"⭐ MOTM: {motm_player['player_name']} ({motm['match_rating']:.1f}/10)")
 
-                    # ✅ SEND DM TO MOTM WINNER
                     try:
                         user = await self.bot.fetch_user(motm['user_id'])
                         dm_embed = discord.Embed(
@@ -1003,10 +1040,10 @@ class MatchEngine:
 
 
 class EnhancedActionView(discord.ui.View):
-    def __init__(self, available_actions, user_id, timeout=30):  # ✅ FIX #3: Add user_id parameter
+    def __init__(self, available_actions, user_id, timeout=30):
         super().__init__(timeout=timeout)
         self.chosen_action = None
-        self.owner_user_id = user_id  # ✅ FIX #3: Store the owner
+        self.owner_user_id = user_id
 
         emoji_map = {
             'shoot': '🎯', 'pass': '🎪', 'dribble': '🪄', 'tackle': '🛡️', 'cross': '📤',
@@ -1037,7 +1074,6 @@ class ActionButton(discord.ui.Button):
         self.action = action
 
     async def callback(self, interaction: discord.Interaction):
-        # ✅ FIX #3: CRITICAL - Verify this is the correct player
         if interaction.user.id != self.view.owner_user_id:
             await interaction.response.send_message(
                 "❌ These aren't your action buttons! Wait for your own moment.",
@@ -1045,7 +1081,6 @@ class ActionButton(discord.ui.Button):
             )
             return
         
-        # Original code continues...
         await interaction.response.defer()
         self.view.chosen_action = self.action
         for item in self.view.children:
