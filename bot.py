@@ -249,7 +249,8 @@ class FootballBot(commands.Bot):
             await populate_all_teams()
             print("✅ All teams now have complete squads!")
 
-        await db.retire_old_players()
+        # FIXED: Pass bot instance to retirement function
+        await db.retire_old_players(bot=self)
 
     async def populate_real_players(self, pl_players, champ_players):
         """Populate real players with proper stats"""
@@ -296,7 +297,7 @@ class FootballBot(commands.Bot):
                 'passing': max(50, base - random.randint(5, 10)),
                 'dribbling': max(45, base - random.randint(10, 15)),
                 'defending': min(99, base + random.randint(5, 15)),
-                'physical': max(60, base + random.randint(-5, 5))
+                'physical': min(99, base + random.randint(-5, 5))
             }
         elif position in ['ST', 'W']:
             return {
@@ -592,7 +593,8 @@ class FootballBot(commands.Bot):
         CRITICAL FIX #1: Wrapped in try-except for error recovery
         """
         try:
-            await db.retire_old_players()
+            # FIXED: Pass bot instance to retirement function
+            await db.retire_old_players(bot=self)
         except Exception as e:
             print(f"❌ CRITICAL ERROR in check_retirements: {e}")
             import traceback
