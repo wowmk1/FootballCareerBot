@@ -4,11 +4,11 @@ from discord.ext import commands, tasks
 import config
 from database import db
 import asyncio
-from datetime import datetime
+from datetime import datetime, timedelta
 import logging
 
 # ============================================
-# LOGGING CONFIGURATION (NEW)
+# LOGGING CONFIGURATION
 # ============================================
 logging.basicConfig(
     level=logging.INFO,
@@ -154,8 +154,6 @@ class FootballBot(commands.Bot):
         # END AUTO-MIGRATE
         # ============================================
 
-        # Cup system removed - focusing on league play only
-
         await self.initialize_data()
         await self.load_cogs()
 
@@ -189,15 +187,15 @@ class FootballBot(commands.Bot):
             self.check_retirements.start()
             self.check_training_reminders.start()
             self.cleanup_old_data.start()
-            self.check_database_health.start()  # NEW: Database health monitoring
-            self.monitor_task_health.start()  # NEW: Health monitoring
+            self.check_database_health.start()
+            self.monitor_task_health.start()
             self.season_task_started = True
             logger.info("✅ Background tasks started (simplified system with health monitoring)")
 
     async def load_cogs(self):
         """Load all command modules"""
         cogs = [
-            'commands.start',  # Player creation
+            'commands.start',
             'commands.player',
             'commands.training',
             'commands.season',
@@ -206,9 +204,9 @@ class FootballBot(commands.Bot):
             'commands.transfers',
             'commands.news',
             'commands.interactive_match',
-            'commands.adm',  # Admin commands
-            'commands.organized',  # Organized player/league commands
-            'commands.achievements',  # Achievement system
+            'commands.adm',
+            'commands.organized',
+            'commands.achievements',
         ]
 
         for cog in cogs:
@@ -223,7 +221,7 @@ class FootballBot(commands.Bot):
         from data.teams import ALL_TEAMS
         from data.players import PREMIER_LEAGUE_PLAYERS
         from data.championship_players import CHAMPIONSHIP_PLAYERS
-        from data.league_one_players import LEAGUE_ONE_PLAYERS  # ADDED: League One import
+        from data.league_one_players import LEAGUE_ONE_PLAYERS
         from utils.npc_squad_generator import populate_all_teams
 
         async with db.pool.acquire() as conn:
@@ -258,7 +256,7 @@ class FootballBot(commands.Bot):
             await self.populate_real_players(
                 PREMIER_LEAGUE_PLAYERS, 
                 CHAMPIONSHIP_PLAYERS,
-                LEAGUE_ONE_PLAYERS  # ADDED: Pass League One players
+                LEAGUE_ONE_PLAYERS
             )
 
         async with db.pool.acquire() as conn:
@@ -270,7 +268,6 @@ class FootballBot(commands.Bot):
             await populate_all_teams()
             logger.info("✅ All teams now have complete squads!")
 
-        # FIXED: Pass bot instance to retirement function
         await db.retire_old_players(bot=self)
 
     async def populate_real_players(self, pl_players, champ_players, l1_players):
@@ -307,7 +304,6 @@ class FootballBot(commands.Bot):
 
         logger.info(f"✅ Added {len(champ_players)} Championship players")
 
-        # ADDED: League One players section
         logger.info("⚽ Adding real League One players...")
         async with db.pool.acquire() as conn:
             for p in l1_players:
@@ -406,7 +402,6 @@ class FootballBot(commands.Bot):
                         inline=True
                     )
 
-                    # Get players in this server who have matches
                     async with db.pool.acquire() as conn:
                         players = await conn.fetch("""
                             SELECT DISTINCT p.user_id, p.player_name, t.team_name
@@ -422,7 +417,6 @@ class FootballBot(commands.Bot):
                               )
                         """, state['current_week'])
 
-                    # Mention players who need to play
                     player_mentions = []
                     for p in players:
                         member = guild.get_member(p['user_id'])
@@ -430,7 +424,7 @@ class FootballBot(commands.Bot):
                             player_mentions.append(f"{member.mention} ({p['team_name']})")
 
                     if player_mentions:
-                        mentions_text = "\n".join(player_mentions[:10])  # Max 10
+                        mentions_text = "\n".join(player_mentions[:10])
                         if len(player_mentions) > 10:
                             mentions_text += f"\n*...and {len(player_mentions) - 10} more*"
 
@@ -464,10 +458,9 @@ class FootballBot(commands.Bot):
                         color=discord.Color.red()
                     )
 
-                    # Show match summary
                     if week_results:
                         results_text = ""
-                        for result in week_results[:5]:  # Show top 5
+                        for result in week_results[:5]:
                             results_text += f"**{result['home_team_name']}** {result['home_score']} - {result['away_score']} **{result['away_team_name']}**\n"
 
                         embed.add_field(
@@ -493,7 +486,7 @@ class FootballBot(commands.Bot):
     # SELF-HEALING BACKGROUND TASKS (FIXED)
     # ============================================
 
-    @tasks.loop(hours=168)  # Weekly (7 days)
+    @tasks.loop(hours=168)
     async def cleanup_old_data(self):
         """Weekly cleanup of old data"""
         try:
@@ -501,7 +494,6 @@ class FootballBot(commands.Bot):
             logger.info("✅ Weekly data cleanup complete")
         except Exception as e:
             logger.error(f"❌ ERROR in cleanup_old_data: {e}", exc_info=True)
-            # Task continues - will retry in 7 days
 
     @cleanup_old_data.before_loop
     async def before_cleanup_old_data(self):
@@ -526,30 +518,24 @@ class FootballBot(commands.Bot):
             if not state['season_started']:
                 return
             
-            # Check: Is it match window time RIGHT NOW?
             is_window_time, is_start_time, is_end_time = is_match_window_time()
-            
             window_open = state['match_window_open']
             
-            # OPEN WINDOW: If it's start time and window is closed
             if is_start_time and not window_open:
                 logger.info("🟢 Opening match window (fixed schedule)")
                 await open_match_window()
                 await self.notify_match_window_open()
                 
-                # Update bot presence when window opens
                 await self.change_presence(
                     activity=discord.Game(name=f"🟢 WINDOW OPEN | Week {state['current_week']}"),
                     status=discord.Status.online
                 )
             
-            # CLOSE WINDOW: If it's end time and window is open
             elif is_end_time and window_open:
                 logger.info("🔴 Closing match window (fixed schedule)")
                 await close_match_window(bot=self)
                 
-                # Update bot presence when window closes
-                state = await db.get_game_state()  # Refresh state after close
+                state = await db.get_game_state()
                 from utils.season_manager import get_next_match_window
                 try:
                     next_window = get_next_match_window()
@@ -564,12 +550,10 @@ class FootballBot(commands.Bot):
                         status=discord.Status.online
                     )
             
-            # AUTO-CLOSE: If window is open but it's NOT window time (safety check)
             elif window_open and not is_window_time:
                 logger.warning("⚠️ Window is open outside of match hours - auto-closing")
                 await close_match_window(bot=self)
                 
-                # Update bot presence after auto-close
                 state = await db.get_game_state()
                 await self.change_presence(
                     activity=discord.Game(name=f"⚽ Week {state['current_week']} | /season"),
@@ -578,7 +562,6 @@ class FootballBot(commands.Bot):
                 
         except Exception as e:
             logger.error(f"❌ ERROR in check_match_windows: {e}", exc_info=True)
-            # Task continues - will retry in 5 minutes
 
     @tasks.loop(minutes=5)
     async def check_warnings(self):
@@ -601,7 +584,6 @@ class FootballBot(commands.Bot):
             if not state['season_started']:
                 return
             
-            # Check each warning type
             if should_send_warning('pre_1h'):
                 await send_1h_warning(self)
             
@@ -616,7 +598,6 @@ class FootballBot(commands.Bot):
                 
         except Exception as e:
             logger.error(f"❌ ERROR in check_warnings: {e}", exc_info=True)
-            # Task continues - will retry in 5 minutes
 
     @tasks.loop(hours=24)
     async def check_retirements(self):
@@ -628,60 +609,95 @@ class FootballBot(commands.Bot):
             await db.retire_old_players(bot=self)
         except Exception as e:
             logger.error(f"❌ ERROR in check_retirements: {e}", exc_info=True)
-            # Task continues - will retry in 24 hours
 
     @tasks.loop(hours=1)
     async def check_training_reminders(self):
         """
         Check for players whose training is ready and send reminders
-        SELF-HEALING: Errors logged but task continues
+        FIXED: Now checks exact cooldown time with 5-minute buffer
         UPDATE timestamp BEFORE attempting DM to prevent spam
         """
         try:
+            # Get exact cooldown threshold with 5-minute buffer
+            cooldown_threshold = datetime.now() - timedelta(hours=config.TRAINING_COOLDOWN_HOURS, minutes=5)
+            
             async with db.pool.acquire() as conn:
-                # Get players who can train now (24h+ since last training)
-                # AND haven't been reminded in the last 12 hours
+                # Get players who can train now
                 rows = await conn.fetch("""
                     SELECT user_id, player_name, last_training
                     FROM players
                     WHERE retired = FALSE
                       AND last_training IS NOT NULL
-                      AND last_training::timestamp <= NOW() - INTERVAL '24 hours'
-                      AND (last_reminded IS NULL OR last_reminded::timestamp < NOW() - INTERVAL '12 hours')
-                """)
+                      AND last_training::timestamp <= $1
+                      AND (last_reminded IS NULL OR last_reminded::timestamp < $2)
+                """, cooldown_threshold.isoformat(), 
+                    (datetime.now() - timedelta(hours=12)).isoformat())
 
                 for row in rows:
-                    # Update timestamp FIRST to prevent infinite retries
-                    await conn.execute("""
-                        UPDATE players 
-                        SET last_reminded = $1 
-                        WHERE user_id = $2
-                    """, datetime.now().isoformat(), row['user_id'])
+                    # Double-check they can actually train
+                    last_train = datetime.fromisoformat(row['last_training'])
+                    time_since = datetime.now() - last_train
                     
-                    # Then attempt to send reminder (failure won't cause retry storm)
-                    await self.send_training_reminder(row['user_id'])
+                    # Only send reminder if they can DEFINITELY train
+                    if time_since >= timedelta(hours=config.TRAINING_COOLDOWN_HOURS):
+                        # Update timestamp FIRST to prevent spam
+                        await conn.execute("""
+                            UPDATE players 
+                            SET last_reminded = $1 
+                            WHERE user_id = $2
+                        """, datetime.now().isoformat(), row['user_id'])
+                        
+                        # Send reminder
+                        await self.send_training_reminder(row['user_id'])
+                        logger.info(f"✅ Sent training reminder to user {row['user_id']}")
                         
         except Exception as e:
             logger.error(f"❌ ERROR in check_training_reminders: {e}", exc_info=True)
-            # Task continues - will retry in 1 hour
 
     async def send_training_reminder(self, user_id: int):
-        """Send DM when training is available"""
+        """Send DM when training is available - ENHANCED with exact timing"""
         try:
+            # Get player to show exact status
+            player = await db.get_player(user_id)
+            if not player or not player['last_training']:
+                return False
+            
+            # Verify training is actually ready
+            last_train = datetime.fromisoformat(player['last_training'])
+            time_since = datetime.now() - last_train
+            
+            if time_since < timedelta(hours=config.TRAINING_COOLDOWN_HOURS):
+                # Training not ready yet - don't send notification
+                logger.warning(f"⚠️ Skipped premature reminder for user {user_id}")
+                return False
+            
             user = await self.fetch_user(user_id)
             embed = discord.Embed(
                 title="💪 Training Available!",
                 description="Your training cooldown is over!\n\nUse `/train` to improve your stats.",
                 color=discord.Color.green()
             )
+            
             embed.add_field(
                 name="🔥 Reminder",
-                value="Training daily maintains your streak!\n30-day streak = +3 potential",
+                value=f"Training daily maintains your streak!\n"
+                      f"Current streak: **{player['training_streak']} days**\n"
+                      f"30-day streak = +3 potential",
                 inline=False
             )
+            
+            # Show how long it's been
+            hours_since = int(time_since.total_seconds() // 3600)
+            embed.add_field(
+                name="⏱️ Cooldown Info",
+                value=f"Last trained: **{hours_since}h ago**\nYou're ready to train again!",
+                inline=False
+            )
+            
             await user.send(embed=embed)
             logger.info(f"✅ Sent training reminder to user {user_id}")
             return True
+            
         except Exception as e:
             logger.warning(f"⚠️ Could not send training reminder to {user_id}: {e}")
             return False
@@ -695,16 +711,11 @@ class FootballBot(commands.Bot):
                 logger.critical("🚨 Database unhealthy - connection issues detected!")
         except Exception as e:
             logger.critical(f"❌ Database health check failed: {e}", exc_info=True)
-            # Task continues - will retry in 5 minutes
 
     @check_database_health.before_loop
     async def before_check_database_health(self):
         await self.wait_until_ready()
 
-    # ============================================
-    # TASK HEALTH MONITORING (NEW)
-    # ============================================
-    
     @tasks.loop(hours=1)
     async def monitor_task_health(self):
         """Check if background tasks are still running and restart if needed"""
@@ -723,7 +734,6 @@ class FootballBot(commands.Bot):
             if failed_tasks:
                 logger.critical(f"🚨 TASKS STOPPED: {failed_tasks} - Attempting restart...")
                 
-                # Try to restart each failed task
                 for task_name in failed_tasks:
                     try:
                         if task_name == 'match_windows' and not self.check_match_windows.is_running():
@@ -757,13 +767,11 @@ class FootballBot(commands.Bot):
                 
         except Exception as e:
             logger.error(f"❌ ERROR in monitor_task_health: {e}", exc_info=True)
-            # Monitor continues despite errors
 
     @monitor_task_health.before_loop
     async def before_monitor_task_health(self):
         await self.wait_until_ready()
 
-    # Wait until ready methods
     @check_match_windows.before_loop
     async def before_check_match_windows(self):
         await self.wait_until_ready()
@@ -780,10 +788,6 @@ class FootballBot(commands.Bot):
     async def before_check_training_reminders(self):
         await self.wait_until_ready()
 
-    # ============================================
-    # END SELF-HEALING BACKGROUND TASKS
-    # ============================================
-
     async def on_ready(self):
         """Called when bot is fully ready"""
         state = await db.get_game_state()
@@ -797,7 +801,6 @@ class FootballBot(commands.Bot):
         else:
             logger.info(f'⏳ Season not started')
 
-        # Show next match window
         from utils.season_manager import get_next_match_window, EST
         try:
             next_window = get_next_match_window()
@@ -807,21 +810,17 @@ class FootballBot(commands.Bot):
 
         logger.info("=" * 50 + "\n")
 
-        # Dynamic bot presence based on window status
         if state['season_started']:
             if state['match_window_open']:
-                # Window is OPEN - show green status
                 status_text = f"🟢 WINDOW OPEN | Week {state['current_week']}"
             else:
-                # Window is CLOSED - show next window time
                 try:
                     next_window = get_next_match_window()
-                    day = next_window.strftime('%a')  # Mon, Wed, Sat
+                    day = next_window.strftime('%a')
                     status_text = f"Next: {day} 3PM EST | Week {state['current_week']}"
                 except:
                     status_text = f"⚽ Week {state['current_week']} | /season"
         else:
-            # Season not started
             status_text = "⚽ /start to begin"
         
         await self.change_presence(
@@ -829,10 +828,6 @@ class FootballBot(commands.Bot):
             status=discord.Status.online
         )
 
-    # ============================================
-    # AUTO-SETUP CHANNELS ON NEW SERVERS
-    # ============================================
-    
     async def on_guild_join(self, guild):
         """When bot joins a new server, auto-setup channels"""
         logger.info(f"📥 Joined new server: {guild.name}")
@@ -849,7 +844,7 @@ class FootballBot(commands.Bot):
 bot = FootballBot()
 
 
-# Help command (ONLY non-admin standalone command)
+# Help command
 @bot.tree.command(name="help", description="View all available commands")
 async def help_command(interaction: discord.Interaction):
     """Show help information"""
@@ -890,7 +885,6 @@ async def help_command(interaction: discord.Interaction):
         inline=False
     )
 
-    # Only show admin info to administrators
     if interaction.user.guild_permissions.administrator:
         embed.add_field(
             name="🔧 Admin Commands",
