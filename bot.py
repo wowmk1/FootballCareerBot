@@ -207,6 +207,7 @@ class FootballBot(commands.Bot):
         from data.teams import ALL_TEAMS
         from data.players import PREMIER_LEAGUE_PLAYERS
         from data.championship_players import CHAMPIONSHIP_PLAYERS
+        from data.league_one_players import LEAGUE_ONE_PLAYERS  # ADDED: League One import
         from utils.npc_squad_generator import populate_all_teams
 
         async with db.pool.acquire() as conn:
@@ -238,7 +239,11 @@ class FootballBot(commands.Bot):
             real_player_count = result['count']
 
         if real_player_count == 0:
-            await self.populate_real_players(PREMIER_LEAGUE_PLAYERS, CHAMPIONSHIP_PLAYERS)
+            await self.populate_real_players(
+                PREMIER_LEAGUE_PLAYERS, 
+                CHAMPIONSHIP_PLAYERS,
+                LEAGUE_ONE_PLAYERS  # ADDED: Pass League One players
+            )
 
         async with db.pool.acquire() as conn:
             result = await conn.fetchrow("SELECT COUNT(*) as count FROM npc_players")
@@ -252,7 +257,7 @@ class FootballBot(commands.Bot):
         # FIXED: Pass bot instance to retirement function
         await db.retire_old_players(bot=self)
 
-    async def populate_real_players(self, pl_players, champ_players):
+    async def populate_real_players(self, pl_players, champ_players, l1_players):
         """Populate real players with proper stats"""
         import random
 
@@ -285,6 +290,22 @@ class FootballBot(commands.Bot):
                                    stats['defending'], stats['physical'])
 
         print(f"✅ Added {len(champ_players)} Championship players")
+
+        # ADDED: League One players section
+        print("⚽ Adding real League One players...")
+        async with db.pool.acquire() as conn:
+            for p in l1_players:
+                stats = self.calculate_player_stats(p['overall_rating'], p['position'])
+                await conn.execute('''
+                    INSERT INTO npc_players (player_name, team_id, position, age, overall_rating,
+                                             pace, shooting, passing, dribbling, defending, physical,
+                                             is_regen)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, FALSE)
+                ''', p['player_name'], p['team_id'], p['position'], p['age'], p['overall_rating'],
+                                   stats['pace'], stats['shooting'], stats['passing'], stats['dribbling'],
+                                   stats['defending'], stats['physical'])
+
+        print(f"✅ Added {len(l1_players)} League One players")
 
     def calculate_player_stats(self, base, position):
         """Calculate individual stats based on position"""
