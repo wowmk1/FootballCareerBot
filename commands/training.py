@@ -138,8 +138,16 @@ class TrainingCommands(commands.Cog):
                     interaction.user.id
                 )
 
+        # MORALE AFFECTS TRAINING GAINS
+        from utils.form_morale_system import get_morale_training_modifier
+        morale_multiplier = get_morale_training_modifier(player['morale'])
+
         # Apply ALL multipliers
-        total_points = int((base_points + streak_bonus) * age_multiplier * morale_multiplier)
+        total_points = (base_points + streak_bonus) * age_multiplier * morale_multiplier
+        
+        # League training effectiveness (better facilities = better training)
+        league_modifier = config.TRAINING_EFFECTIVENESS_BY_LEAGUE.get(player.get('league', 'Championship'), 1.0)
+        total_points = int(total_points * league_modifier)
         total_points = max(1, total_points)
 
         # FIX #25: Add randomness to training
@@ -417,7 +425,9 @@ class TrainingCommands(commands.Cog):
             inline=True
         )
 
-        embed.set_footer(text=f"Age: {age_multiplier}x | Morale: {morale_multiplier}x | Slower gains = more rewarding!")
+        league_modifier = config.TRAINING_EFFECTIVENESS_BY_LEAGUE.get(player.get('league', 'Championship'), 1.0)
+        league_name = player.get('league', 'Championship')
+        embed.set_footer(text=f"Age: {age_multiplier:.1f}x | Morale: {morale_multiplier:.1f}x | {league_name}: {league_modifier}x")
 
         await interaction.followup.send(embed=embed)
 
