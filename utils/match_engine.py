@@ -6,6 +6,8 @@ CRITICAL FIXES:
 4. ✅ MOTM DM notification added
 5. ✅ Hat-trick notification added
 6. ✅ Red card suspension notification added
+7. ✅ Form update now uses CORRECT match ratings from database
+8. ✅ Action buttons now verify user identity - prevents cross-player interference
 """
 import discord
 from discord.ext import commands
@@ -420,7 +422,8 @@ class MatchEngine:
         embed.add_field(name="⚡ AVAILABLE ACTIONS", value=actions_text, inline=False)
         embed.add_field(name="⏱️ TIME LIMIT", value="**30 SECONDS** to choose!", inline=False)
 
-        view = EnhancedActionView(available_actions, timeout=30)
+        # ✅ FIX #3: Pass user_id to view to verify button clicks
+        view = EnhancedActionView(available_actions, player['user_id'], timeout=30)
         message = await channel.send(content=f"📢 {member.mention}", embed=embed, view=view)
         await view.wait()
 
@@ -817,13 +820,28 @@ class MatchEngine:
 
         from utils.form_morale_system import update_player_form, update_player_morale
 
+        # ✅ FIX #2: Re-fetch updated match ratings for form calculations
+        async with db.pool.acquire() as conn:
+            updated_ratings = await conn.fetch("""
+                SELECT user_id, match_rating
+                FROM match_participants
+                WHERE match_id = $1 AND user_id IS NOT NULL
+            """, match_id)
+
+        # Create a lookup dict for fast access
+        rating_lookup = {row['user_id']: row['match_rating'] for row in updated_ratings}
+
+        # NOW update form with CORRECT ratings
         for participant in participants:
             if participant['user_id']:
+                # Use the UPDATED rating from database, not stale participant data
+                actual_rating = rating_lookup.get(participant['user_id'], participant['match_rating'])
+                
                 new_form = await update_player_form(
                     participant['user_id'],
-                    participant['match_rating']
+                    actual_rating  # ✅ Now using correct rating
                 )
-                print(f"  📊 Form updated for user {participant['user_id']}: Rating {participant['match_rating']:.1f} → Form {new_form}")
+                print(f"  📊 Form updated for user {participant['user_id']}: Rating {actual_rating:.1f} → Form {new_form}")
 
         for participant in participants:
             if participant['user_id']:
@@ -985,9 +1003,10 @@ class MatchEngine:
 
 
 class EnhancedActionView(discord.ui.View):
-    def __init__(self, available_actions, timeout=30):
+    def __init__(self, available_actions, user_id, timeout=30):  # ✅ FIX #3: Add user_id parameter
         super().__init__(timeout=timeout)
         self.chosen_action = None
+        self.owner_user_id = user_id  # ✅ FIX #3: Store the owner
 
         emoji_map = {
             'shoot': '🎯', 'pass': '🎪', 'dribble': '🪄', 'tackle': '🛡️', 'cross': '📤',
@@ -1018,6 +1037,15 @@ class ActionButton(discord.ui.Button):
         self.action = action
 
     async def callback(self, interaction: discord.Interaction):
+        # ✅ FIX #3: CRITICAL - Verify this is the correct player
+        if interaction.user.id != self.view.owner_user_id:
+            await interaction.response.send_message(
+                "❌ These aren't your action buttons! Wait for your own moment.",
+                ephemeral=True
+            )
+            return
+        
+        # Original code continues...
         await interaction.response.defer()
         self.view.chosen_action = self.action
         for item in self.view.children:
