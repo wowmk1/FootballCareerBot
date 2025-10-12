@@ -7,9 +7,6 @@ Morale: Affected by results, transfers, contract situation
 import discord
 from database import db
 
-# Import bot instance - adjust this import based on your project structure
-# from main import bot  # or wherever your bot instance is defined
-
 async def update_player_form(user_id: int, match_rating: float, bot=None):
     """Update player form based on match performance"""
     player = await db.get_player(user_id)
