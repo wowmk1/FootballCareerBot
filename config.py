@@ -45,3 +45,11 @@ print(f"⏱️ Match window: {MATCH_WINDOW_HOURS} hours")
 print(f"⏰ Match start time: {MATCH_START_HOUR}:00")
 print(f"🏋️ Training cooldown: {TRAINING_COOLDOWN_HOURS}h")
 print(f"👴 Retirement age: {RETIREMENT_AGE}")
+
+# Training effectiveness by league (better facilities = better training)
+TRAINING_EFFECTIVENESS_BY_LEAGUE = {
+    'Premier League': 1.2,     # Better facilities = 20% bonus
+    'Championship': 1.0,        # Standard
+    'League One': 0.85,         # Worse facilities = 15% penalty
+    'League Two': 0.7           # Much worse facilities
+}
