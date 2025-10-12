@@ -1,12 +1,18 @@
 import asyncpg
+import asyncio
 import config
 import json
 import random
-from datetime import datetime
+import logging
+from datetime import datetime, timedelta
+
+logger = logging.getLogger(__name__)
 
 class Database:
     def __init__(self):
         self.pool = None
+        self._last_health_check = None
+        self._consecutive_failures = 0
     
     async def connect(self):
         """Connect to PostgreSQL database"""
@@ -23,7 +29,71 @@ class Database:
         # Add performance indexes
         await self.add_performance_indexes()
         
+        logger.info("✅ Database connected")
         print("✅ Database connected")
+    
+    async def health_check(self) -> bool:
+        """Check if database connection is healthy"""
+        try:
+            async with self.pool.acquire() as conn:
+                await conn.fetchrow("SELECT 1")
+            
+            self._consecutive_failures = 0
+            self._last_health_check = datetime.now()
+            return True
+            
+        except Exception as e:
+            self._consecutive_failures += 1
+            logger.error(f"Database health check failed (attempt {self._consecutive_failures}): {e}")
+            
+            # Try to reconnect after 3 failures
+            if self._consecutive_failures >= 3:
+                logger.critical("Database connection lost, attempting reconnect...")
+                try:
+                    await self.reconnect()
+                    return True
+                except Exception as reconnect_error:
+                    logger.critical(f"Reconnect failed: {reconnect_error}")
+                    return False
+            
+            return False
+    
+    async def reconnect(self):
+        """Attempt to reconnect to database"""
+        try:
+            if self.pool:
+                await self.pool.close()
+            
+            self.pool = await asyncpg.create_pool(
+                config.DATABASE_URL,
+                min_size=1,
+                max_size=10
+            )
+            
+            logger.info("✅ Database reconnected successfully")
+            print("✅ Database reconnected successfully")
+            self._consecutive_failures = 0
+            
+        except Exception as e:
+            logger.critical(f"Failed to reconnect to database: {e}")
+            raise
+    
+    async def _execute_with_retry(self, operation, max_retries=3):
+        """Execute database operation with retry logic"""
+        for attempt in range(max_retries):
+            try:
+                return await operation()
+            except Exception as e:
+                logger.error(f"Database error (attempt {attempt + 1}/{max_retries}): {e}")
+                
+                if attempt < max_retries - 1:
+                    await asyncio.sleep(1)  # Wait before retry
+                    await self.health_check()  # Check and reconnect if needed
+                else:
+                    logger.critical(f"Failed operation after {max_retries} attempts")
+                    raise
+        
+        return None
     
     async def add_performance_indexes(self):
         """Add performance indexes to database"""
@@ -420,109 +490,136 @@ class Database:
         return max(min_val, min(max_val, value))
     
     async def get_game_state(self):
-        """Get current game state"""
-        async with self.pool.acquire() as conn:
-            row = await conn.fetchrow("SELECT * FROM game_state WHERE id = 1")
-            return dict(row) if row else None
+        """Get current game state with retry logic"""
+        async def operation():
+            async with self.pool.acquire() as conn:
+                row = await conn.fetchrow("SELECT * FROM game_state WHERE id = 1")
+                return dict(row) if row else None
+        
+        return await self._execute_with_retry(operation)
     
     async def update_game_state(self, **kwargs):
-        """Update game state"""
+        """Update game state with retry logic"""
         set_clause = ", ".join([f"{key} = ${i+1}" for i, key in enumerate(kwargs.keys())])
         values = list(kwargs.values())
         
-        async with self.pool.acquire() as conn:
-            await conn.execute(
-                f"UPDATE game_state SET {set_clause} WHERE id = 1",
-                *values
-            )
+        async def operation():
+            async with self.pool.acquire() as conn:
+                await conn.execute(
+                    f"UPDATE game_state SET {set_clause} WHERE id = 1",
+                    *values
+                )
+        
+        return await self._execute_with_retry(operation)
     
     async def get_player(self, user_id: int):
-        """Get player by user ID"""
-        async with self.pool.acquire() as conn:
-            row = await conn.fetchrow(
-                "SELECT * FROM players WHERE user_id = $1",
-                user_id
-            )
-            return dict(row) if row else None
+        """Get player by user ID with retry logic"""
+        async def operation():
+            async with self.pool.acquire() as conn:
+                row = await conn.fetchrow(
+                    "SELECT * FROM players WHERE user_id = $1",
+                    user_id
+                )
+                return dict(row) if row else None
+        
+        return await self._execute_with_retry(operation)
     
     async def get_team(self, team_id: str):
-        """Get team by team ID"""
-        async with self.pool.acquire() as conn:
-            row = await conn.fetchrow(
-                "SELECT * FROM teams WHERE team_id = $1",
-                team_id
-            )
-            return dict(row) if row else None
+        """Get team by team ID with retry logic"""
+        async def operation():
+            async with self.pool.acquire() as conn:
+                row = await conn.fetchrow(
+                    "SELECT * FROM teams WHERE team_id = $1",
+                    team_id
+                )
+                return dict(row) if row else None
+        
+        return await self._execute_with_retry(operation)
     
     async def get_league_table(self, league: str):
-        """Get league standings"""
-        async with self.pool.acquire() as conn:
-            rows = await conn.fetch(
-                """SELECT * FROM teams 
-                   WHERE league = $1 
-                   ORDER BY points DESC, (goals_for - goals_against) DESC, goals_for DESC""",
-                league
-            )
-            return [dict(row) for row in rows]
+        """Get league standings with retry logic"""
+        async def operation():
+            async with self.pool.acquire() as conn:
+                rows = await conn.fetch(
+                    """SELECT * FROM teams 
+                       WHERE league = $1 
+                       ORDER BY points DESC, (goals_for - goals_against) DESC, goals_for DESC""",
+                    league
+                )
+                return [dict(row) for row in rows]
+        
+        return await self._execute_with_retry(operation)
     
     async def get_player_team_fixtures(self, user_id: int, limit: int = 5):
-        """Get upcoming fixtures for player's team"""
+        """Get upcoming fixtures for player's team with retry logic"""
         player = await self.get_player(user_id)
         if not player or player['team_id'] == 'free_agent':
             return []
         
-        async with self.pool.acquire() as conn:
-            rows = await conn.fetch(
-                """SELECT * FROM fixtures 
-                   WHERE (home_team_id = $1 OR away_team_id = $1) 
-                   AND played = FALSE 
-                   ORDER BY week_number ASC 
-                   LIMIT $2""",
-                player['team_id'], limit
-            )
-            return [dict(row) for row in rows]
+        async def operation():
+            async with self.pool.acquire() as conn:
+                rows = await conn.fetch(
+                    """SELECT * FROM fixtures 
+                       WHERE (home_team_id = $1 OR away_team_id = $1) 
+                       AND played = FALSE 
+                       ORDER BY week_number ASC 
+                       LIMIT $2""",
+                    player['team_id'], limit
+                )
+                return [dict(row) for row in rows]
+        
+        return await self._execute_with_retry(operation)
     
     async def add_news(self, headline: str, content: str, category: str, user_id: int = None, importance: int = 5, week_number: int = None):
-        """Add news article"""
+        """Add news article with retry logic"""
         if week_number is None:
             state = await self.get_game_state()
             week_number = state['current_week'] if state else 0
         
-        async with self.pool.acquire() as conn:
-            await conn.execute(
-                """INSERT INTO news (headline, content, category, user_id, importance, week_number)
-                   VALUES ($1, $2, $3, $4, $5, $6)""",
-                headline, content, category, user_id, importance, week_number
-            )
+        async def operation():
+            async with self.pool.acquire() as conn:
+                await conn.execute(
+                    """INSERT INTO news (headline, content, category, user_id, importance, week_number)
+                       VALUES ($1, $2, $3, $4, $5, $6)""",
+                    headline, content, category, user_id, importance, week_number
+                )
+        
+        return await self._execute_with_retry(operation)
     
     async def get_recent_news(self, user_id: int = None, limit: int = 10):
-        """Get recent news"""
-        async with self.pool.acquire() as conn:
-            if user_id:
-                rows = await conn.fetch(
-                    """SELECT * FROM news 
-                       WHERE user_id = $1 OR user_id IS NULL 
-                       ORDER BY created_at DESC 
-                       LIMIT $2""",
-                    user_id, limit
-                )
-            else:
-                rows = await conn.fetch(
-                    """SELECT * FROM news 
-                       ORDER BY created_at DESC 
-                       LIMIT $1""",
-                    limit
-                )
-            return [dict(row) for row in rows]
+        """Get recent news with retry logic"""
+        async def operation():
+            async with self.pool.acquire() as conn:
+                if user_id:
+                    rows = await conn.fetch(
+                        """SELECT * FROM news 
+                           WHERE user_id = $1 OR user_id IS NULL 
+                           ORDER BY created_at DESC 
+                           LIMIT $2""",
+                        user_id, limit
+                    )
+                else:
+                    rows = await conn.fetch(
+                        """SELECT * FROM news 
+                           ORDER BY created_at DESC 
+                           LIMIT $1""",
+                        limit
+                    )
+                return [dict(row) for row in rows]
+        
+        return await self._execute_with_retry(operation)
     
     async def add_notification(self, user_id: int, message: str, notif_type: str):
-        """Add notification for user"""
-        async with self.pool.acquire() as conn:
-            await conn.execute(
-                """INSERT INTO notifications (user_id, message, notif_type)
-                   VALUES ($1, $2, $3)""",
-                user_id, message, notif_type
-            )
+        """Add notification for user with retry logic"""
+        async def operation():
+            async with self.pool.acquire() as conn:
+                await conn.execute(
+                    """INSERT INTO notifications (user_id, message, notif_type)
+                       VALUES ($1, $2, $3)""",
+                    user_id, message, notif_type
+                )
+        
+        return await self._execute_with_retry(operation)
     
     async def age_all_players(self):
         """Age all players by 1 year"""
@@ -798,6 +895,7 @@ class Database:
         """Close database connection"""
         if self.pool:
             await self.pool.close()
+            logger.info("✅ Database closed")
             print("✅ Database closed")
 
 # Global database instance
