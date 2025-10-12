@@ -71,9 +71,19 @@ class LeagueCommands(commands.Cog):
         
         embed.description = "\n".join(lines)
         
+        # Dynamic key based on league
+        if league == "Premier League":
+            key_text = "🟢 Champions League (Top 4)\n🔵 Europa League (5-6)\n🔴 Relegation (Bottom 3)"
+        elif league == "Championship":
+            key_text = "🟢 Promotion to Premier League (Top 2)\n🟡 Playoffs (3-6)\n🔴 Relegation to League One (Bottom 3)"
+        elif league == "League One":
+            key_text = "🟢 Promotion to Championship (Top 2)\n🟡 Playoffs (3-6)\n🔴 Relegation to League Two (Bottom 4)"
+        else:
+            key_text = "🟢 Promotion\n🔴 Relegation"
+        
         embed.add_field(
             name="🔑 Key",
-            value="🟢 Champions League\n🔵 Europa League\n🔴 Relegation",
+            value=key_text,
             inline=False
         )
         
