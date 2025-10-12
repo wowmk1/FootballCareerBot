@@ -15,6 +15,17 @@ import config
 from datetime import datetime
 from utils.event_poster import post_transfer_news_to_channel
 
+# Position-specific Premier League minimum ratings
+POSITION_PL_MINIMUMS = {
+    'GK': 76,   # Goalkeepers need to be solid
+    'CB': 75,   # Defenders need reliability  
+    'CDM': 74,
+    'CM': 73,
+    'CAM': 72,
+    'W': 71,    # Wingers can be raw talent
+    'ST': 73,   # Strikers need to produce
+}
+
 async def is_transfer_window_open(current_week: int) -> bool:
     """Check if we're in a transfer window"""
     return current_week in config.TRANSFER_WINDOW_WEEKS
@@ -248,7 +259,7 @@ async def generate_offers_for_player(player: dict, current_week: int, num_offers
 
     # CRITICAL FIX #2: STRICTER PREMIER LEAGUE REQUIREMENTS
     # Premier League teams - much more selective
-    if rating >= 75:
+    if rating >= 78:
         # Definitely good enough for PL
         async with db.pool.acquire() as conn:
             rows = await conn.fetch(
@@ -256,7 +267,7 @@ async def generate_offers_for_player(player: dict, current_week: int, num_offers
                 'Premier League'
             )
             interested_teams.extend([dict(row) for row in rows])
-    elif rating >= 70 and potential >= 85:
+    elif rating >= 73 and potential >= 87:
         # High potential young players (70+ rating, 85+ potential)
         async with db.pool.acquire() as conn:
             rows = await conn.fetch(
@@ -264,7 +275,7 @@ async def generate_offers_for_player(player: dict, current_week: int, num_offers
                 'Premier League'
             )
             interested_teams.extend([dict(row) for row in rows])
-    elif rating >= 68 and potential >= 90:
+    elif rating >= 70 and potential >= 92:
         # Exceptional wonderkids only (68+ rating, 90+ potential)
         async with db.pool.acquire() as conn:
             rows = await conn.fetch(
@@ -424,6 +435,30 @@ async def generate_offers_for_player(player: dict, current_week: int, num_offers
 
             print(f"    Created {offer_type} offer: {team['team_name']} - £{wage_offer:,}/wk")
 
+            # Add news for first Premier League offer
+            if team['league'] == 'Premier League':
+                # Check if this is their first PL offer ever
+                existing_pl_offers = await conn.fetchval("""
+                    SELECT COUNT(*) FROM transfer_offers
+                    WHERE user_id = $1 
+                    AND team_id IN (SELECT team_id FROM teams WHERE league = 'Premier League')
+                """, user_id)
+                
+                if existing_pl_offers == 1:  # This is the first one we just created
+                    current_team = await db.get_team(player['team_id']) if player['team_id'] != 'free_agent' else None
+                    current_team_name = current_team['team_name'] if current_team else 'current club'
+                    
+                    await db.add_news(
+                        f"PREMIER LEAGUE INTEREST: {player['player_name']} attracting top-flight scouts!",
+                        f"After impressive performances for {current_team_name}, {player['player_name']} is being watched by Premier League clubs. "
+                        f"{team['team_name']} have submitted their first offer.",
+                        "player_news",
+                        user_id,
+                        9,
+                        current_week
+                    )
+                    print(f"    🌟 Breaking through! First PL offer for {player['player_name']}")
+                                        
     # FIX: Only send notification if flag is True (prevents duplicates)
     if send_notification and bot and created_offers:
         await send_offer_notification(bot, user_id, len(created_offers))
