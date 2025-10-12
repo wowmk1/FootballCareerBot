@@ -5,6 +5,20 @@ import config
 from database import db
 import asyncio
 from datetime import datetime
+import logging
+
+# ============================================
+# LOGGING CONFIGURATION (NEW)
+# ============================================
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler('bot.log'),
+        logging.StreamHandler()
+    ]
+)
+logger = logging.getLogger(__name__)
 
 # Bot intents
 intents = discord.Intents.default()
@@ -25,7 +39,7 @@ class FootballBot(commands.Bot):
 
     async def setup_hook(self):
         """Called when bot is starting up"""
-        print("📄 Setting up bot...")
+        logger.info("📄 Setting up bot...")
 
         await db.connect()
 
@@ -42,7 +56,7 @@ class FootballBot(commands.Bot):
                 """)
 
                 if not result:
-                    print("📋 Auto-migration: Adding current_match_of_week column...")
+                    logger.info("📋 Auto-migration: Adding current_match_of_week column...")
                     await conn.execute("""
                         ALTER TABLE game_state
                         ADD COLUMN current_match_of_week INTEGER DEFAULT 0
@@ -52,11 +66,11 @@ class FootballBot(commands.Bot):
                         SET current_match_of_week = 0
                         WHERE current_match_of_week IS NULL
                     """)
-                    print("✅ Auto-migration complete!")
+                    logger.info("✅ Auto-migration complete!")
                 else:
-                    print("✅ current_match_of_week column already exists")
+                    logger.info("✅ current_match_of_week column already exists")
         except Exception as e:
-            print(f"⚠️ Auto-migration warning: {e}")
+            logger.warning(f"⚠️ Auto-migration warning: {e}")
         
         # ============================================
         # AUTO-MIGRATE: Add last_reminded column
@@ -70,16 +84,16 @@ class FootballBot(commands.Bot):
                 """)
                 
                 if not result:
-                    print("📋 Adding last_reminded column for training notifications...")
+                    logger.info("📋 Adding last_reminded column for training notifications...")
                     await conn.execute("""
                         ALTER TABLE players 
                         ADD COLUMN last_reminded TEXT
                     """)
-                    print("✅ last_reminded column added")
+                    logger.info("✅ last_reminded column added")
                 else:
-                    print("✅ last_reminded column already exists")
+                    logger.info("✅ last_reminded column already exists")
         except Exception as e:
-            print(f"⚠️ Migration warning: {e}")
+            logger.warning(f"⚠️ Migration warning: {e}")
         
         # ============================================
         # AUTO-MIGRATE: Add season_motm column
@@ -93,7 +107,7 @@ class FootballBot(commands.Bot):
                 """)
                 
                 if not result:
-                    print("📋 Adding season_motm column...")
+                    logger.info("📋 Adding season_motm column...")
                     await conn.execute("""
                         ALTER TABLE players 
                         ADD COLUMN season_motm INTEGER DEFAULT 0
@@ -103,11 +117,11 @@ class FootballBot(commands.Bot):
                         SET season_motm = 0 
                         WHERE season_motm IS NULL
                     """)
-                    print("✅ season_motm column added")
+                    logger.info("✅ season_motm column added")
                 else:
-                    print("✅ season_motm column already exists")
+                    logger.info("✅ season_motm column already exists")
         except Exception as e:
-            print(f"⚠️ Migration warning: {e}")
+            logger.warning(f"⚠️ Migration warning: {e}")
         
         # ============================================
         # AUTO-MIGRATE: Add career_motm column
@@ -121,7 +135,7 @@ class FootballBot(commands.Bot):
                 """)
                 
                 if not result:
-                    print("📋 Adding career_motm column...")
+                    logger.info("📋 Adding career_motm column...")
                     await conn.execute("""
                         ALTER TABLE players 
                         ADD COLUMN career_motm INTEGER DEFAULT 0
@@ -131,11 +145,11 @@ class FootballBot(commands.Bot):
                         SET career_motm = 0 
                         WHERE career_motm IS NULL
                     """)
-                    print("✅ career_motm column added")
+                    logger.info("✅ career_motm column added")
                 else:
-                    print("✅ career_motm column already exists")
+                    logger.info("✅ career_motm column already exists")
         except Exception as e:
-            print(f"⚠️ Migration warning: {e}")
+            logger.warning(f"⚠️ Migration warning: {e}")
         # ============================================
         # END AUTO-MIGRATE
         # ============================================
@@ -149,34 +163,35 @@ class FootballBot(commands.Bot):
         from utils.match_engine import MatchEngine
         from utils import match_engine as me_module
         me_module.match_engine = MatchEngine(self)
-        print("✅ Match engine initialized")
+        logger.info("✅ Match engine initialized")
 
         # Cache team crests
         from utils.football_data_api import cache_all_crests
         await cache_all_crests()
-        print("✅ Team crests cached")
+        logger.info("✅ Team crests cached")
 
         # Sync commands (with rate limit protection)
         try:
-            print("📄 Syncing commands with Discord...")
+            logger.info("📄 Syncing commands with Discord...")
             synced = await self.tree.sync()
-            print(f"✅ Synced {len(synced)} slash commands globally")
+            logger.info(f"✅ Synced {len(synced)} slash commands globally")
         except discord.HTTPException as e:
             if e.status == 429:
-                print("⚠️ Rate limited by Discord. Commands will sync eventually.")
-                print("💡 Tip: Avoid frequent bot restarts to prevent rate limits.")
+                logger.warning("⚠️ Rate limited by Discord. Commands will sync eventually.")
+                logger.warning("💡 Tip: Avoid frequent bot restarts to prevent rate limits.")
             else:
-                print(f"❌ Error syncing commands: {e}")
+                logger.error(f"❌ Error syncing commands: {e}")
 
-        # START SIMPLIFIED BACKGROUND TASKS
+        # START SIMPLIFIED BACKGROUND TASKS WITH HEALTH MONITORING
         if not self.season_task_started:
             self.check_match_windows.start()
             self.check_warnings.start()
             self.check_retirements.start()
             self.check_training_reminders.start()
-            self.cleanup_old_data.start()  # Weekly cleanup
+            self.cleanup_old_data.start()
+            self.monitor_task_health.start()  # NEW: Health monitoring
             self.season_task_started = True
-            print("✅ Background tasks started (simplified system)")
+            logger.info("✅ Background tasks started (simplified system with health monitoring)")
 
     async def load_cogs(self):
         """Load all command modules"""
@@ -198,9 +213,9 @@ class FootballBot(commands.Bot):
         for cog in cogs:
             try:
                 await self.load_extension(cog)
-                print(f"✅ Loaded {cog}")
+                logger.info(f"✅ Loaded {cog}")
             except Exception as e:
-                print(f"❌ Failed to load {cog}: {e}")
+                logger.error(f"❌ Failed to load {cog}: {e}")
 
     async def initialize_data(self):
         """Initialize database with teams and complete squads"""
@@ -215,7 +230,7 @@ class FootballBot(commands.Bot):
             team_count = result['count']
 
         if team_count == 0:
-            print("📊 Initializing teams...")
+            logger.info("📊 Initializing teams...")
             async with db.pool.acquire() as conn:
                 for team in ALL_TEAMS:
                     if team['league'] == 'Premier League':
@@ -232,7 +247,7 @@ class FootballBot(commands.Bot):
                         INSERT INTO teams (team_id, team_name, league, budget, wage_budget)
                         VALUES ($1, $2, $3, $4, $5)
                     ''', team['team_id'], team['team_name'], team['league'], budget, wage_budget)
-            print(f"✅ Added {len(ALL_TEAMS)} teams")
+            logger.info(f"✅ Added {len(ALL_TEAMS)} teams")
 
         async with db.pool.acquire() as conn:
             result = await conn.fetchrow("SELECT COUNT(*) as count FROM npc_players WHERE is_regen = FALSE")
@@ -250,9 +265,9 @@ class FootballBot(commands.Bot):
             npc_count = result['count']
 
         if npc_count < 1000:
-            print("⚽ Generating squads for remaining teams...")
+            logger.info("⚽ Generating squads for remaining teams...")
             await populate_all_teams()
-            print("✅ All teams now have complete squads!")
+            logger.info("✅ All teams now have complete squads!")
 
         # FIXED: Pass bot instance to retirement function
         await db.retire_old_players(bot=self)
@@ -261,7 +276,7 @@ class FootballBot(commands.Bot):
         """Populate real players with proper stats"""
         import random
 
-        print("⚽ Adding real Premier League players...")
+        logger.info("⚽ Adding real Premier League players...")
         async with db.pool.acquire() as conn:
             for p in pl_players:
                 stats = self.calculate_player_stats(p['overall_rating'], p['position'])
@@ -274,9 +289,9 @@ class FootballBot(commands.Bot):
                                    stats['pace'], stats['shooting'], stats['passing'], stats['dribbling'],
                                    stats['defending'], stats['physical'])
 
-        print(f"✅ Added {len(pl_players)} Premier League players")
+        logger.info(f"✅ Added {len(pl_players)} Premier League players")
 
-        print("⚽ Adding real Championship players...")
+        logger.info("⚽ Adding real Championship players...")
         async with db.pool.acquire() as conn:
             for p in champ_players:
                 stats = self.calculate_player_stats(p['overall_rating'], p['position'])
@@ -289,10 +304,10 @@ class FootballBot(commands.Bot):
                                    stats['pace'], stats['shooting'], stats['passing'], stats['dribbling'],
                                    stats['defending'], stats['physical'])
 
-        print(f"✅ Added {len(champ_players)} Championship players")
+        logger.info(f"✅ Added {len(champ_players)} Championship players")
 
         # ADDED: League One players section
-        print("⚽ Adding real League One players...")
+        logger.info("⚽ Adding real League One players...")
         async with db.pool.acquire() as conn:
             for p in l1_players:
                 stats = self.calculate_player_stats(p['overall_rating'], p['position'])
@@ -305,7 +320,7 @@ class FootballBot(commands.Bot):
                                    stats['pace'], stats['shooting'], stats['passing'], stats['dribbling'],
                                    stats['defending'], stats['physical'])
 
-        print(f"✅ Added {len(l1_players)} League One players")
+        logger.info(f"✅ Added {len(l1_players)} League One players")
 
     def calculate_player_stats(self, base, position):
         """Calculate individual stats based on position"""
@@ -427,9 +442,9 @@ class FootballBot(commands.Bot):
                     embed.set_footer(text="Window closes at 5:00 PM EST!")
 
                     await channel.send(embed=embed)
-                    print(f"✅ Posted match window notification to {guild.name}")
+                    logger.info(f"✅ Posted match window notification to {guild.name}")
         except Exception as e:
-            print(f"⚠️ Could not post match window notification: {e}")
+            logger.warning(f"⚠️ Could not post match window notification: {e}")
 
     async def notify_match_window_closed(self, week_results):
         """Notify all guilds that match window has closed with results"""
@@ -469,12 +484,12 @@ class FootballBot(commands.Bot):
                     embed.set_footer(text="Use /league table to see updated standings!")
 
                     await channel.send(embed=embed)
-                    print(f"✅ Posted window closed notification to {guild.name}")
+                    logger.info(f"✅ Posted window closed notification to {guild.name}")
         except Exception as e:
-            print(f"⚠️ Could not post window closed notification: {e}")
+            logger.warning(f"⚠️ Could not post window closed notification: {e}")
 
     # ============================================
-    # SIMPLIFIED BACKGROUND TASKS (CRITICAL FIX #1 APPLIED)
+    # SELF-HEALING BACKGROUND TASKS (FIXED)
     # ============================================
 
     @tasks.loop(hours=168)  # Weekly (7 days)
@@ -482,11 +497,10 @@ class FootballBot(commands.Bot):
         """Weekly cleanup of old data"""
         try:
             await db.cleanup_old_retired_players()
-            print("✅ Weekly data cleanup complete")
+            logger.info("✅ Weekly data cleanup complete")
         except Exception as e:
-            print(f"❌ CRITICAL ERROR in cleanup_old_data: {e}")
-            import traceback
-            traceback.print_exc()
+            logger.error(f"❌ ERROR in cleanup_old_data: {e}", exc_info=True)
+            # Task continues - will retry in 7 days
 
     @cleanup_old_data.before_loop
     async def before_cleanup_old_data(self):
@@ -497,7 +511,7 @@ class FootballBot(commands.Bot):
         """
         Simple 5-minute check: Is it time to open/close windows?
         Checks: Mon/Wed/Sat 3-5 PM EST
-        CRITICAL FIX #1: Wrapped in try-except for error recovery
+        SELF-HEALING: Errors logged but task continues
         """
         try:
             from utils.season_manager import (
@@ -518,11 +532,11 @@ class FootballBot(commands.Bot):
             
             # OPEN WINDOW: If it's start time and window is closed
             if is_start_time and not window_open:
-                print("🟢 Opening match window (fixed schedule)")
+                logger.info("🟢 Opening match window (fixed schedule)")
                 await open_match_window()
                 await self.notify_match_window_open()
                 
-                # FIX #4: Update bot presence when window opens
+                # Update bot presence when window opens
                 await self.change_presence(
                     activity=discord.Game(name=f"🟢 WINDOW OPEN | Week {state['current_week']}"),
                     status=discord.Status.online
@@ -530,10 +544,10 @@ class FootballBot(commands.Bot):
             
             # CLOSE WINDOW: If it's end time and window is open
             elif is_end_time and window_open:
-                print("🔴 Closing match window (fixed schedule)")
+                logger.info("🔴 Closing match window (fixed schedule)")
                 await close_match_window(bot=self)
                 
-                # FIX #4: Update bot presence when window closes
+                # Update bot presence when window closes
                 state = await db.get_game_state()  # Refresh state after close
                 from utils.season_manager import get_next_match_window
                 try:
@@ -551,10 +565,10 @@ class FootballBot(commands.Bot):
             
             # AUTO-CLOSE: If window is open but it's NOT window time (safety check)
             elif window_open and not is_window_time:
-                print("⚠️ Window is open outside of match hours - auto-closing")
+                logger.warning("⚠️ Window is open outside of match hours - auto-closing")
                 await close_match_window(bot=self)
                 
-                # FIX #4: Update bot presence after auto-close
+                # Update bot presence after auto-close
                 state = await db.get_game_state()
                 await self.change_presence(
                     activity=discord.Game(name=f"⚽ Week {state['current_week']} | /season"),
@@ -562,17 +576,15 @@ class FootballBot(commands.Bot):
                 )
                 
         except Exception as e:
-            print(f"❌ CRITICAL ERROR in check_match_windows: {e}")
-            import traceback
-            traceback.print_exc()
-            # Task continues running despite error
+            logger.error(f"❌ ERROR in check_match_windows: {e}", exc_info=True)
+            # Task continues - will retry in 5 minutes
 
     @tasks.loop(minutes=5)
     async def check_warnings(self):
         """
         Check if we should send warnings
         Times: 2:00 PM, 2:30 PM, 2:45 PM (before open), 4:45 PM (before close)
-        CRITICAL FIX #1: Wrapped in try-except for error recovery
+        SELF-HEALING: Errors logged but task continues
         """
         try:
             from utils.season_manager import (
@@ -602,32 +614,27 @@ class FootballBot(commands.Bot):
                 await send_closing_warning(self)
                 
         except Exception as e:
-            print(f"❌ CRITICAL ERROR in check_warnings: {e}")
-            import traceback
-            traceback.print_exc()
-            # Task continues running despite error
+            logger.error(f"❌ ERROR in check_warnings: {e}", exc_info=True)
+            # Task continues - will retry in 5 minutes
 
     @tasks.loop(hours=24)
     async def check_retirements(self):
         """
         Daily retirement check
-        CRITICAL FIX #1: Wrapped in try-except for error recovery
+        SELF-HEALING: Errors logged but task continues
         """
         try:
-            # FIXED: Pass bot instance to retirement function
             await db.retire_old_players(bot=self)
         except Exception as e:
-            print(f"❌ CRITICAL ERROR in check_retirements: {e}")
-            import traceback
-            traceback.print_exc()
-            # Task continues running despite error
+            logger.error(f"❌ ERROR in check_retirements: {e}", exc_info=True)
+            # Task continues - will retry in 24 hours
 
     @tasks.loop(hours=1)
     async def check_training_reminders(self):
         """
         Check for players whose training is ready and send reminders
-        CRITICAL FIX #1: Wrapped in try-except for error recovery
-        CRITICAL FIX #2: Update timestamp BEFORE attempting DM to prevent spam
+        SELF-HEALING: Errors logged but task continues
+        UPDATE timestamp BEFORE attempting DM to prevent spam
         """
         try:
             async with db.pool.acquire() as conn:
@@ -643,7 +650,7 @@ class FootballBot(commands.Bot):
                 """)
 
                 for row in rows:
-                    # CRITICAL FIX #2: Update timestamp FIRST to prevent infinite retries
+                    # Update timestamp FIRST to prevent infinite retries
                     await conn.execute("""
                         UPDATE players 
                         SET last_reminded = $1 
@@ -654,10 +661,8 @@ class FootballBot(commands.Bot):
                     await self.send_training_reminder(row['user_id'])
                         
         except Exception as e:
-            print(f"❌ CRITICAL ERROR in check_training_reminders: {e}")
-            import traceback
-            traceback.print_exc()
-            # Task continues running despite error
+            logger.error(f"❌ ERROR in check_training_reminders: {e}", exc_info=True)
+            # Task continues - will retry in 1 hour
 
     async def send_training_reminder(self, user_id: int):
         """Send DM when training is available"""
@@ -674,11 +679,68 @@ class FootballBot(commands.Bot):
                 inline=False
             )
             await user.send(embed=embed)
-            print(f"✅ Sent training reminder to user {user_id}")
+            logger.info(f"✅ Sent training reminder to user {user_id}")
             return True
         except Exception as e:
-            print(f"⚠️ Could not send training reminder to {user_id}: {e}")
+            logger.warning(f"⚠️ Could not send training reminder to {user_id}: {e}")
             return False
+
+    # ============================================
+    # TASK HEALTH MONITORING (NEW)
+    # ============================================
+    
+    @tasks.loop(hours=1)
+    async def monitor_task_health(self):
+        """Check if background tasks are still running and restart if needed"""
+        try:
+            tasks_status = {
+                'match_windows': self.check_match_windows.is_running(),
+                'warnings': self.check_warnings.is_running(),
+                'retirements': self.check_retirements.is_running(),
+                'training_reminders': self.check_training_reminders.is_running(),
+                'cleanup': self.cleanup_old_data.is_running()
+            }
+            
+            failed_tasks = [name for name, running in tasks_status.items() if not running]
+            
+            if failed_tasks:
+                logger.critical(f"🚨 TASKS STOPPED: {failed_tasks} - Attempting restart...")
+                
+                # Try to restart each failed task
+                for task_name in failed_tasks:
+                    try:
+                        if task_name == 'match_windows' and not self.check_match_windows.is_running():
+                            self.check_match_windows.start()
+                            logger.info("✅ Restarted check_match_windows")
+                            
+                        elif task_name == 'warnings' and not self.check_warnings.is_running():
+                            self.check_warnings.start()
+                            logger.info("✅ Restarted check_warnings")
+                            
+                        elif task_name == 'retirements' and not self.check_retirements.is_running():
+                            self.check_retirements.start()
+                            logger.info("✅ Restarted check_retirements")
+                            
+                        elif task_name == 'training_reminders' and not self.check_training_reminders.is_running():
+                            self.check_training_reminders.start()
+                            logger.info("✅ Restarted check_training_reminders")
+                            
+                        elif task_name == 'cleanup' and not self.cleanup_old_data.is_running():
+                            self.cleanup_old_data.start()
+                            logger.info("✅ Restarted cleanup_old_data")
+                            
+                    except Exception as restart_error:
+                        logger.error(f"❌ Failed to restart {task_name}: {restart_error}", exc_info=True)
+            else:
+                logger.info("✅ All background tasks healthy")
+                
+        except Exception as e:
+            logger.error(f"❌ ERROR in monitor_task_health: {e}", exc_info=True)
+            # Monitor continues despite errors
+
+    @monitor_task_health.before_loop
+    async def before_monitor_task_health(self):
+        await self.wait_until_ready()
 
     # Wait until ready methods
     @check_match_windows.before_loop
@@ -698,31 +760,31 @@ class FootballBot(commands.Bot):
         await self.wait_until_ready()
 
     # ============================================
-    # END SIMPLIFIED BACKGROUND TASKS
+    # END SELF-HEALING BACKGROUND TASKS
     # ============================================
 
     async def on_ready(self):
         """Called when bot is fully ready"""
         state = await db.get_game_state()
 
-        print("\n" + "=" * 50)
-        print(f'✅ Bot logged in as {self.user.name}')
-        print(f'✅ Connected to {len(self.guilds)} server(s)')
+        logger.info("\n" + "=" * 50)
+        logger.info(f'✅ Bot logged in as {self.user.name}')
+        logger.info(f'✅ Connected to {len(self.guilds)} server(s)')
 
         if state['season_started']:
-            print(f'📅 Season: {state["current_season"]} - Week {state["current_week"]}/{config.SEASON_TOTAL_WEEKS}')
+            logger.info(f'📅 Season: {state["current_season"]} - Week {state["current_week"]}/{config.SEASON_TOTAL_WEEKS}')
         else:
-            print(f'⏳ Season not started')
+            logger.info(f'⏳ Season not started')
 
         # Show next match window
         from utils.season_manager import get_next_match_window, EST
         try:
             next_window = get_next_match_window()
-            print(f'⏰ Next match window: {next_window.strftime("%A, %B %d at %I:%M %p EST")}')
+            logger.info(f'⏰ Next match window: {next_window.strftime("%A, %B %d at %I:%M %p EST")}')
         except:
             pass
 
-        print("=" * 50 + "\n")
+        logger.info("=" * 50 + "\n")
 
         # Dynamic bot presence based on window status
         if state['season_started']:
@@ -747,19 +809,19 @@ class FootballBot(commands.Bot):
         )
 
     # ============================================
-    # HIGH #4: AUTO-SETUP CHANNELS ON NEW SERVERS
+    # AUTO-SETUP CHANNELS ON NEW SERVERS
     # ============================================
     
     async def on_guild_join(self, guild):
         """When bot joins a new server, auto-setup channels"""
-        print(f"📥 Joined new server: {guild.name}")
+        logger.info(f"📥 Joined new server: {guild.name}")
         
         from utils.channel_setup import setup_server_channels
         try:
             await setup_server_channels(guild)
-            print(f"✅ Auto-setup complete for {guild.name}")
+            logger.info(f"✅ Auto-setup complete for {guild.name}")
         except Exception as e:
-            print(f"⚠️ Could not auto-setup channels: {e}")
+            logger.warning(f"⚠️ Could not auto-setup channels: {e}")
 
 
 # Create bot instance
@@ -823,6 +885,6 @@ if __name__ == "__main__":
     try:
         bot.run(config.DISCORD_TOKEN)
     except KeyboardInterrupt:
-        print("\n⚠️ Bot shutdown requested")
+        logger.info("\n⚠️ Bot shutdown requested")
     except Exception as e:
-        print(f"❌ Fatal error: {e}")
+        logger.critical(f"❌ Fatal error: {e}", exc_info=True)
