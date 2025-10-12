@@ -18,8 +18,9 @@ class Database:
         """Connect to PostgreSQL database"""
         self.pool = await asyncpg.create_pool(
             config.DATABASE_URL,
-            min_size=1,
-            max_size=10
+            min_size=5,  # Increase minimum
+            max_size=25,  # Increase maximum
+            command_timeout=60  # Add timeout
         )
         await self.create_tables()
         
