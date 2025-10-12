@@ -96,22 +96,22 @@ class TrainingCommands(commands.Cog):
         # REALISTIC PROGRESSION with MORALE BONUS
         age_multiplier = 1.0
         if player['age'] <= 21:
-            age_multiplier = 1.2
-        elif player['age'] <= 25:
             age_multiplier = 1.0
+        elif player['age'] <= 25:
+            age_multiplier = 0.9
         elif player['age'] <= 30:
-            age_multiplier = 0.8
+            age_multiplier = 0.65
         elif player['age'] <= 35:
-            age_multiplier = 0.5
+            age_multiplier = 0.55
         else:
-            age_multiplier = 0.3
+            age_multiplier = 0.15
 
         # MORALE AFFECTS TRAINING GAINS
         from utils.form_morale_system import get_morale_training_modifier
         morale_multiplier = get_morale_training_modifier(player['morale'])
 
         # ⭐ OPTION A: Reduced base gain from 2 to 1
-        base_points = 1  # CHANGED FROM 2
+        base_points = 0.3  # CHANGED FROM 2
 
         # Handle streak
         if streak_broken:
@@ -124,9 +124,9 @@ class TrainingCommands(commands.Cog):
         # Streak bonuses
         streak_bonus = 0
         if new_streak >= 7:
-            streak_bonus = 1
+            streak_bonus = 0.3
         if new_streak >= 30:
-            streak_bonus = 2
+            streak_bonus = 0.7
 
         # MAJOR BONUS: 30+ day streak gives +3 potential
         potential_boost = 0
@@ -198,18 +198,18 @@ class TrainingCommands(commands.Cog):
 
             if distance_from_potential <= 0:
                 if current < current_potential + 3:
-                    successful_gains = sum(1 for _ in range(gain) if random.random() < 0.2)
+                    successful_gains = sum(1 for _ in range(gain) if random.random() < 0.10)
                     capped_value = min(99, current + successful_gains)
                 else:
                     capped_value = current
             elif distance_from_potential <= 5:
-                successful_gains = sum(1 for _ in range(gain) if random.random() < 0.5)
+                successful_gains = sum(1 for _ in range(gain) if random.random() < 0.30)
                 capped_value = min(99, min(current + successful_gains, current_potential + 3))
             elif distance_from_potential <= 10:
-                successful_gains = sum(1 for _ in range(gain) if random.random() < 0.7)
+                successful_gains = sum(1 for _ in range(gain) if random.random() < 0.50)
                 capped_value = min(99, min(current + successful_gains, current_potential + 3))
             else:
-                successful_gains = sum(1 for _ in range(gain) if random.random() < 0.9)
+                successful_gains = sum(1 for _ in range(gain) if random.random() < 0.70)
                 capped_value = min(99, min(current + successful_gains, current_potential + 3))
 
             actual_gain = capped_value - current
