@@ -884,6 +884,18 @@ class MatchEngine:
                 )
                 print(f"  📊 Form updated for user {participant['user_id']}: Rating {actual_rating:.1f} → Form {new_form}")
 
+        # ✅ NEW: Update appearance counts for all participating players
+        for participant in participants:
+            if participant['user_id']:
+                async with db.pool.acquire() as conn:
+                    await conn.execute("""
+                        UPDATE players 
+                        SET season_apps = season_apps + 1,
+                            career_apps = career_apps + 1
+                        WHERE user_id = $1
+                    """, participant['user_id'])
+                print(f"  👕 Appearance recorded for user {participant['user_id']}")
+
         for participant in participants:
             if participant['user_id']:
                 player_team = participant['team_id']
