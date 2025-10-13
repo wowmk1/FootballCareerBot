@@ -331,7 +331,7 @@ class MatchEngine:
         home_participants = [p for p in participants if p['team_id'] == fixture['home_team_id']]
         away_participants = [p for p in participants if p['team_id'] == fixture['away_team_id']]
 
-        possible_minutes = list(range(5, 91, 5))
+        possible_minutes = list(range(3, 91, 3))
         minutes = sorted(random.sample(possible_minutes, min(num_events, len(possible_minutes))))
 
         await self.update_pinned_score(channel, match_id, home_team, away_team, home_score, away_score, 0)
