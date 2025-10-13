@@ -111,7 +111,7 @@ class TrainingCommands(commands.Cog):
         morale_multiplier = get_morale_training_modifier(player['morale'])
 
         # ⭐ OPTION A: Reduced base gain from 2 to 1
-        base_points = 0.3  # CHANGED FROM 2
+        base_points = 1  # CHANGED FROM 2
 
         # Handle streak
         if streak_broken:
