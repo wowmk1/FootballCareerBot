@@ -614,7 +614,7 @@ class FootballBot(commands.Bot):
         except Exception as e:
             logger.error(f"❌ ERROR in check_retirements: {e}", exc_info=True)
 
-    @tasks.loop(hours=1)
+    @tasks.loop(minutes=5)
     async def check_training_reminders(self):
         """
         Check for players whose training is ready and send reminders
