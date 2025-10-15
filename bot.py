@@ -618,46 +618,45 @@ class FootballBot(commands.Bot):
     async def check_training_reminders(self):
         """
         Check for players whose training is ready and send reminders
-        FIXED: Pass datetime objects, not ISO strings
         """
         try:
-            # Calculate thresholds
-            cooldown_threshold = datetime.now() - timedelta(
-                hours=config.TRAINING_COOLDOWN_HOURS,
-                minutes=5
-            )
-            # CRITICAL FIX: Match reminder frequency to training cooldown
-            # This ensures one reminder per cooldown period (daily reminders)
-            reminder_threshold = datetime.now() - timedelta(
-                hours=config.TRAINING_COOLDOWN_HOURS - 4  # 4 hour buffer before next reminder
-            )
-
+            # Calculate when training becomes available
+            cooldown_threshold = datetime.now() - timedelta(hours=config.TRAINING_COOLDOWN_HOURS)
+        
+            # DEBUG LOGGING - ADD THIS
+            logger.info(f"🔍 Checking training reminders at {datetime.now()}")
+            logger.info(f"   Cooldown threshold: {cooldown_threshold}")
+        
             async with db.pool.acquire() as conn:
                 rows = await conn.fetch("""
-                                        SELECT user_id, player_name, last_training
-                                        FROM players
-                                        WHERE retired = FALSE
-                                          AND last_training IS NOT NULL
-                                          AND last_training::timestamp <= $1
-                                          AND (last_reminded IS NULL
-                                           OR last_reminded:: timestamp
-                                            < $2)
-                                        """, cooldown_threshold, reminder_threshold)  # ✅ Pass datetime objects directly
-
+                    SELECT user_id, player_name, last_training, last_reminded
+                    FROM players
+                    WHERE retired = FALSE
+                      AND last_training IS NOT NULL
+                      AND last_training::timestamp <= $1
+                      AND (last_reminded IS NULL 
+                           OR last_reminded::timestamp <= last_training::timestamp)
+                """, cooldown_threshold)
+            
+                # DEBUG LOGGING - ADD THIS
+                logger.info(f"   Found {len(rows)} players ready for reminder")
                 for row in rows:
-                    last_train = datetime.fromisoformat(row['last_training'])
-                    time_since = datetime.now() - last_train
-
-                    if time_since >= timedelta(hours=config.TRAINING_COOLDOWN_HOURS):
+                    logger.info(f"   - {row['player_name']}: last_training={row['last_training']}, last_reminded={row.get('last_reminded', 'NULL')}")
+            
+                for row in rows:
+                    # Send notification
+                    success = await self.send_training_reminder(row['user_id'])
+                
+                    if success:
+                        # Mark as reminded
                         await conn.execute("""
-                                           UPDATE players
-                                           SET last_reminded = $1
-                                           WHERE user_id = $2
-                                           """, datetime.now().isoformat(), row['user_id'])
-
-                        await self.send_training_reminder(row['user_id'])
+                            UPDATE players
+                            SET last_reminded = $1
+                            WHERE user_id = $2
+                        """, datetime.now().isoformat(), row['user_id'])
+                    
                         logger.info(f"✅ Sent training reminder to user {row['user_id']}")
-
+    
         except Exception as e:
             logger.error(f"❌ ERROR in check_training_reminders: {e}", exc_info=True)
 
