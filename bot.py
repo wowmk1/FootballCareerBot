@@ -626,7 +626,11 @@ class FootballBot(commands.Bot):
                 hours=config.TRAINING_COOLDOWN_HOURS,
                 minutes=5
             )
-            reminder_threshold = datetime.now() - timedelta(hours=12)
+            # CRITICAL FIX: Match reminder frequency to training cooldown
+            # This ensures one reminder per cooldown period (daily reminders)
+            reminder_threshold = datetime.now() - timedelta(
+                hours=config.TRAINING_COOLDOWN_HOURS - 4  # 4 hour buffer before next reminder
+            )
 
             async with db.pool.acquire() as conn:
                 rows = await conn.fetch("""
