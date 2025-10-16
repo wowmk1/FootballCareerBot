@@ -1,6 +1,7 @@
 """
 NPC Transfer System - NPCs move between teams realistically
 Runs during transfer windows
+FIXED: Only executes during transfer windows (failsafe protection)
 """
 
 from database import db
@@ -139,7 +140,18 @@ async def execute_npc_transfers(week: int):
     return transfers_made
 
 async def balance_team_squads():
-    """Balance squad sizes - move players from large squads to small ones"""
+    """Balance squad sizes - move players from large squads to small ones
+    
+    ✅ CRITICAL FIX: ONLY RUNS DURING TRANSFER WINDOWS (Failsafe Protection)
+    """
+    
+    # ✅ FAILSAFE: Only run during transfer windows
+    state = await db.get_game_state()
+    if state['current_week'] not in config.TRANSFER_WINDOW_WEEKS:
+        print(f"⚠️ Week {state['current_week']}: Not a transfer window - skipping squad balancing")
+        return 0
+    
+    print(f"⚖️ Week {state['current_week']}: Balancing squad sizes (transfer window active)...")
     
     async with db.pool.acquire() as conn:
         # Find teams with too many players (30+)
@@ -161,6 +173,7 @@ async def balance_team_squads():
         """)
     
     if not large_squads or not small_squads:
+        print("  ✅ No squad balancing needed")
         return 0
     
     transfers = 0
