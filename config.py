@@ -53,3 +53,30 @@ TRAINING_EFFECTIVENESS_BY_LEAGUE = {
     'League One': 0.85,         # Worse facilities = 15% penalty
     'League Two': 0.7           # Much worse facilities
 }
+
+# ===== EUROPEAN COMPETITIONS =====
+CHAMPIONS_LEAGUE_TEAMS = 32
+EUROPA_LEAGUE_TEAMS = 32
+CHAMPIONS_LEAGUE_MATCH_DAY = 1  # Tuesday
+EUROPA_LEAGUE_MATCH_DAY = 3  # Thursday
+EUROPEAN_MATCH_START_HOUR = 15  # 3 PM
+
+GROUP_STAGE_WEEKS = [3, 6, 9, 12, 18, 21]
+KNOCKOUT_R16_WEEKS = [24, 27]
+KNOCKOUT_QF_WEEKS = [30, 33]
+KNOCKOUT_SF_WEEKS = [36, 39]
+KNOCKOUT_FINAL_WEEK = 42
+
+EUROPEAN_MATCH_WEEKS = GROUP_STAGE_WEEKS + KNOCKOUT_R16_WEEKS + KNOCKOUT_QF_WEEKS + KNOCKOUT_SF_WEEKS + [KNOCKOUT_FINAL_WEEK]
+
+CL_QUALIFICATION_POSITIONS = {
+    'Premier League': [1, 2, 3, 4],
+    'Championship': [],
+    'League One': []
+}
+
+EL_QUALIFICATION_POSITIONS = {
+    'Premier League': [5, 6],
+    'Championship': [],
+    'League One': []
+}
