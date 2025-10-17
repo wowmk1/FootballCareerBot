@@ -1,4 +1,3 @@
-```python
 """
 European Competition Commands
 """
@@ -224,6 +223,3 @@ class European(commands.Cog):
 
 async def setup(bot):
     await bot.add_cog(European(bot))
-```
-
----
