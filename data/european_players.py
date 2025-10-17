@@ -9,6 +9,7 @@ TEAM_ROSTERS = {
     'real_madrid': {
         'name': 'Real Madrid',
         'country': 'Spain',
+        'league': 'Champions League',
         'players': [
             {'name': 'Thibaut Courtois', 'pos': 'GK', 'age': 32, 'rating': 89, 'nat': 'Belgium'},
             {'name': 'Andriy Lunin', 'pos': 'GK', 'age': 25, 'rating': 79, 'nat': 'Ukraine'},
@@ -36,6 +37,7 @@ TEAM_ROSTERS = {
     'barcelona': {
         'name': 'Barcelona',
         'country': 'Spain',
+        'league': 'Champions League',
         'players': [
             {'name': 'Marc-André ter Stegen', 'pos': 'GK', 'age': 32, 'rating': 88, 'nat': 'Germany'},
             {'name': 'Inaki Peña', 'pos': 'GK', 'age': 24, 'rating': 75, 'nat': 'Spain'},
@@ -58,6 +60,7 @@ TEAM_ROSTERS = {
     'atletico_madrid': {
         'name': 'Atlético Madrid',
         'country': 'Spain',
+        'league': 'Champions League',
         'players': [
             {'name': 'Jan Oblak', 'pos': 'GK', 'age': 31, 'rating': 90, 'nat': 'Slovenia'},
             {'name': 'Ivo Grbić', 'pos': 'GK', 'age': 26, 'rating': 76, 'nat': 'Croatia'},
@@ -77,6 +80,7 @@ TEAM_ROSTERS = {
     'sevilla': {
         'name': 'Sevilla',
         'country': 'Spain',
+        'league': 'Champions League',
         'players': [
             {'name': 'Yassine Bounou', 'pos': 'GK', 'age': 33, 'rating': 83, 'nat': 'Morocco'},
             {'name': 'Marko Dmitrović', 'pos': 'GK', 'age': 32, 'rating': 79, 'nat': 'Serbia'},
@@ -97,6 +101,7 @@ TEAM_ROSTERS = {
     'bayern_munich': {
         'name': 'Bayern Munich',
         'country': 'Germany',
+        'league': 'Champions League',
         'players': [
             {'name': 'Manuel Neuer', 'pos': 'GK', 'age': 37, 'rating': 90, 'nat': 'Germany'},
             {'name': 'Alexander Nübel', 'pos': 'GK', 'age': 27, 'rating': 80, 'nat': 'Germany'},
@@ -123,6 +128,7 @@ TEAM_ROSTERS.update({
     'borussia_dortmund': {
         'name': 'Borussia Dortmund',
         'country': 'Germany',
+        'league': 'Champions League',
         'players': [
             {'name': 'Gregor Kobel', 'pos': 'GK', 'age': 25, 'rating': 85, 'nat': 'Switzerland'},
             {'name': 'Marwin Hitz', 'pos': 'GK', 'age': 36, 'rating': 78, 'nat': 'Switzerland'},
@@ -141,6 +147,7 @@ TEAM_ROSTERS.update({
     'rb_leipzig': {
         'name': 'RB Leipzig',
         'country': 'Germany',
+        'league': 'Champions League',
         'players': [
             {'name': 'Peter Gulacsi', 'pos': 'GK', 'age': 34, 'rating': 83, 'nat': 'Hungary'},
             {'name': 'Janis Blaswich', 'pos': 'GK', 'age': 31, 'rating': 79, 'nat': 'Germany'},
@@ -159,6 +166,7 @@ TEAM_ROSTERS.update({
     'bayer_leverkusen': {
         'name': 'Bayer Leverkusen',
         'country': 'Germany',
+        'league': 'Champions League',
         'players': [
             {'name': 'Lukáš Hrádecký', 'pos': 'GK', 'age': 34, 'rating': 83, 'nat': 'Finland'},
             {'name': 'André Ramalho', 'pos': 'CB', 'age': 30, 'rating': 80, 'nat': 'Brazil'},
@@ -178,6 +186,7 @@ TEAM_ROSTERS.update({
     'inter_milan': {
         'name': 'Inter Milan',
         'country': 'Italy',
+        'league': 'Champions League',
         'players': [
             {'name': 'Samir Handanović', 'pos': 'GK', 'age': 40, 'rating': 86, 'nat': 'Slovenia'},
             {'name': 'André Onana', 'pos': 'GK', 'age': 27, 'rating': 84, 'nat': 'Cameroon'},
@@ -196,6 +205,7 @@ TEAM_ROSTERS.update({
     'ac_milan': {
         'name': 'AC Milan',
         'country': 'Italy',
+        'league': 'Champions League',
         'players': [
             {'name': 'Mike Maignan', 'pos': 'GK', 'age': 28, 'rating': 87, 'nat': 'France'},
             {'name': 'Ciprian Tătărușanu', 'pos': 'GK', 'age': 37, 'rating': 78, 'nat': 'Romania'},
@@ -223,6 +233,7 @@ TEAM_ROSTERS.update({
     'juventus': {
         'name': 'Juventus',
         'country': 'Italy',
+        'league': 'Champions League',
         'players': [
             {'name': 'Wojciech Szczęsny', 'pos': 'GK', 'age': 35, 'rating': 86, 'nat': 'Poland'},
             {'name': 'Mattia Perin', 'pos': 'GK', 'age': 32, 'rating': 79, 'nat': 'Italy'},
@@ -241,6 +252,7 @@ TEAM_ROSTERS.update({
     'napoli': {
         'name': 'Napoli',
         'country': 'Italy',
+        'league': 'Champions League',
         'players': [
             {'name': 'Alex Meret', 'pos': 'GK', 'age': 26, 'rating': 82, 'nat': 'Italy'},
             {'name': 'David Ospina', 'pos': 'GK', 'age': 35, 'rating': 81, 'nat': 'Colombia'},
@@ -260,6 +272,7 @@ TEAM_ROSTERS.update({
     'paris_saint_germain': {
         'name': 'Paris Saint-Germain',
         'country': 'France',
+        'league': 'Champions League',
         'players': [
             {'name': 'Gianluigi Donnarumma', 'pos': 'GK', 'age': 25, 'rating': 88, 'nat': 'Italy'},
             {'name': 'Navas', 'pos': 'GK', 'age': 36, 'rating': 84, 'nat': 'Costa Rica'},
@@ -278,6 +291,7 @@ TEAM_ROSTERS.update({
     'marseille': {
         'name': 'Marseille',
         'country': 'France',
+        'league': 'Champions League',
         'players': [
             {'name': 'Pau López', 'pos': 'GK', 'age': 28, 'rating': 82, 'nat': 'Spain'},
             {'name': 'Stefan Bajic', 'pos': 'GK', 'age': 22, 'rating': 75, 'nat': 'France'},
@@ -296,6 +310,7 @@ TEAM_ROSTERS.update({
     'monaco': {
         'name': 'Monaco',
         'country': 'France',
+        'league': 'Champions League',
         'players': [
             {'name': 'Alexander Nübel', 'pos': 'GK', 'age': 27, 'rating': 80, 'nat': 'Germany'},
             {'name': 'Loïc Badiashile', 'pos': 'GK', 'age': 22, 'rating': 74, 'nat': 'France'},
@@ -314,6 +329,7 @@ TEAM_ROSTERS.update({
     'lyon': {
         'name': 'Lyon',
         'country': 'France',
+        'league': 'Champions League',
         'players': [
             {'name': 'Anthony Lopes', 'pos': 'GK', 'age': 32, 'rating': 84, 'nat': 'Portugal'},
             {'name': 'Julian Pollersbeck', 'pos': 'GK', 'age': 29, 'rating': 78, 'nat': 'Germany'},
@@ -341,6 +357,7 @@ TEAM_ROSTERS.update({
     'benfica': {
         'name': 'Benfica',
         'country': 'Portugal',
+        'league': 'Champions League',
         'players': [
             {'name': 'Odysseas Vlachodimos', 'pos': 'GK', 'age': 28, 'rating': 82, 'nat': 'Greece'},
             {'name': 'Altay Bayındır', 'pos': 'GK', 'age': 25, 'rating': 79, 'nat': 'Turkey'},
@@ -359,6 +376,7 @@ TEAM_ROSTERS.update({
     'porto': {
         'name': 'Porto',
         'country': 'Portugal',
+        'league': 'Champions League',
         'players': [
             {'name': 'Diogo Costa', 'pos': 'GK', 'age': 24, 'rating': 85, 'nat': 'Portugal'},
             {'name': 'Agustín Marchesín', 'pos': 'GK', 'age': 36, 'rating': 82, 'nat': 'Argentina'},
@@ -377,6 +395,7 @@ TEAM_ROSTERS.update({
     'sporting_cp': {
         'name': 'Sporting CP',
         'country': 'Portugal',
+        'league': 'Champions League',
         'players': [
             {'name': 'Antonio Adán', 'pos': 'GK', 'age': 36, 'rating': 81, 'nat': 'Spain'},
             {'name': 'Matheus Reis', 'pos': 'LB', 'age': 28, 'rating': 81, 'nat': 'Brazil'},
@@ -396,6 +415,7 @@ TEAM_ROSTERS.update({
     'ajax': {
         'name': 'Ajax',
         'country': 'Netherlands',
+        'league': 'Champions League',
         'players': [
             {'name': 'Remko Pasveer', 'pos': 'GK', 'age': 39, 'rating': 82, 'nat': 'Netherlands'},
             {'name': 'Stefan Ortega', 'pos': 'GK', 'age': 31, 'rating': 79, 'nat': 'Germany'},
@@ -414,6 +434,7 @@ TEAM_ROSTERS.update({
     'psv_eindhoven': {
         'name': 'PSV Eindhoven',
         'country': 'Netherlands',
+        'league': 'Champions League',
         'players': [
             {'name': 'Walter Benítez', 'pos': 'GK', 'age': 30, 'rating': 81, 'nat': 'Argentina'},
             {'name': 'Jeroen Zoet', 'pos': 'GK', 'age': 31, 'rating': 79, 'nat': 'Netherlands'},
@@ -432,6 +453,7 @@ TEAM_ROSTERS.update({
     'feyenoord': {
         'name': 'Feyenoord',
         'country': 'Netherlands',
+        'league': 'Champions League',
         'players': [
             {'name': 'Justin Bijlow', 'pos': 'GK', 'age': 25, 'rating': 84, 'nat': 'Netherlands'},
             {'name': 'Nick Marsman', 'pos': 'GK', 'age': 34, 'rating': 78, 'nat': 'Netherlands'},
@@ -459,6 +481,7 @@ TEAM_ROSTERS.update({
     'club_brugge': {
         'name': 'Club Brugge',
         'country': 'Belgium',
+        'league': 'Champions League',
         'players': [
             {'name': 'Simon Mignolet', 'pos': 'GK', 'age': 36, 'rating': 82, 'nat': 'Belgium'},
             {'name': 'Ethan Horvath', 'pos': 'GK', 'age': 28, 'rating': 80, 'nat': 'USA'},
@@ -477,6 +500,7 @@ TEAM_ROSTERS.update({
     'anderlecht': {
         'name': 'Anderlecht',
         'country': 'Belgium',
+        'league': 'Champions League',
         'players': [
             {'name': 'Thomas Didillon', 'pos': 'GK', 'age': 28, 'rating': 80, 'nat': 'France'},
             {'name': 'Zeno Debast', 'pos': 'CB', 'age': 19, 'rating': 76, 'nat': 'Belgium'},
@@ -496,6 +520,7 @@ TEAM_ROSTERS.update({
     'galatasaray': {
         'name': 'Galatasaray',
         'country': 'Turkey',
+        'league': 'Champions League',
         'players': [
             {'name': 'Fernando Muslera', 'pos': 'GK', 'age': 37, 'rating': 83, 'nat': 'Uruguay'},
             {'name': 'Inaki Pena', 'pos': 'GK', 'age': 26, 'rating': 78, 'nat': 'Spain'},
@@ -514,6 +539,7 @@ TEAM_ROSTERS.update({
     'fenerbahce': {
         'name': 'Fenerbahçe',
         'country': 'Turkey',
+        'league': 'Champions League',
         'players': [
             {'name': 'Altay Bayındır', 'pos': 'GK', 'age': 25, 'rating': 84, 'nat': 'Turkey'},
             {'name': 'Berke Özer', 'pos': 'GK', 'age': 24, 'rating': 78, 'nat': 'Turkey'},
@@ -533,6 +559,7 @@ TEAM_ROSTERS.update({
     'celtic': {
         'name': 'Celtic',
         'country': 'Scotland',
+        'league': 'Champions League',
         'players': [
             {'name': 'Joe Hart', 'pos': 'GK', 'age': 37, 'rating': 80, 'nat': 'England'},
             {'name': 'Vasilis Barkas', 'pos': 'GK', 'age': 27, 'rating': 78, 'nat': 'Greece'},
@@ -551,6 +578,7 @@ TEAM_ROSTERS.update({
     'rangers': {
         'name': 'Rangers',
         'country': 'Scotland',
+        'league': 'Champions League',
         'players': [
             {'name': 'Jon McLaughlin', 'pos': 'GK', 'age': 36, 'rating': 78, 'nat': 'Scotland'},
             {'name': 'Allan McGregor', 'pos': 'GK', 'age': 41, 'rating': 77, 'nat': 'Scotland'},
@@ -579,6 +607,7 @@ TEAM_ROSTERS.update({
     'rb_salzburg': {
         'name': 'RB Salzburg',
         'country': 'Austria',
+        'league': 'Champions League',
         'players': [
             {'name': 'Cican Stankovic', 'pos': 'GK', 'age': 28, 'rating': 83, 'nat': 'Austria'},
             {'name': 'Andreas Ulmer', 'pos': 'LB', 'age': 37, 'rating': 80, 'nat': 'Austria'},
@@ -598,6 +627,7 @@ TEAM_ROSTERS.update({
     'shakhtar_donetsk': {
         'name': 'Shakhtar Donetsk',
         'country': 'Ukraine',
+        'league': 'Champions League',
         'players': [
             {'name': 'Andriy Pyatov', 'pos': 'GK', 'age': 38, 'rating': 82, 'nat': 'Ukraine'},
             {'name': 'Heorhiy Bushchan', 'pos': 'GK', 'age': 27, 'rating': 81, 'nat': 'Ukraine'},
@@ -617,6 +647,7 @@ TEAM_ROSTERS.update({
     'young_boys': {
         'name': 'Young Boys',
         'country': 'Switzerland',
+        'league': 'Champions League',
         'players': [
             {'name': 'David von Ballmoos', 'pos': 'GK', 'age': 28, 'rating': 82, 'nat': 'Switzerland'},
             {'name': 'Anthony Racioppi', 'pos': 'GK', 'age': 26, 'rating': 80, 'nat': 'Switzerland'},
@@ -636,6 +667,7 @@ TEAM_ROSTERS.update({
     'red_star_belgrade': {
         'name': 'Red Star Belgrade',
         'country': 'Serbia',
+        'league': 'Champions League',
         'players': [
             {'name': 'Milan Borjan', 'pos': 'GK', 'age': 35, 'rating': 83, 'nat': 'Canada'},
             {'name': 'Vladimir Stojković', 'pos': 'GK', 'age': 39, 'rating': 81, 'nat': 'Serbia'},
@@ -662,6 +694,7 @@ TEAM_ROSTERS.update({
     'real_sociedad': {
         'name': 'Real Sociedad',
         'country': 'Spain',
+        'league': 'Europa League',
         'players': [
             {'name': 'Álex Remiro', 'pos': 'GK', 'age': 28, 'rating': 82, 'nat': 'Spain'},
             {'name': 'Mathew Ryan', 'pos': 'GK', 'age': 32, 'rating': 80, 'nat': 'Australia'},
@@ -680,6 +713,7 @@ TEAM_ROSTERS.update({
     'villarreal': {
         'name': 'Villarreal',
         'country': 'Spain',
+        'league': 'Europa League',
         'players': [
             {'name': 'Gerónimo Rulli', 'pos': 'GK', 'age': 31, 'rating': 82, 'nat': 'Argentina'},
             {'name': 'Sergio Asenjo', 'pos': 'GK', 'age': 35, 'rating': 80, 'nat': 'Spain'},
@@ -698,6 +732,7 @@ TEAM_ROSTERS.update({
     'real_betis': {
         'name': 'Real Betis',
         'country': 'Spain',
+        'league': 'Europa League',
         'players': [
             {'name': 'Rui Silva', 'pos': 'GK', 'age': 30, 'rating': 83, 'nat': 'Portugal'},
             {'name': 'Claudio Bravo', 'pos': 'GK', 'age': 41, 'rating': 81, 'nat': 'Chile'},
@@ -716,6 +751,7 @@ TEAM_ROSTERS.update({
     'athletic_bilbao': {
         'name': 'Athletic Bilbao',
         'country': 'Spain',
+        'league': 'Europa League',
         'players': [
             {'name': 'Unai Simón', 'pos': 'GK', 'age': 26, 'rating': 85, 'nat': 'Spain'},
             {'name': 'Julen Agirrezabala', 'pos': 'GK', 'age': 22, 'rating': 79, 'nat': 'Spain'},
@@ -742,6 +778,7 @@ TEAM_ROSTERS.update({
     'eintracht_frankfurt': {
         'name': 'Eintracht Frankfurt',
         'country': 'Germany',
+        'league': 'Europa League',
         'players': [
             {'name': 'Kevin Trapp', 'pos': 'GK', 'age': 33, 'rating': 84, 'nat': 'Germany'},
             {'name': 'Rúnar Alex Rúnarsson', 'pos': 'GK', 'age': 27, 'rating': 80, 'nat': 'Iceland'},
@@ -760,6 +797,7 @@ TEAM_ROSTERS.update({
     'union_berlin': {
         'name': 'Union Berlin',
         'country': 'Germany',
+        'league': 'Europa League',
         'players': [
             {'name': 'Rafal Gikiewicz', 'pos': 'GK', 'age': 35, 'rating': 80, 'nat': 'Poland'},
             {'name': 'Loris Karius', 'pos': 'GK', 'age': 31, 'rating': 79, 'nat': 'Germany'},
@@ -778,6 +816,7 @@ TEAM_ROSTERS.update({
     'freiburg': {
         'name': 'Freiburg',
         'country': 'Germany',
+        'league': 'Europa League',
         'players': [
             {'name': 'Mark Flekken', 'pos': 'GK', 'age': 29, 'rating': 82, 'nat': 'Netherlands'},
             {'name': 'Christian Früchtl', 'pos': 'GK', 'age': 23, 'rating': 77, 'nat': 'Germany'},
@@ -796,6 +835,7 @@ TEAM_ROSTERS.update({
     'hoffenheim': {
         'name': 'Hoffenheim',
         'country': 'Germany',
+        'league': 'Europa League',
         'players': [
             {'name': 'Oliver Baumann', 'pos': 'GK', 'age': 33, 'rating': 83, 'nat': 'Germany'},
             {'name': 'Philipp Pentke', 'pos': 'GK', 'age': 38, 'rating': 78, 'nat': 'Germany'},
@@ -822,6 +862,7 @@ TEAM_ROSTERS.update({
     'as_roma': {
         'name': 'AS Roma',
         'country': 'Italy',
+        'league': 'Europa League',
         'players': [
             {'name': 'Rui Patricio', 'pos': 'GK', 'age': 36, 'rating': 84, 'nat': 'Portugal'},
             {'name': 'Marash Kumbulla', 'pos': 'CB', 'age': 23, 'rating': 81, 'nat': 'Albania'},
@@ -840,6 +881,7 @@ TEAM_ROSTERS.update({
     'lazio': {
         'name': 'Lazio',
         'country': 'Italy',
+        'league': 'Europa League',
         'players': [
             {'name': 'Ivan Provedel', 'pos': 'GK', 'age': 29, 'rating': 82, 'nat': 'Italy'},
             {'name': 'Thomas Strakosha', 'pos': 'GK', 'age': 28, 'rating': 81, 'nat': 'Albania'},
@@ -858,6 +900,7 @@ TEAM_ROSTERS.update({
     'atalanta': {
         'name': 'Atalanta',
         'country': 'Italy',
+        'league': 'Europa League',
         'players': [
             {'name': 'Juan Musso', 'pos': 'GK', 'age': 26, 'rating': 83, 'nat': 'Argentina'},
             {'name': 'Pierluigi Gollini', 'pos': 'GK', 'age': 27, 'rating': 81, 'nat': 'Italy'},
@@ -876,6 +919,7 @@ TEAM_ROSTERS.update({
     'fiorentina': {
         'name': 'Fiorentina',
         'country': 'Italy',
+        'league': 'Europa League',
         'players': [
             {'name': 'Bartłomiej Drągowski', 'pos': 'GK', 'age': 26, 'rating': 82, 'nat': 'Poland'},
             {'name': 'Alfredo Donnarumma', 'pos': 'GK', 'age': 29, 'rating': 80, 'nat': 'Italy'},
@@ -902,6 +946,7 @@ TEAM_ROSTERS.update({
     'lille': {
         'name': 'Lille',
         'country': 'France',
+        'league': 'Europa League',
         'players': [
             {'name': 'Illan Meslier', 'pos': 'GK', 'age': 24, 'rating': 83, 'nat': 'France'},
             {'name': 'Léo Jardim', 'pos': 'GK', 'age': 25, 'rating': 79, 'nat': 'Brazil'},
@@ -920,6 +965,7 @@ TEAM_ROSTERS.update({
     'nice': {
         'name': 'Nice',
         'country': 'France',
+        'league': 'Europa League',
         'players': [
             {'name': 'Walter Benítez', 'pos': 'GK', 'age': 28, 'rating': 82, 'nat': 'Argentina'},
             {'name': 'Marcin Bulka', 'pos': 'GK', 'age': 23, 'rating': 78, 'nat': 'Poland'},
@@ -938,6 +984,7 @@ TEAM_ROSTERS.update({
     'rennes': {
         'name': 'Rennes',
         'country': 'France',
+        'league': 'Europa League',
         'players': [
             {'name': 'Alban Lafont', 'pos': 'GK', 'age': 25, 'rating': 84, 'nat': 'France'},
             {'name': 'Kemen', 'pos': 'CB', 'age': 25, 'rating': 80, 'nat': 'France'},
@@ -956,6 +1003,7 @@ TEAM_ROSTERS.update({
     'lens': {
         'name': 'Lens',
         'country': 'France',
+        'league': 'Europa League',
         'players': [
             {'name': 'Brice Samba', 'pos': 'GK', 'age': 29, 'rating': 82, 'nat': 'DR Congo'},
             {'name': 'Wuilker Faríñez', 'pos': 'GK', 'age': 25, 'rating': 80, 'nat': 'Venezuela'},
@@ -982,6 +1030,7 @@ TEAM_ROSTERS.update({
     'braga': {
         'name': 'Braga',
         'country': 'Portugal',
+        'league': 'Europa League',
         'players': [
             {'name': 'Matheus', 'pos': 'GK', 'age': 25, 'rating': 82, 'nat': 'Brazil'},
             {'name': 'Carlos Hita', 'pos': 'GK', 'age': 27, 'rating': 79, 'nat': 'Spain'},
@@ -1000,6 +1049,7 @@ TEAM_ROSTERS.update({
     'vitoria_guimaraes': {
         'name': 'Vitória Guimarães',
         'country': 'Portugal',
+        'league': 'Europa League',
         'players': [
             {'name': 'Paulo Lopes', 'pos': 'GK', 'age': 35, 'rating': 79, 'nat': 'Portugal'},
             {'name': 'André Moreira', 'pos': 'GK', 'age': 27, 'rating': 80, 'nat': 'Portugal'},
@@ -1018,6 +1068,7 @@ TEAM_ROSTERS.update({
     'rio_ave': {
         'name': 'Rio Ave',
         'country': 'Portugal',
+        'league': 'Europa League',
         'players': [
             {'name': 'Ivan Zlobin', 'pos': 'GK', 'age': 27, 'rating': 80, 'nat': 'Russia'},
             {'name': 'Cláudio Ramos', 'pos': 'GK', 'age': 33, 'rating': 81, 'nat': 'Portugal'},
@@ -1044,6 +1095,7 @@ TEAM_ROSTERS.update({
     'az_alkmaar': {
         'name': 'AZ Alkmaar',
         'country': 'Netherlands',
+        'league': 'Europa League',
         'players': [
             {'name': 'Rene Hake', 'pos': 'GK', 'age': 25, 'rating': 81, 'nat': 'Netherlands'},
             {'name': 'Pablo Rosario', 'pos': 'CM', 'age': 25, 'rating': 82, 'nat': 'Netherlands'},
@@ -1062,6 +1114,7 @@ TEAM_ROSTERS.update({
     'fc_twente': {
         'name': 'FC Twente',
         'country': 'Netherlands',
+        'league': 'Europa League',
         'players': [
             {'name': 'Nick Marsman', 'pos': 'GK', 'age': 34, 'rating': 80, 'nat': 'Netherlands'},
             {'name': 'Mats Deijl', 'pos': 'RB', 'age': 26, 'rating': 81, 'nat': 'Netherlands'},
@@ -1080,6 +1133,7 @@ TEAM_ROSTERS.update({
     'fc_utrecht': {
         'name': 'FC Utrecht',
         'country': 'Netherlands',
+        'league': 'Europa League',
         'players': [
             {'name': 'Maarten Paes', 'pos': 'GK', 'age': 25, 'rating': 81, 'nat': 'Netherlands'},
             {'name': 'Joris Kramer', 'pos': 'CB', 'age': 27, 'rating': 80, 'nat': 'Netherlands'},
@@ -1106,6 +1160,7 @@ TEAM_ROSTERS.update({
     'genk': {
         'name': 'Genk',
         'country': 'Belgium',
+        'league': 'Europa League',
         'players': [
             {'name': 'Maarten Vandevoordt', 'pos': 'GK', 'age': 21, 'rating': 82, 'nat': 'Belgium'},
             {'name': 'Mats Rits', 'pos': 'CM', 'age': 28, 'rating': 82, 'nat': 'Belgium'},
@@ -1124,6 +1179,7 @@ TEAM_ROSTERS.update({
     'royal_antwerp': {
         'name': 'Royal Antwerp',
         'country': 'Belgium',
+        'league': 'Europa League',
         'players': [
             {'name': 'Jean Butez', 'pos': 'GK', 'age': 29, 'rating': 82, 'nat': 'France'},
             {'name': 'Sinan Bolat', 'pos': 'GK', 'age': 36, 'rating': 80, 'nat': 'Turkey'},
@@ -1150,6 +1206,7 @@ TEAM_ROSTERS.update({
     'olympiacos': {
         'name': 'Olympiacos',
         'country': 'Greece',
+        'league': 'Europa League',
         'players': [
             {'name': 'José Sá', 'pos': 'GK', 'age': 30, 'rating': 84, 'nat': 'Portugal'},
             {'name': 'Kostas Tsimikas', 'pos': 'LB', 'age': 27, 'rating': 83, 'nat': 'Greece'},
@@ -1168,6 +1225,7 @@ TEAM_ROSTERS.update({
     'panathinaikos': {
         'name': 'Panathinaikos',
         'country': 'Greece',
+        'league': 'Europa League',
         'players': [
             {'name': 'Sokratis Dioudis', 'pos': 'GK', 'age': 28, 'rating': 82, 'nat': 'Greece'},
             {'name': 'François Moubandje', 'pos': 'LB', 'age': 32, 'rating': 80, 'nat': 'Switzerland'},
@@ -1194,6 +1252,7 @@ TEAM_ROSTERS.update({
     'slavia_prague': {
         'name': 'Slavia Prague',
         'country': 'Czech Republic',
+        'league': 'Europa League',
         'players': [
             {'name': 'Ondřej Kolář', 'pos': 'GK', 'age': 29, 'rating': 83, 'nat': 'Czech Republic'},
             {'name': 'Milan Škoda', 'pos': 'ST', 'age': 39, 'rating': 79, 'nat': 'Czech Republic'},
@@ -1212,6 +1271,7 @@ TEAM_ROSTERS.update({
     'dynamo_kyiv': {
         'name': 'Dynamo Kyiv',
         'country': 'Ukraine',
+        'league': 'Europa League',
         'players': [
             {'name': 'Heorhiy Bushchan', 'pos': 'GK', 'age': 27, 'rating': 82, 'nat': 'Ukraine'},
             {'name': 'Tomasz Kędziora', 'pos': 'RB', 'age': 27, 'rating': 83, 'nat': 'Poland'},
@@ -1230,6 +1290,7 @@ TEAM_ROSTERS.update({
     'copenhagen': {
         'name': 'Copenhagen',
         'country': 'Denmark',
+        'league': 'Europa League',
         'players': [
             {'name': 'Kamil Grabara', 'pos': 'GK', 'age': 25, 'rating': 83, 'nat': 'Poland'},
             {'name': 'Victor Nelsson', 'pos': 'CB', 'age': 25, 'rating': 83, 'nat': 'Denmark'},
@@ -1248,6 +1309,7 @@ TEAM_ROSTERS.update({
     'bodo_glimt': {
         'name': 'Bodø/Glimt',
         'country': 'Norway',
+        'league': 'Europa League',
         'players': [
             {'name': 'Niklas Castro', 'pos': 'ST', 'age': 25, 'rating': 82, 'nat': 'Norway'},
             {'name': 'Joshua Smits', 'pos': 'GK', 'age': 31, 'rating': 80, 'nat': 'Netherlands'},
@@ -1266,6 +1328,7 @@ TEAM_ROSTERS.update({
     'maccabi_haifa': {
         'name': 'Maccabi Haifa',
         'country': 'Israel',
+        'league': 'Europa League',
         'players': [
             {'name': 'Ofir Marciano', 'pos': 'GK', 'age': 34, 'rating': 82, 'nat': 'Israel'},
             {'name': 'Yossi Benayoun', 'pos': 'CM', 'age': 40, 'rating': 80, 'nat': 'Israel'},
@@ -1284,6 +1347,7 @@ TEAM_ROSTERS.update({
     'apoel': {
         'name': 'APOEL',
         'country': 'Cyprus',
+        'league': 'Europa League',
         'players': [
             {'name': 'Uros Racic', 'pos': 'CDM', 'age': 25, 'rating': 81, 'nat': 'Serbia'},
             {'name': 'Matija Širok', 'pos': 'GK', 'age': 27, 'rating': 80, 'nat': 'Slovenia'},
