@@ -1,4 +1,3 @@
-```python
 """
 Populate European teams with real player rosters
 """
@@ -111,6 +110,3 @@ async def populate_european_teams():
     
     print(f"🎉 Populated {teams_added} teams with {players_added} players!")
     return teams_added, players_added
-```
-
----
