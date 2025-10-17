@@ -84,11 +84,100 @@ LEAGUE_ONE_CRESTS = {
     'wigan': 'https://r2.thesportsdb.com/images/media/team/badge/wtxwyw1448759640.png/tiny',
 }
 
-# Combine all crests
+# ============================================
+# EUROPEAN TEAM CRESTS - NEW ADDITION
+# ============================================
+EUROPEAN_TEAM_CRESTS = {
+    # Spain - La Liga
+    'real_madrid': 'https://r2.thesportsdb.com/images/media/team/badge/a7zqh51646070832.png/tiny',
+    'barcelona': 'https://r2.thesportsdb.com/images/media/team/badge/9p3f4u1673717812.png/tiny',
+    'atletico': 'https://r2.thesportsdb.com/images/media/team/badge/hqo2bq1674040360.png/tiny',
+    'sevilla': 'https://r2.thesportsdb.com/images/media/team/badge/xwxqrq1448811040.png/tiny',
+    'valencia': 'https://r2.thesportsdb.com/images/media/team/badge/qswqpv1448811149.png/tiny',
+    'villarreal': 'https://r2.thesportsdb.com/images/media/team/badge/00w79f1635960506.png/tiny',
+    'athletic_bilbao': 'https://r2.thesportsdb.com/images/media/team/badge/ptqssu1448807850.png/tiny',
+    'real_sociedad': 'https://r2.thesportsdb.com/images/media/team/badge/xqpqst1448811015.png/tiny',
+    
+    # Germany - Bundesliga
+    'bayern': 'https://r2.thesportsdb.com/images/media/team/badge/adfbhq1635959353.png/tiny',
+    'dortmund': 'https://r2.thesportsdb.com/images/media/team/badge/04l72i1668073911.png/tiny',
+    'rb_leipzig': 'https://r2.thesportsdb.com/images/media/team/badge/1jh0661592831104.png/tiny',
+    'leverkusen': 'https://r2.thesportsdb.com/images/media/team/badge/yw90pa1635959410.png/tiny',
+    'frankfurt': 'https://r2.thesportsdb.com/images/media/team/badge/67y2o91601723906.png/tiny',
+    'wolfsburg': 'https://r2.thesportsdb.com/images/media/team/badge/2ik2hc1635959475.png/tiny',
+    'monchengladbach': 'https://r2.thesportsdb.com/images/media/team/badge/fgtgqi1601731041.png/tiny',
+    'schalke': 'https://r2.thesportsdb.com/images/media/team/badge/ury7vq1448811041.png/tiny',
+    
+    # Italy - Serie A
+    'juventus': 'https://r2.thesportsdb.com/images/media/team/badge/0ydz5w1635958873.png/tiny',
+    'inter': 'https://r2.thesportsdb.com/images/media/team/badge/ckvj6o1668506587.png/tiny',
+    'ac_milan': 'https://r2.thesportsdb.com/images/media/team/badge/buwuwf1676545673.png/tiny',
+    'napoli': 'https://r2.thesportsdb.com/images/media/team/badge/e1gpko1635958945.png/tiny',
+    'roma': 'https://r2.thesportsdb.com/images/media/team/badge/qswrtu1448810659.png/tiny',
+    'lazio': 'https://r2.thesportsdb.com/images/media/team/badge/cihthm1601724057.png/tiny',
+    'atalanta': 'https://r2.thesportsdb.com/images/media/team/badge/yqwqqs1448807801.png/tiny',
+    'fiorentina': 'https://r2.thesportsdb.com/images/media/team/badge/qsqpsx1448809932.png/tiny',
+    
+    # France - Ligue 1
+    'psg': 'https://r2.thesportsdb.com/images/media/team/badge/sqwqvt1448811008.png/tiny',
+    'marseille': 'https://r2.thesportsdb.com/images/media/team/badge/ol4bv11682508086.png/tiny',
+    'lyon': 'https://r2.thesportsdb.com/images/media/team/badge/q5yxvu1448811140.png/tiny',
+    'monaco': 'https://r2.thesportsdb.com/images/media/team/badge/qrwytu1448810956.png/tiny',
+    'lille': 'https://r2.thesportsdb.com/images/media/team/badge/tvqwyq1448810927.png/tiny',
+    'nice': 'https://r2.thesportsdb.com/images/media/team/badge/t4x7h91659542748.png/tiny',
+    'rennes': 'https://r2.thesportsdb.com/images/media/team/badge/rxyrvq1448811033.png/tiny',
+    'lens': 'https://r2.thesportsdb.com/images/media/team/badge/0xtrkh1601724004.png/tiny',
+    
+    # Netherlands - Eredivisie
+    'ajax': 'https://r2.thesportsdb.com/images/media/team/badge/rwuruu1448807780.png/tiny',
+    'psv': 'https://r2.thesportsdb.com/images/media/team/badge/vqvqxs1448811091.png/tiny',
+    'feyenoord': 'https://r2.thesportsdb.com/images/media/team/badge/vyxyvt1448809925.png/tiny',
+    'az_alkmaar': 'https://r2.thesportsdb.com/images/media/team/badge/xuywtu1448807836.png/tiny',
+    
+    # Portugal - Primeira Liga
+    'porto': 'https://r2.thesportsdb.com/images/media/team/badge/vrssrq1448810987.png/tiny',
+    'benfica': 'https://r2.thesportsdb.com/images/media/team/badge/qrqyvs1448808300.png/tiny',
+    'sporting': 'https://r2.thesportsdb.com/images/media/team/badge/xxrtqy1448813464.png/tiny',
+    'braga': 'https://r2.thesportsdb.com/images/media/team/badge/s7w18o1634913854.png/tiny',
+    
+    # Belgium - Pro League
+    'club_brugge': 'https://r2.thesportsdb.com/images/media/team/badge/qqwwut1448808472.png/tiny',
+    'anderlecht': 'https://r2.thesportsdb.com/images/media/team/badge/urvwst1448807751.png/tiny',
+    
+    # Scotland - Scottish Premiership
+    'celtic': 'https://r2.thesportsdb.com/images/media/team/badge/xuywvu1448808487.png/tiny',
+    'rangers': 'https://r2.thesportsdb.com/images/media/team/badge/srxqvu1448811026.png/tiny',
+    
+    # Austria - Austrian Bundesliga
+    'salzburg': 'https://r2.thesportsdb.com/images/media/team/badge/zq46t01620236149.png/tiny',
+    
+    # Turkey - Süper Lig
+    'galatasaray': 'https://r2.thesportsdb.com/images/media/team/badge/usxxwu1448809937.png/tiny',
+    'fenerbahce': 'https://r2.thesportsdb.com/images/media/team/badge/sxvsxw1448809904.png/tiny',
+    'besiktas': 'https://r2.thesportsdb.com/images/media/team/badge/wtxqyv1448808314.png/tiny',
+    
+    # Ukraine - Ukrainian Premier League
+    'shakhtar': 'https://r2.thesportsdb.com/images/media/team/badge/yqywvt1448813089.png/tiny',
+    'dynamo_kyiv': 'https://r2.thesportsdb.com/images/media/team/badge/svvqys1448808804.png/tiny',
+    
+    # Denmark - Danish Superliga
+    'copenhagen': 'https://r2.thesportsdb.com/images/media/team/badge/xspqxr1448808479.png/tiny',
+    
+    # Greece - Super League
+    'olympiacos': 'https://r2.thesportsdb.com/images/media/team/badge/xvvtuu1448810975.png/tiny',
+    'panathinaikos': 'https://r2.thesportsdb.com/images/media/team/badge/tqvywr1448810982.png/tiny',
+    
+    # Czech Republic - Czech First League
+    'slavia_praha': 'https://r2.thesportsdb.com/images/media/team/badge/30c04o1601724117.png/tiny',
+    'sparta_praha': 'https://r2.thesportsdb.com/images/media/team/badge/u6a8hu1601724127.png/tiny',
+}
+
+# Combine all crests - UPDATED TO INCLUDE EUROPEAN
 ALL_TEAM_CRESTS = {
     **PREMIER_LEAGUE_CRESTS,
     **CHAMPIONSHIP_CRESTS,
-    **LEAGUE_ONE_CRESTS
+    **LEAGUE_ONE_CRESTS,
+    **EUROPEAN_TEAM_CRESTS  # ← ADD THIS LINE
 }
 
 # Competition Logos
@@ -98,6 +187,8 @@ COMPETITION_LOGOS = {
     'League One': 'https://media.api-sports.io/football/leagues/41.png',
     'FA Cup': 'https://media.api-sports.io/football/leagues/45.png',
     'EFL Cup': 'https://media.api-sports.io/football/leagues/48.png',
+    'Champions League': 'https://r2.thesportsdb.com/images/media/league/badge/i6o0kh1549879062.png/tiny',
+    'Europa League': 'https://r2.thesportsdb.com/images/media/league/badge/7onmyv1534768460.png/tiny',
 }
 
 def get_team_crest_url(team_id: str) -> str:
@@ -105,7 +196,7 @@ def get_team_crest_url(team_id: str) -> str:
     Get crest URL for a team
     
     Args:
-        team_id: Team identifier (e.g., 'man_city', 'arsenal')
+        team_id: Team identifier (e.g., 'man_city', 'arsenal', 'real_madrid')
     
     Returns:
         Direct URL to team crest image, or empty string if not found
@@ -117,7 +208,7 @@ def get_competition_logo_url(competition: str) -> str:
     Get logo URL for a competition
     
     Args:
-        competition: Competition name (e.g., 'Premier League')
+        competition: Competition name (e.g., 'Premier League', 'Champions League')
     
     Returns:
         Direct URL to competition logo, or empty string if not found
@@ -135,6 +226,7 @@ def get_crest_stats():
         'premier_league': len(PREMIER_LEAGUE_CRESTS),
         'championship': len(CHAMPIONSHIP_CRESTS),
         'league_one': len(LEAGUE_ONE_CRESTS),
+        'european': len(EUROPEAN_TEAM_CRESTS),  # ← ADD THIS LINE
         'competitions': len(COMPETITION_LOGOS)
     }
 
@@ -145,4 +237,5 @@ if __name__ == '__main__':
     print(f"   - Premier League: {stats['premier_league']}")
     print(f"   - Championship: {stats['championship']}")
     print(f"   - League One: {stats['league_one']}")
+    print(f"   - European: {stats['european']}")  # ← ADD THIS LINE
     print(f"   - Competitions: {stats['competitions']}")
