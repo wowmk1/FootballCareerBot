@@ -1,5 +1,6 @@
 """
 Mid-Season European Start - Simulates Missed Weeks
+FIXED: Import match_engine instance instead of method
 """
 
 from database import db
@@ -8,6 +9,13 @@ import config
 async def simulate_missed_european_weeks(missed_weeks, season):
     """Simulate all missed European weeks to catch up"""
     print(f"🏆 Simulating {len(missed_weeks)} missed weeks...")
+    
+    # CRITICAL FIX: Import match_engine instance
+    from utils import match_engine as me_module
+    
+    if not me_module.match_engine:
+        print("❌ Match engine not initialized!")
+        return {'matches_simulated': 0, 'weeks_simulated': 0}
     
     matches_simulated = 0
     
@@ -19,9 +27,8 @@ async def simulate_missed_european_weeks(missed_weeks, season):
             """, week, season)
             
             for fixture in fixtures:
-                from utils.match_engine import simulate_npc_match
-                
-                result = await simulate_npc_match(
+                # FIXED: Use match_engine instance
+                result = await me_module.match_engine.simulate_npc_match(
                     fixture['home_team_id'],
                     fixture['away_team_id'],
                     is_european=True
@@ -99,6 +106,18 @@ async def simulate_full_european_season(season, current_week):
     """Simulate ENTIRE European season to completion"""
     print(f"🏆 Simulating FULL European season...")
     
+    # CRITICAL FIX: Import match_engine instance
+    from utils import match_engine as me_module
+    
+    if not me_module.match_engine:
+        print("❌ Match engine not initialized!")
+        return {
+            'group_matches': 0,
+            'knockout_matches': 0,
+            'cl_winner': 'Unknown',
+            'el_winner': 'Unknown'
+        }
+    
     group_matches = 0
     knockout_matches = 0
     
@@ -121,32 +140,32 @@ async def simulate_full_european_season(season, current_week):
             # R16
             await generate_knockout_draw('CL', 'r16', season)
             await generate_knockout_draw('EL', 'r16', season)
-            knockout_matches += await simulate_knockout_stage('CL', 'r16', season, conn)
-            knockout_matches += await simulate_knockout_stage('EL', 'r16', season, conn)
+            knockout_matches += await simulate_knockout_stage('CL', 'r16', season, conn, me_module)
+            knockout_matches += await simulate_knockout_stage('EL', 'r16', season, conn, me_module)
             await close_knockout_round('CL', 'r16', season)
             await close_knockout_round('EL', 'r16', season)
             
             # Quarters
             await generate_knockout_draw('CL', 'quarters', season)
             await generate_knockout_draw('EL', 'quarters', season)
-            knockout_matches += await simulate_knockout_stage('CL', 'quarters', season, conn)
-            knockout_matches += await simulate_knockout_stage('EL', 'quarters', season, conn)
+            knockout_matches += await simulate_knockout_stage('CL', 'quarters', season, conn, me_module)
+            knockout_matches += await simulate_knockout_stage('EL', 'quarters', season, conn, me_module)
             await close_knockout_round('CL', 'quarters', season)
             await close_knockout_round('EL', 'quarters', season)
             
             # Semis
             await generate_knockout_draw('CL', 'semis', season)
             await generate_knockout_draw('EL', 'semis', season)
-            knockout_matches += await simulate_knockout_stage('CL', 'semis', season, conn)
-            knockout_matches += await simulate_knockout_stage('EL', 'semis', season, conn)
+            knockout_matches += await simulate_knockout_stage('CL', 'semis', season, conn, me_module)
+            knockout_matches += await simulate_knockout_stage('EL', 'semis', season, conn, me_module)
             await close_knockout_round('CL', 'semis', season)
             await close_knockout_round('EL', 'semis', season)
             
             # Finals
             await generate_knockout_draw('CL', 'final', season)
             await generate_knockout_draw('EL', 'final', season)
-            knockout_matches += await simulate_knockout_stage('CL', 'final', season, conn)
-            knockout_matches += await simulate_knockout_stage('EL', 'final', season, conn)
+            knockout_matches += await simulate_knockout_stage('CL', 'final', season, conn, me_module)
+            knockout_matches += await simulate_knockout_stage('EL', 'final', season, conn, me_module)
             await close_knockout_round('CL', 'final', season)
             await close_knockout_round('EL', 'final', season)
             
@@ -183,9 +202,8 @@ async def simulate_full_european_season(season, current_week):
     }
 
 
-async def simulate_knockout_stage(competition, stage, season, conn):
+async def simulate_knockout_stage(competition, stage, season, conn, me_module):
     """Simulate all matches in a knockout stage and determine winners"""
-    from utils.match_engine import simulate_npc_match
     import random
     
     matches = 0
@@ -195,12 +213,12 @@ async def simulate_knockout_stage(competition, stage, season, conn):
     fixtures = await conn.fetch("""
         SELECT * FROM european_fixtures
         WHERE competition = $1 AND stage = $2 AND season = $3 AND played = FALSE
-        ORDER BY knockout_id, leg
+        ORDER BY tie_id, leg
     """, competition, stage, season)
     
     # Simulate all matches
     for fixture in fixtures:
-        result = await simulate_npc_match(
+        result = await me_module.match_engine.simulate_npc_match(
             fixture['home_team_id'],
             fixture['away_team_id'],
             is_european=True
@@ -233,18 +251,18 @@ async def simulate_knockout_stage(competition, stage, season, conn):
             await conn.execute("""
                 UPDATE european_knockout
                 SET winner_team_id = $1
-                WHERE knockout_id = $2
-            """, winner_id, fixture_updated['knockout_id'])
+                WHERE tie_id = $2
+            """, winner_id, fixture_updated['tie_id'])
     else:
-        # Two-legged ties - group by knockout_id
-        knockout_ids = set(f['knockout_id'] for f in fixtures)
+        # Two-legged ties
+        tie_ids = set(f['tie_id'] for f in fixtures)
         
-        for ko_id in knockout_ids:
+        for tie_id in tie_ids:
             legs = await conn.fetch("""
                 SELECT * FROM european_fixtures
-                WHERE knockout_id = $1 AND played = TRUE
+                WHERE tie_id = $1 AND played = TRUE
                 ORDER BY leg
-            """, ko_id)
+            """, tie_id)
             
             if len(legs) == 2:
                 winner_id = determine_two_leg_winner(legs[0], legs[1])
@@ -252,8 +270,8 @@ async def simulate_knockout_stage(competition, stage, season, conn):
                 await conn.execute("""
                     UPDATE european_knockout
                     SET winner_team_id = $1
-                    WHERE knockout_id = $2
-                """, winner_id, ko_id)
+                    WHERE tie_id = $2
+                """, winner_id, tie_id)
     
     return matches
 
@@ -267,25 +285,14 @@ def determine_single_leg_winner(home_id, away_id, home_score, away_score):
     elif away_score > home_score:
         return away_id
     else:
-        # Simulate extra time
-        et_home = random.randint(0, 2)
-        et_away = random.randint(0, 2)
-        
-        if et_home > et_away:
-            return home_id
-        elif et_away > et_home:
-            return away_id
-        else:
-            # Penalties - 50/50
-            return random.choice([home_id, away_id])
+        # Penalties - 50/50
+        return random.choice([home_id, away_id])
 
 
 def determine_two_leg_winner(leg1, leg2):
     """Determine winner of two-legged tie with away goals rule"""
     import random
     
-    # leg1: first leg, leg2: second leg (return leg)
-    # Aggregate scores
     team1_id = leg1['home_team_id']
     team2_id = leg1['away_team_id']
     
@@ -306,14 +313,5 @@ def determine_two_leg_winner(leg1, leg2):
         elif team2_away > team1_away:
             return team2_id
         else:
-            # Extra time in second leg (simplified - just add random goals)
-            et_home = random.randint(0, 2)
-            et_away = random.randint(0, 2)
-            
-            if et_home > et_away:
-                return leg2['home_team_id']
-            elif et_away > et_home:
-                return leg2['away_team_id']
-            else:
-                # Penalties
-                return random.choice([team1_id, team2_id])
+            # Penalties
+            return random.choice([team1_id, team2_id])
