@@ -95,6 +95,38 @@ class PlayerCommands(commands.Cog):
         embed.add_field(name="🏆 Career Stats", value=career_text, inline=True)
         
         # ============================================
+        # ✅ NEW: EUROPEAN COMPETITION STATS
+        # ============================================
+        async with db.pool.acquire() as conn:
+            euro_stats = await conn.fetchrow("""
+                SELECT 
+                    SUM(appearances) as euro_apps, 
+                    SUM(goals) as euro_goals, 
+                    SUM(assists) as euro_assists
+                FROM player_european_stats 
+                WHERE user_id = $1
+            """, target_user.id)
+            
+            in_competition = await conn.fetchval("""
+                SELECT competition 
+                FROM european_groups 
+                WHERE team_id = $1 
+                LIMIT 1
+            """, player['team_id'])
+        
+        # Add European stats to embed if they exist
+        if euro_stats and euro_stats['euro_apps'] and euro_stats['euro_apps'] > 0:
+            comp_name = "Champions League" if in_competition == 'CL' else "Europa League" if in_competition == 'EL' else "European"
+            embed.add_field(
+                name=f"🏆 {comp_name} Stats",
+                value=f"⚽ Goals: {euro_stats['euro_goals'] or 0}\n"
+                      f"🅰️ Assists: {euro_stats['euro_assists'] or 0}\n"
+                      f"👕 Apps: {euro_stats['euro_apps'] or 0}",
+                inline=True
+            )
+        # ============================================
+        
+        # ============================================
         # FORM & TRAINING STREAK SECTION
         # ============================================
         from utils.form_morale_system import get_form_description, get_morale_description
@@ -443,6 +475,19 @@ class PlayerCommands(commands.Cog):
                 LIMIT 5
             """, player['user_id'])
             
+            # ============================================
+            # ✅ NEW: European career stats
+            # ============================================
+            euro_career = await conn.fetchrow("""
+                SELECT 
+                    SUM(appearances) as total_apps,
+                    SUM(goals) as total_goals,
+                    SUM(assists) as total_assists
+                FROM player_european_stats
+                WHERE user_id = $1
+            """, player['user_id'])
+            # ============================================
+            
             # Rating progression (estimate)
             seasons_played = player['career_apps'] // 30
             starting_rating = player['overall_rating'] - (seasons_played * 2)  # Rough estimate
@@ -467,6 +512,20 @@ class PlayerCommands(commands.Cog):
                   f"⭐ **{player.get('career_motm', 0)}** MOTM awards",
             inline=False
         )
+        
+        # ============================================
+        # ✅ NEW: European career statistics
+        # ============================================
+        if euro_career and euro_career['total_apps'] and euro_career['total_apps'] > 0:
+            euro_goals_per_game = euro_career['total_goals'] / euro_career['total_apps'] if euro_career['total_apps'] > 0 else 0
+            embed.add_field(
+                name="🏆 European Career",
+                value=f"⚽ **{euro_career['total_goals'] or 0}** goals ({euro_goals_per_game:.2f} per game)\n"
+                      f"🅰️ **{euro_career['total_assists'] or 0}** assists\n"
+                      f"👕 **{euro_career['total_apps']}** appearances",
+                inline=False
+            )
+        # ============================================
         
         # Current season
         embed.add_field(
