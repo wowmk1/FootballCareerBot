@@ -25,11 +25,16 @@ logger = logging.getLogger(__name__)
 
 try:
     from utils.football_data_api import get_team_crest_url, get_competition_logo
+
     print("✅ Loaded crests_database directly")
 except ImportError:
     print("⚠️ crests_database not found, using fallback")
+
+
     def get_team_crest_url(team_id):
         return ""
+
+
     def get_competition_logo(comp):
         return ""
 
@@ -47,18 +52,18 @@ class MatchEngine:
         cutoff = datetime.now() - timedelta(hours=6)
         removed_matches = 0
         removed_messages = 0
-        
+
         # Clean up active_matches
         for match_id in list(self.active_matches.keys()):
             match_time = self._match_timestamps.get(match_id, datetime.now())
             if match_time < cutoff:
                 del self.active_matches[match_id]
                 removed_matches += 1
-                
+
                 # Also clean up timestamp
                 if match_id in self._match_timestamps:
                     del self._match_timestamps[match_id]
-        
+
         # Clean up pinned_messages
         for match_id in list(self.pinned_messages.keys()):
             if match_id not in self.active_matches:
@@ -68,13 +73,13 @@ class MatchEngine:
                     await msg.unpin()
                 except:
                     pass  # Message might be deleted already
-                
+
                 del self.pinned_messages[match_id]
                 removed_messages += 1
-        
+
         if removed_matches > 0 or removed_messages > 0:
             logger.info(f"🧹 Cleaned up {removed_matches} old matches and {removed_messages} pinned messages")
-        
+
         self._last_cleanup = datetime.now()
 
     async def maybe_cleanup(self):
@@ -208,7 +213,7 @@ class MatchEngine:
 
     async def start_match(self, fixture: dict, interaction: discord.Interaction, is_european: bool = False):
         """Start a match - supports both domestic and European competitions"""
-        
+
         # Get teams from appropriate tables
         if is_european:
             home_team = await self.get_team_info(fixture['home_team_id'], is_european=True)
@@ -277,8 +282,10 @@ class MatchEngine:
         except ImportError:
             pass
 
-        embed.add_field(name="🏠 Home", value=f"**{home_team['team_name']}**\n{home_team.get('league', 'N/A')}", inline=True)
-        embed.add_field(name="✈️ Away", value=f"**{away_team['team_name']}**\n{away_team.get('league', 'N/A')}", inline=True)
+        embed.add_field(name="🏠 Home", value=f"**{home_team['team_name']}**\n{home_team.get('league', 'N/A')}",
+                        inline=True)
+        embed.add_field(name="✈️ Away", value=f"**{away_team['team_name']}**\n{away_team.get('league', 'N/A')}",
+                        inline=True)
 
         embed.add_field(
             name="📊 Match Info",
@@ -306,12 +313,12 @@ class MatchEngine:
 
         async with db.pool.acquire() as conn:
             result = await conn.fetchrow('''
-                INSERT INTO active_matches (fixture_id, home_team_id, away_team_id, channel_id,
-                                            message_id, match_state, current_minute,
-                                            last_event_time)
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING match_id
-            ''', fixture['fixture_id'], fixture['home_team_id'], fixture['away_team_id'],
-                match_channel.id, message.id, 'in_progress', 0, datetime.now().isoformat())
+                                         INSERT INTO active_matches (fixture_id, home_team_id, away_team_id, channel_id,
+                                                                     message_id, match_state, current_minute,
+                                                                     last_event_time)
+                                         VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING match_id
+                                         ''', fixture['fixture_id'], fixture['home_team_id'], fixture['away_team_id'],
+                                         match_channel.id, message.id, 'in_progress', 0, datetime.now().isoformat())
             match_id = result['match_id']
 
         # Track when this match started for cleanup
@@ -336,28 +343,32 @@ class MatchEngine:
             if is_european:
                 # Try european_teams first
                 team = await conn.fetchrow("""
-                    SELECT team_id, team_name, 'European' as league
-                    FROM european_teams WHERE team_id = $1
-                """, team_id)
-                
+                                           SELECT team_id, team_name, 'European' as league
+                                           FROM european_teams
+                                           WHERE team_id = $1
+                                           """, team_id)
+
                 # Fallback to regular teams
                 if not team:
                     team = await conn.fetchrow("""
-                        SELECT team_id, team_name, league
-                        FROM teams WHERE team_id = $1
-                    """, team_id)
+                                               SELECT team_id, team_name, league
+                                               FROM teams
+                                               WHERE team_id = $1
+                                               """, team_id)
             else:
                 team = await conn.fetchrow("""
-                    SELECT team_id, team_name, league
-                    FROM teams WHERE team_id = $1
-                """, team_id)
-            
+                                           SELECT team_id, team_name, league
+                                           FROM teams
+                                           WHERE team_id = $1
+                                           """, team_id)
+
             return dict(team) if team else None
 
-    async def run_match(self, match_id: int, fixture: dict, channel: discord.TextChannel, num_events: int, is_european: bool = False):
+    async def run_match(self, match_id: int, fixture: dict, channel: discord.TextChannel, num_events: int,
+                        is_european: bool = False):
         # Check if cleanup needed (runs every hour)
         await self.maybe_cleanup()
-        
+
         home_team = await self.get_team_info(fixture['home_team_id'], is_european)
         away_team = await self.get_team_info(fixture['away_team_id'], is_european)
         home_score = 0
@@ -388,7 +399,8 @@ class MatchEngine:
             await asyncio.sleep(2)
 
             if minute == 45:
-                await self.post_halftime_summary(channel, home_team, away_team, home_score, away_score, participants, match_id)
+                await self.post_halftime_summary(channel, home_team, away_team, home_score, away_score, participants,
+                                                 match_id)
 
             attacking_team = random.choice(['home', 'away'])
             if attacking_team == 'home':
@@ -456,14 +468,20 @@ class MatchEngine:
             # Get defender from appropriate NPC table
             if is_european:
                 result = await conn.fetchrow("""
-                    SELECT * FROM npc_players 
-                    WHERE team_id = $1 AND position IN ('CB', 'FB', 'CDM', 'GK') AND retired = FALSE
-                    ORDER BY RANDOM() LIMIT 1
-                    UNION ALL
-                    SELECT * FROM european_npc_players 
-                    WHERE team_id = $1 AND position IN ('CB', 'FB', 'CDM', 'GK') AND retired = FALSE
-                    ORDER BY RANDOM() LIMIT 1
-                """, defending_team['team_id'])
+                                             SELECT *
+                                             FROM npc_players
+                                             WHERE team_id = $1
+                                               AND position IN ('CB', 'FB', 'CDM', 'GK')
+                                               AND retired = FALSE
+                                             ORDER BY RANDOM() LIMIT 1
+                                             UNION ALL
+                                             SELECT *
+                                             FROM european_npc_players
+                                             WHERE team_id = $1
+                                               AND position IN ('CB', 'FB', 'CDM', 'GK')
+                                               AND retired = FALSE
+                                             ORDER BY RANDOM() LIMIT 1
+                                             """, defending_team['team_id'])
             else:
                 result = await conn.fetchrow(
                     "SELECT * FROM npc_players WHERE team_id = $1 AND position IN ('CB', 'FB', 'CDM', 'GK') ORDER BY RANDOM() LIMIT 1",
@@ -597,38 +615,39 @@ class MatchEngine:
                 value=f"Foul by {defender['player_name']}! Penalty to {attacking_team['team_name']}!",
                 inline=False
             )
-            
+
             penalty_success_chance = min(95, 75 + (adjusted_stats['shooting'] // 10))
             if random.randint(1, 100) <= penalty_success_chance:
                 is_goal = True
                 scorer_name = player['player_name']
                 rating_change = 1.5
-                
+
                 result_embed.add_field(
                     name="⚽ PENALTY SCORED!",
                     value=f"**{player['player_name']}** converts from the spot!",
                     inline=False
                 )
-                
+
                 async with db.pool.acquire() as conn:
                     await conn.execute("""
-                        UPDATE match_participants 
-                        SET goals_scored = goals_scored + 1
-                        WHERE match_id = $1 AND user_id = $2
-                    """, match_id, player['user_id'])
-                    
+                                       UPDATE match_participants
+                                       SET goals_scored = goals_scored + 1
+                                       WHERE match_id = $1
+                                         AND user_id = $2
+                                       """, match_id, player['user_id'])
+
                     await conn.execute(
                         "UPDATE players SET season_goals = season_goals + 1, career_goals = career_goals + 1 WHERE user_id = $1",
                         player['user_id']
                     )
-                    
+
                     goals_row = await conn.fetchrow(
                         "SELECT goals_scored FROM match_participants WHERE match_id = $1 AND user_id = $2",
                         match_id, player['user_id']
                     )
                     if goals_row and goals_row['goals_scored'] == 3:
                         await self.send_hattrick_notification(player, attacking_team)
-                
+
                 from utils.form_morale_system import update_player_morale
                 await update_player_morale(player['user_id'], 'goal')
             else:
@@ -638,7 +657,7 @@ class MatchEngine:
                     inline=False
                 )
                 rating_change = -0.5
-        
+
         # RED CARD CHECK
         elif action == 'tackle' and not success and defender_total > player_total + 15 and random.random() < 0.01:
             result_embed.add_field(
@@ -647,9 +666,9 @@ class MatchEngine:
                 inline=False
             )
             rating_change += 0.5
-            
+
             await self.send_red_card_notification(player, attacking_team, defending_team)
-        
+
         # VAR CHECK
         elif abs(player_total - defender_total) <= 2 and random.random() < 0.02:
             result_embed.add_field(
@@ -657,10 +676,10 @@ class MatchEngine:
                 value="Officials reviewing the play...",
                 inline=False
             )
-            
+
             await suspense_msg.edit(embed=result_embed)
             await asyncio.sleep(3)
-            
+
             var_decision = random.choice(["upheld", "overturned"])
             if var_decision == "overturned":
                 success = not success
@@ -686,23 +705,24 @@ class MatchEngine:
 
                     async with db.pool.acquire() as conn:
                         await conn.execute("""
-                            UPDATE match_participants 
-                            SET goals_scored = goals_scored + 1
-                            WHERE match_id = $1 AND user_id = $2
-                        """, match_id, player['user_id'])
-                        
+                                           UPDATE match_participants
+                                           SET goals_scored = goals_scored + 1
+                                           WHERE match_id = $1
+                                             AND user_id = $2
+                                           """, match_id, player['user_id'])
+
                         await conn.execute(
                             "UPDATE players SET season_goals = season_goals + 1, career_goals = career_goals + 1 WHERE user_id = $1",
                             player['user_id']
                         )
-                        
+
                         goals_row = await conn.fetchrow(
                             "SELECT goals_scored FROM match_participants WHERE match_id = $1 AND user_id = $2",
                             match_id, player['user_id']
                         )
                         if goals_row and goals_row['goals_scored'] == 3:
                             await self.send_hattrick_notification(player, attacking_team)
-                    
+
                     from utils.form_morale_system import update_player_morale
                     await update_player_morale(player['user_id'], 'goal')
                 else:
@@ -716,7 +736,8 @@ class MatchEngine:
             elif action in ['pass', 'through_ball', 'key_pass', 'cross'] and success:
                 assist_chance = {'pass': 0.35, 'through_ball': 0.40, 'key_pass': 0.45, 'cross': 0.40}
                 if random.random() < assist_chance.get(action, 0.35):
-                    teammate_result = await self.handle_teammate_goal(channel, player, attacking_team, match_id, is_european)
+                    teammate_result = await self.handle_teammate_goal(channel, player, attacking_team, match_id,
+                                                                      is_european)
                     if teammate_result:
                         is_goal = True
                         scorer_name = teammate_result['scorer_name']
@@ -725,10 +746,11 @@ class MatchEngine:
 
                         async with db.pool.acquire() as conn:
                             await conn.execute("""
-                                UPDATE match_participants 
-                                SET assists = assists + 1
-                                WHERE match_id = $1 AND user_id = $2
-                            """, match_id, player['user_id'])
+                                               UPDATE match_participants
+                                               SET assists = assists + 1
+                                               WHERE match_id = $1
+                                                 AND user_id = $2
+                                               """, match_id, player['user_id'])
 
                         result_embed.add_field(
                             name="⚽ TEAMMATE SCORES FROM YOUR PASS!",
@@ -740,7 +762,8 @@ class MatchEngine:
                                                value=f"Great {action.replace('_', ' ')}! Chance created.", inline=False)
                         rating_change = 0.3
                 else:
-                    result_embed.add_field(name="✅ SUCCESS!", value=f"Perfect {action.replace('_', ' ')}!", inline=False)
+                    result_embed.add_field(name="✅ SUCCESS!", value=f"Perfect {action.replace('_', ' ')}!",
+                                           inline=False)
                     rating_change = 0.3
 
             elif action == 'dribble' and success:
@@ -752,7 +775,8 @@ class MatchEngine:
                 rating_change = 0.3
 
             else:
-                result_embed.add_field(name="❌ FAILED!", value=f"{action.replace('_', ' ')} unsuccessful!", inline=False)
+                result_embed.add_field(name="❌ FAILED!", value=f"{action.replace('_', ' ')} unsuccessful!",
+                                       inline=False)
                 rating_change = -0.1
 
         await suspense_msg.delete()
@@ -760,11 +784,12 @@ class MatchEngine:
 
         async with db.pool.acquire() as conn:
             await conn.execute("""
-                UPDATE match_participants 
-                SET match_rating = GREATEST(0.0, LEAST(10.0, match_rating + $1)),
-                    actions_taken = actions_taken + 1
-                WHERE match_id = $2 AND user_id = $3
-            """, rating_change, match_id, player['user_id'])
+                               UPDATE match_participants
+                               SET match_rating  = GREATEST(0.0, LEAST(10.0, match_rating + $1)),
+                                   actions_taken = actions_taken + 1
+                               WHERE match_id = $2
+                                 AND user_id = $3
+                               """, rating_change, match_id, player['user_id'])
 
         return {
             'success': success,
@@ -827,12 +852,12 @@ class MatchEngine:
                          AND retired = FALSE
                        ORDER BY RANDOM() LIMIT 1
                        UNION ALL
-                       SELECT player_name
-                       FROM european_npc_players
-                       WHERE team_id = $1
-                         AND position IN ('ST', 'W', 'CAM')
-                         AND retired = FALSE
-                       ORDER BY RANDOM() LIMIT 1""",
+                    SELECT player_name
+                    FROM european_npc_players
+                    WHERE team_id = $1
+                      AND position IN ('ST', 'W', 'CAM')
+                      AND retired = FALSE
+                    ORDER BY RANDOM() LIMIT 1""",
                     attacking_team['team_id']
                 )
             else:
@@ -856,18 +881,23 @@ class MatchEngine:
                 return {'scorer_name': teammate['player_name']}
         return None
 
-    async def handle_npc_moment(self, channel, team_id, minute, attacking_team, defending_team, is_home, is_european=False):
+    async def handle_npc_moment(self, channel, team_id, minute, attacking_team, defending_team, is_home,
+                                is_european=False):
         async with db.pool.acquire() as conn:
             if is_european:
                 result = await conn.fetchrow("""
-                    SELECT * FROM npc_players 
-                    WHERE team_id = $1 AND retired = FALSE 
-                    ORDER BY RANDOM() LIMIT 1
-                    UNION ALL
-                    SELECT * FROM european_npc_players 
-                    WHERE team_id = $1 AND retired = FALSE 
-                    ORDER BY RANDOM() LIMIT 1
-                """, team_id)
+                                             SELECT *
+                                             FROM npc_players
+                                             WHERE team_id = $1
+                                               AND retired = FALSE
+                                             ORDER BY RANDOM() LIMIT 1
+                                             UNION ALL
+                                             SELECT *
+                                             FROM european_npc_players
+                                             WHERE team_id = $1
+                                               AND retired = FALSE
+                                             ORDER BY RANDOM() LIMIT 1
+                                             """, team_id)
             else:
                 result = await conn.fetchrow(
                     "SELECT * FROM npc_players WHERE team_id = $1 AND retired = FALSE ORDER BY RANDOM() LIMIT 1",
@@ -962,33 +992,35 @@ class MatchEngine:
 
         async with db.pool.acquire() as conn:
             updated_ratings = await conn.fetch("""
-                SELECT user_id, match_rating
-                FROM match_participants
-                WHERE match_id = $1 AND user_id IS NOT NULL
-            """, match_id)
+                                               SELECT user_id, match_rating
+                                               FROM match_participants
+                                               WHERE match_id = $1
+                                                 AND user_id IS NOT NULL
+                                               """, match_id)
 
         rating_lookup = {row['user_id']: row['match_rating'] for row in updated_ratings}
 
         for participant in participants:
             if participant['user_id']:
                 actual_rating = rating_lookup.get(participant['user_id'], participant['match_rating'])
-                
+
                 new_form = await update_player_form(
                     participant['user_id'],
                     actual_rating
                 )
-                print(f"  📊 Form updated for user {participant['user_id']}: Rating {actual_rating:.1f} → Form {new_form}")
+                print(
+                    f"  📊 Form updated for user {participant['user_id']}: Rating {actual_rating:.1f} → Form {new_form}")
 
         # Update appearance counts for all participating players
         for participant in participants:
             if participant['user_id']:
                 async with db.pool.acquire() as conn:
                     await conn.execute("""
-                        UPDATE players 
-                        SET season_apps = season_apps + 1,
-                            career_apps = career_apps + 1
-                        WHERE user_id = $1
-                    """, participant['user_id'])
+                                       UPDATE players
+                                       SET season_apps = season_apps + 1,
+                                           career_apps = career_apps + 1
+                                       WHERE user_id = $1
+                                       """, participant['user_id'])
                 print(f"  👕 Appearance recorded for user {participant['user_id']}")
 
         for participant in participants:
@@ -1023,8 +1055,8 @@ class MatchEngine:
             try:
                 from data.rivalries import get_rivalry_bonuses
                 winning_team_id = fixture['home_team_id'] if home_score > away_score else \
-                                  fixture['away_team_id'] if away_score > home_score else None
-                
+                    fixture['away_team_id'] if away_score > home_score else None
+
                 if winning_team_id:
                     bonuses = get_rivalry_bonuses(rivalry_info['intensity'])
                     for participant in participants:
@@ -1050,21 +1082,22 @@ class MatchEngine:
             if user_participants:
                 async with db.pool.acquire() as conn:
                     updated_participants = await conn.fetch("""
-                        SELECT user_id, match_rating, goals_scored, assists, actions_taken
-                        FROM match_participants
-                        WHERE match_id = $1 AND user_id IS NOT NULL
-                    """, match_id)
-                
+                                                            SELECT user_id, match_rating, goals_scored, assists, actions_taken
+                                                            FROM match_participants
+                                                            WHERE match_id = $1
+                                                              AND user_id IS NOT NULL
+                                                            """, match_id)
+
                 if updated_participants:
                     motm = max(updated_participants, key=lambda p: p['match_rating'])
-                    
+
                     async with db.pool.acquire() as conn:
                         await conn.execute("""
-                            UPDATE players
-                            SET season_motm = season_motm + 1,
-                                career_motm = career_motm + 1
-                            WHERE user_id = $1
-                        """, motm['user_id'])
+                                           UPDATE players
+                                           SET season_motm = season_motm + 1,
+                                               career_motm = career_motm + 1
+                                           WHERE user_id = $1
+                                           """, motm['user_id'])
 
                     motm_player = await db.get_player(motm['user_id'])
 
@@ -1154,27 +1187,39 @@ class MatchEngine:
             # Get teams - check BOTH tables if is_european
             if is_european:
                 home_team = await conn.fetchrow("""
-                    SELECT team_id, team_name FROM european_teams WHERE team_id = $1
-                """, home_team_id)
+                                                SELECT team_id, team_name
+                                                FROM european_teams
+                                                WHERE team_id = $1
+                                                """, home_team_id)
                 away_team = await conn.fetchrow("""
-                    SELECT team_id, team_name FROM european_teams WHERE team_id = $1
-                """, away_team_id)
-                
+                                                SELECT team_id, team_name
+                                                FROM european_teams
+                                                WHERE team_id = $1
+                                                """, away_team_id)
+
                 if not home_team:
                     home_team = await conn.fetchrow("""
-                        SELECT team_id, team_name FROM teams WHERE team_id = $1
-                    """, home_team_id)
+                                                    SELECT team_id, team_name
+                                                    FROM teams
+                                                    WHERE team_id = $1
+                                                    """, home_team_id)
                 if not away_team:
                     away_team = await conn.fetchrow("""
-                        SELECT team_id, team_name FROM teams WHERE team_id = $1
-                    """, away_team_id)
+                                                    SELECT team_id, team_name
+                                                    FROM teams
+                                                    WHERE team_id = $1
+                                                    """, away_team_id)
             else:
                 home_team = await conn.fetchrow("""
-                    SELECT team_id, team_name FROM teams WHERE team_id = $1
-                """, home_team_id)
+                                                SELECT team_id, team_name
+                                                FROM teams
+                                                WHERE team_id = $1
+                                                """, home_team_id)
                 away_team = await conn.fetchrow("""
-                    SELECT team_id, team_name FROM teams WHERE team_id = $1
-                """, away_team_id)
+                                                SELECT team_id, team_name
+                                                FROM teams
+                                                WHERE team_id = $1
+                                                """, away_team_id)
 
             if not home_team or not away_team:
                 raise ValueError(f"Could not find teams: {home_team_id}, {away_team_id}")
@@ -1182,53 +1227,78 @@ class MatchEngine:
             # Get squad ratings - check BOTH NPC tables if is_european
             if is_european:
                 home_npcs = await conn.fetch("""
-                    SELECT overall_rating FROM npc_players 
-                    WHERE team_id = $1 AND retired = FALSE
-                    UNION ALL
-                    SELECT overall_rating FROM european_npc_players 
-                    WHERE team_id = $1 AND retired = FALSE
-                """, home_team_id)
-                
+                                             SELECT overall_rating
+                                             FROM npc_players
+                                             WHERE team_id = $1
+                                               AND retired = FALSE
+                                             UNION ALL
+                                             SELECT overall_rating
+                                             FROM european_npc_players
+                                             WHERE team_id = $1
+                                               AND retired = FALSE
+                                             """, home_team_id)
+
                 away_npcs = await conn.fetch("""
-                    SELECT overall_rating FROM npc_players 
-                    WHERE team_id = $1 AND retired = FALSE
-                    UNION ALL
-                    SELECT overall_rating FROM european_npc_players 
-                    WHERE team_id = $1 AND retired = FALSE
-                """, away_team_id)
+                                             SELECT overall_rating
+                                             FROM npc_players
+                                             WHERE team_id = $1
+                                               AND retired = FALSE
+                                             UNION ALL
+                                             SELECT overall_rating
+                                             FROM european_npc_players
+                                             WHERE team_id = $1
+                                               AND retired = FALSE
+                                             """, away_team_id)
             else:
                 home_npcs = await conn.fetch("""
-                    SELECT overall_rating FROM npc_players 
-                    WHERE team_id = $1 AND retired = FALSE
-                """, home_team_id)
-                
+                                             SELECT overall_rating
+                                             FROM npc_players
+                                             WHERE team_id = $1
+                                               AND retired = FALSE
+                                             """, home_team_id)
+
                 away_npcs = await conn.fetch("""
-                    SELECT overall_rating FROM npc_players 
-                    WHERE team_id = $1 AND retired = FALSE
-                """, away_team_id)
+                                             SELECT overall_rating
+                                             FROM npc_players
+                                             WHERE team_id = $1
+                                               AND retired = FALSE
+                                             """, away_team_id)
 
             # Calculate team strengths
-            home_rating = sum(p['overall_rating'] for p in home_npcs) / len(home_npcs) if home_npcs else 70
-            away_rating = sum(p['overall_rating'] for p in away_npcs) / len(away_npcs) if away_npcs else 70
+            home_rating = sum(p['overall_rating'] for p in home_npcs) / len(home_npcs) if home_npcs else 75
+            away_rating = sum(p['overall_rating'] for p in away_npcs) / len(away_npcs) if away_npcs else 75
 
-            # Simulate match
-            home_advantage = 3
-            home_strength = home_rating + home_advantage
-            away_strength = away_rating
+            # FIXED: Realistic match simulation
+            home_advantage = 5  # Home advantage bonus
 
+            # Calculate attack strength (0-100 scale)
+            home_attack = (home_rating + home_advantage) / 100
+            away_attack = away_rating / 100
+
+            # Simulate match with realistic scoring
             home_goals = 0
             away_goals = 0
 
-            for _ in range(random.randint(8, 15)):
-                if random.random() < (home_strength / 100):
+            # Simulate scoring chances (8-12 key moments)
+            num_chances = random.randint(8, 12)
+
+            for _ in range(num_chances):
+                # Home team chance
+                if random.random() < (home_attack * 0.25):  # ~20-25% conversion rate
                     home_goals += 1
 
-            for _ in range(random.randint(8, 15)):
-                if random.random() < (away_strength / 100):
+                # Away team chance
+                if random.random() < (away_attack * 0.22):  # ~17-22% conversion rate (away disadvantage)
                     away_goals += 1
 
-            home_goals = min(home_goals, 6)
-            away_goals = min(away_goals, 6)
+            # Ensure realistic score ranges (0-5 goals typical)
+            home_goals = min(home_goals, 5)
+            away_goals = min(away_goals, 5)
+
+            # Small chance of high-scoring match
+            if random.random() < 0.05:  # 5% chance
+                home_goals = min(home_goals + random.randint(0, 2), 7)
+                away_goals = min(away_goals + random.randint(0, 2), 7)
 
             return {
                 'home_score': home_goals,
@@ -1279,7 +1349,7 @@ class ActionButton(discord.ui.Button):
                 ephemeral=True
             )
             return
-        
+
         await interaction.response.defer()
         self.view.chosen_action = self.action
         for item in self.view.children:
