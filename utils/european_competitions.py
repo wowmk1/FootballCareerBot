@@ -1,6 +1,7 @@
 """
-European Competition Management System
+European Competition Management System - FIXED VERSION
 Groups, Knockout Stages, Fixtures, Standings
+FIX: Changed league_table references to teams table
 """
 
 import random
@@ -13,21 +14,28 @@ async def draw_groups(season='2027/28'):
     print("🏆 Drawing European groups...")
     
     async with db.pool.acquire() as conn:
-        # Get qualified English teams
+        # FIX: Changed from league_table to teams table
+        # Get qualified English teams based on current standings
         standings = await conn.fetch("""
             SELECT team_id, position
-            FROM league_table
-            WHERE season = $1 AND league = 'Premier League'
-            ORDER BY position
-        """, season)
+            FROM teams
+            WHERE league = 'Premier League'
+            ORDER BY points DESC, (goals_for - goals_against) DESC, goals_for DESC
+        """)
         
         cl_teams = []
         el_teams = []
         
-        for row in standings:
-            if row['position'] in config.CL_QUALIFICATION_POSITIONS['Premier League']:
+        for i, row in enumerate(standings, 1):
+            # Update position field for accuracy
+            await conn.execute(
+                "UPDATE teams SET position = $1 WHERE team_id = $2",
+                i, row['team_id']
+            )
+            
+            if i in config.CL_QUALIFICATION_POSITIONS['Premier League']:
                 cl_teams.append(row['team_id'])
-            elif row['position'] in config.EL_QUALIFICATION_POSITIONS['Premier League']:
+            elif i in config.EL_QUALIFICATION_POSITIONS['Premier League']:
                 el_teams.append(row['team_id'])
         
         # Get all European teams
