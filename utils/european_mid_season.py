@@ -1,4 +1,3 @@
-```python
 """
 Mid-Season European Start - Simulates Missed Weeks
 """
@@ -94,6 +93,3 @@ async def update_standings(conn, comp, group, home, away, home_score, away_score
                     points = points + 1
                 WHERE competition = $3 AND group_name = $4 AND team_id = $5
             """, home_score, away_score, comp, group, team)
-```
-
----
