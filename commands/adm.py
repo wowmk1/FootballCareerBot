@@ -1,6 +1,7 @@
 """
 Admin Command - Single command with all admin actions in dropdown
 FIXED VERSION - Now passes bot instance to season manager functions
+ENHANCED VERSION - Added European competition admin controls
 """
 import discord
 from discord import app_commands
@@ -38,6 +39,8 @@ class AdminCommands(commands.Cog):
         app_commands.Choice(name="🔍 Debug Commands", value="debug_commands"),
         app_commands.Choice(name="🔄 Rebuild All Commands", value="rebuild_commands"),
         app_commands.Choice(name="🔧 Fix MOTM Columns", value="fix_motm"),
+        app_commands.Choice(name="🏆 Start European Now", value="start_european_now"),
+        app_commands.Choice(name="🏆 Simulate European to End", value="simulate_european_to_end"),
         app_commands.Choice(name="🔄 Restart Bot", value="restart"),
     ])
     @app_commands.checks.has_permissions(administrator=True)
@@ -83,6 +86,10 @@ class AdminCommands(commands.Cog):
             await self._rebuild_commands(interaction)
         elif action == "fix_motm":
             await self._fix_motm(interaction)
+        elif action == "start_european_now":
+            await self._start_european_now(interaction)
+        elif action == "simulate_european_to_end":
+            await self._simulate_european_to_end(interaction)
         elif action == "restart":
             await self._restart(interaction)
     
@@ -478,6 +485,97 @@ class AdminCommands(commands.Cog):
             await interaction.followup.send("✅ MOTM columns fixed!", ephemeral=True)
         except Exception as e:
             await interaction.followup.send(f"❌ Error: {e}", ephemeral=True)
+    
+    async def _start_european_now(self, interaction: discord.Interaction):
+        """START EUROPEAN COMPETITIONS MID-SEASON"""
+        await interaction.response.defer()
+        
+        try:
+            state = await db.get_game_state()
+            current_week = state['current_week']
+            season = state['current_season']
+            
+            await interaction.followup.send(
+                f"🏆 Starting European competitions!\n"
+                f"Week: {current_week} | Season: {season}\n\n"
+                f"Processing...",
+                ephemeral=True
+            )
+            
+            from utils.european_competitions import draw_groups
+            from utils.european_mid_season import simulate_missed_european_weeks
+            
+            # Draw groups
+            await draw_groups(season=season)
+            
+            # Simulate missed weeks
+            missed_weeks = [w for w in config.GROUP_STAGE_WEEKS if w < current_week]
+            
+            if missed_weeks:
+                results = await simulate_missed_european_weeks(missed_weeks, season)
+                
+                next_week = min([w for w in config.EUROPEAN_MATCH_WEEKS if w >= current_week], default='Season End')
+                
+                await interaction.followup.send(
+                    f"✅ European competitions started!\n\n"
+                    f"**Simulated:**\n"
+                    f"- {len(missed_weeks)} weeks\n"
+                    f"- {results['matches_simulated']} matches\n\n"
+                    f"**Next European Week:** {next_week}\n\n"
+                    f"Use `/european_standings` to see current standings!",
+                    ephemeral=True
+                )
+            else:
+                await interaction.followup.send(
+                    "✅ Groups drawn! Waiting for Week 3.",
+                    ephemeral=True
+                )
+                
+        except Exception as e:
+            await interaction.followup.send(f"❌ Error: {e}", ephemeral=True)
+            import traceback
+            traceback.print_exc()
+    
+    async def _simulate_european_to_end(self, interaction: discord.Interaction):
+        """SIMULATE ENTIRE EUROPEAN SEASON TO COMPLETION"""
+        await interaction.response.defer()
+        
+        try:
+            state = await db.get_game_state()
+            current_week = state['current_week']
+            season = state['current_season']
+            
+            await interaction.followup.send(
+                f"🏆 Simulating ENTIRE European season to completion!\n"
+                f"Current Week: {current_week}\n\n"
+                f"This will simulate:\n"
+                f"- All remaining group matches\n"
+                f"- All knockout rounds\n"
+                f"- Determine champions\n\n"
+                f"Processing... (may take 30-60 seconds)",
+                ephemeral=True
+            )
+            
+            from utils.european_mid_season import simulate_full_european_season
+            
+            results = await simulate_full_european_season(season, current_week)
+            
+            await interaction.followup.send(
+                f"✅ European season simulated to completion!\n\n"
+                f"**Results:**\n"
+                f"- Group matches: {results['group_matches']}\n"
+                f"- Knockout matches: {results['knockout_matches']}\n\n"
+                f"**Champions:**\n"
+                f"🏆 CL Winner: {results['cl_winner']}\n"
+                f"🏆 EL Winner: {results['el_winner']}\n\n"
+                f"Use `/knockout_bracket` to see full bracket!",
+                ephemeral=True
+            )
+                
+        except Exception as e:
+            await interaction.followup.send(f"❌ Error: {e}", ephemeral=True)
+            import traceback
+            traceback.print_exc()
     
     async def _restart(self, interaction: discord.Interaction):
         """Restart the bot"""
