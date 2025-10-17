@@ -14,51 +14,127 @@ class European(commands.Cog):
         self.bot = bot
     
     @app_commands.command(name="european_fixtures", description="View European fixtures")
-    async def european_fixtures(self, interaction: discord.Interaction):
+    @app_commands.describe(
+        competition="Competition to view (CL or EL)",
+        team_name="Specific team to filter by (optional)"
+    )
+    @app_commands.choices(competition=[
+        app_commands.Choice(name="Champions League", value="CL"),
+        app_commands.Choice(name="Europa League", value="EL")
+    ])
+    async def european_fixtures(
+        self, 
+        interaction: discord.Interaction,
+        competition: app_commands.Choice[str] = None,
+        team_name: str = None
+    ):
         await interaction.response.defer()
         
-        player = await db.get_player(interaction.user.id)
-        if not player or not player['team_id']:
-            await interaction.followup.send("You don't have a team!", ephemeral=True)
-            return
+        competition_value = None
+        filter_team_id = None
+        display_team_name = None
         
-        async with db.pool.acquire() as conn:
-            competition = await conn.fetchval("""
-                SELECT competition FROM european_groups
-                WHERE team_id = $1
-                LIMIT 1
-            """, player['team_id'])
-            
-            if not competition:
-                await interaction.followup.send("Your team isn't in Europe!", ephemeral=True)
+        # If no competition specified, try to use user's team
+        if not competition:
+            player = await db.get_player(interaction.user.id)
+            if player and player['team_id']:
+                async with db.pool.acquire() as conn:
+                    comp = await conn.fetchval("""
+                        SELECT competition FROM european_groups
+                        WHERE team_id = $1 LIMIT 1
+                    """, player['team_id'])
+                    
+                    if comp:
+                        competition_value = comp
+                        filter_team_id = player['team_id']
+                        display_team_name = player['team_name']
+                    else:
+                        await interaction.followup.send(
+                            "Your team isn't in Europe! Specify a competition:\n"
+                            "`/european_fixtures competition:CL` or `competition:EL`",
+                            ephemeral=True
+                        )
+                        return
+            else:
+                await interaction.followup.send(
+                    "Specify a competition:\n"
+                    "`/european_fixtures competition:CL` or `competition:EL`",
+                    ephemeral=True
+                )
                 return
-            
-            fixtures = await conn.fetch("""
-                SELECT f.*,
-                       COALESCE(ht.team_name, eht.team_name) as home_name,
-                       COALESCE(at.team_name, eat.team_name) as away_name
-                FROM european_fixtures f
-                LEFT JOIN teams ht ON f.home_team_id = ht.team_id
-                LEFT JOIN teams at ON f.away_team_id = at.team_id
-                LEFT JOIN european_teams eht ON f.home_team_id = eht.team_id
-                LEFT JOIN european_teams eat ON f.away_team_id = eat.team_id
-                WHERE f.competition = $1
-                  AND (f.home_team_id = $2 OR f.away_team_id = $2)
-                ORDER BY f.week_number
-            """, competition, player['team_id'])
+        else:
+            competition_value = competition.value
+        
+        # If team_name provided, find that team
+        if team_name:
+            async with db.pool.acquire() as conn:
+                team = await conn.fetchrow("""
+                    SELECT team_id, team_name FROM teams 
+                    WHERE LOWER(team_name) LIKE LOWER($1)
+                    UNION
+                    SELECT team_id, team_name FROM european_teams
+                    WHERE LOWER(team_name) LIKE LOWER($1)
+                    LIMIT 1
+                """, f"%{team_name}%")
+                
+                if team:
+                    filter_team_id = team['team_id']
+                    display_team_name = team['team_name']
+                else:
+                    await interaction.followup.send(f"Team '{team_name}' not found!", ephemeral=True)
+                    return
+        
+        # Build query
+        async with db.pool.acquire() as conn:
+            if filter_team_id:
+                fixtures = await conn.fetch("""
+                    SELECT f.*,
+                           COALESCE(ht.team_name, eht.team_name) as home_name,
+                           COALESCE(at.team_name, eat.team_name) as away_name
+                    FROM european_fixtures f
+                    LEFT JOIN teams ht ON f.home_team_id = ht.team_id
+                    LEFT JOIN teams at ON f.away_team_id = at.team_id
+                    LEFT JOIN european_teams eht ON f.home_team_id = eht.team_id
+                    LEFT JOIN european_teams eat ON f.away_team_id = eat.team_id
+                    WHERE f.competition = $1
+                      AND (f.home_team_id = $2 OR f.away_team_id = $2)
+                    ORDER BY f.week_number
+                """, competition_value, filter_team_id)
+            else:
+                fixtures = await conn.fetch("""
+                    SELECT f.*,
+                           COALESCE(ht.team_name, eht.team_name) as home_name,
+                           COALESCE(at.team_name, eat.team_name) as away_name
+                    FROM european_fixtures f
+                    LEFT JOIN teams ht ON f.home_team_id = ht.team_id
+                    LEFT JOIN teams at ON f.away_team_id = at.team_id
+                    LEFT JOIN european_teams eht ON f.home_team_id = eht.team_id
+                    LEFT JOIN european_teams eat ON f.away_team_id = eat.team_id
+                    WHERE f.competition = $1
+                    ORDER BY f.week_number
+                    LIMIT 20
+                """, competition_value)
         
         if not fixtures:
             await interaction.followup.send("No fixtures found!", ephemeral=True)
             return
         
-        comp_name = "Champions League" if competition == 'CL' else "Europa League"
+        comp_name = "Champions League" if competition_value == 'CL' else "Europa League"
+        
+        if display_team_name:
+            title = f"🏆 {comp_name} Fixtures"
+            description = f"**{display_team_name}**"
+        else:
+            title = f"🏆 {comp_name} - All Fixtures"
+            description = f"Showing first {len(fixtures)} fixtures"
+        
         embed = discord.Embed(
-            title=f"🏆 {comp_name} Fixtures",
-            description=f"**{player['team_name']}**",
+            title=title,
+            description=description,
             color=discord.Color.blue()
         )
         
-        for fixture in fixtures[:10]:
+        for fixture in fixtures[:15]:  # Limit to 15 to avoid embed limits
             if fixture['played']:
                 result = f"{fixture['home_score']}-{fixture['away_score']}"
                 status = "✅"
@@ -79,32 +155,84 @@ class European(commands.Cog):
         
         await interaction.followup.send(embed=embed)
     
-    @app_commands.command(name="european_standings", description="View European standings")
-    async def european_standings(self, interaction: discord.Interaction):
+    @app_commands.command(name="european_standings", description="View European group standings")
+    @app_commands.describe(
+        competition="Competition to view (CL or EL)",
+        group="Group to view (A-H)"
+    )
+    @app_commands.choices(
+        competition=[
+            app_commands.Choice(name="Champions League", value="CL"),
+            app_commands.Choice(name="Europa League", value="EL")
+        ],
+        group=[
+            app_commands.Choice(name="Group A", value="A"),
+            app_commands.Choice(name="Group B", value="B"),
+            app_commands.Choice(name="Group C", value="C"),
+            app_commands.Choice(name="Group D", value="D"),
+            app_commands.Choice(name="Group E", value="E"),
+            app_commands.Choice(name="Group F", value="F"),
+            app_commands.Choice(name="Group G", value="G"),
+            app_commands.Choice(name="Group H", value="H")
+        ]
+    )
+    async def european_standings(
+        self,
+        interaction: discord.Interaction,
+        competition: app_commands.Choice[str] = None,
+        group: app_commands.Choice[str] = None
+    ):
         await interaction.response.defer()
         
-        player = await db.get_player(interaction.user.id)
-        if not player:
-            await interaction.followup.send("You don't have a player!", ephemeral=True)
+        competition_value = None
+        group_value = None
+        
+        # If no params, try to use user's team
+        if not competition or not group:
+            player = await db.get_player(interaction.user.id)
+            if player and player['team_id']:
+                async with db.pool.acquire() as conn:
+                    group_data = await conn.fetchrow("""
+                        SELECT competition, group_name
+                        FROM european_groups
+                        WHERE team_id = $1
+                    """, player['team_id'])
+                    
+                    if group_data:
+                        competition_value = group_data['competition']
+                        group_value = group_data['group_name']
+                    else:
+                        await interaction.followup.send(
+                            "Your team isn't in Europe! Specify competition and group:\n"
+                            "`/european_standings competition:CL group:A`",
+                            ephemeral=True
+                        )
+                        return
+            else:
+                await interaction.followup.send(
+                    "Specify competition and group:\n"
+                    "`/european_standings competition:CL group:A`",
+                    ephemeral=True
+                )
+                return
+        else:
+            competition_value = competition.value
+            group_value = group.value
+        
+        # Get standings
+        standings = await get_group_standings(competition_value, group_value)
+        
+        if not standings:
+            await interaction.followup.send(
+                f"No standings found for {competition_value} Group {group_value}!",
+                ephemeral=True
+            )
             return
         
-        async with db.pool.acquire() as conn:
-            group_data = await conn.fetchrow("""
-                SELECT competition, group_name
-                FROM european_groups
-                WHERE team_id = $1
-            """, player['team_id'])
-            
-            if not group_data:
-                await interaction.followup.send("Your team isn't in Europe!", ephemeral=True)
-                return
-        
-        standings = await get_group_standings(group_data['competition'], group_data['group_name'])
-        
-        comp_name = "Champions League" if group_data['competition'] == 'CL' else "Europa League"
+        comp_name = "Champions League" if competition_value == 'CL' else "Europa League"
         
         embed = discord.Embed(
-            title=f"🏆 {comp_name} - Group {group_data['group_name']}",
+            title=f"🏆 {comp_name} - Group {group_value}",
             color=discord.Color.gold()
         )
         
@@ -127,25 +255,53 @@ class European(commands.Cog):
         await interaction.followup.send(embed=embed)
     
     @app_commands.command(name="knockout_bracket", description="View knockout bracket")
-    async def knockout_bracket(self, interaction: discord.Interaction):
+    @app_commands.describe(
+        competition="Competition to view (CL or EL)"
+    )
+    @app_commands.choices(competition=[
+        app_commands.Choice(name="Champions League", value="CL"),
+        app_commands.Choice(name="Europa League", value="EL")
+    ])
+    async def knockout_bracket(
+        self,
+        interaction: discord.Interaction,
+        competition: app_commands.Choice[str] = None
+    ):
         await interaction.response.defer()
         
-        player = await db.get_player(interaction.user.id)
-        if not player:
-            await interaction.followup.send("You don't have a player!", ephemeral=True)
-            return
+        competition_value = None
+        
+        # If no competition specified, try to use user's team
+        if not competition:
+            player = await db.get_player(interaction.user.id)
+            if player and player['team_id']:
+                async with db.pool.acquire() as conn:
+                    comp = await conn.fetchval("""
+                        SELECT competition FROM european_groups
+                        WHERE team_id = $1
+                        LIMIT 1
+                    """, player['team_id'])
+                    
+                    if comp:
+                        competition_value = comp
+                    else:
+                        await interaction.followup.send(
+                            "Your team isn't in Europe! Specify a competition:\n"
+                            "`/knockout_bracket competition:CL` or `competition:EL`",
+                            ephemeral=True
+                        )
+                        return
+            else:
+                await interaction.followup.send(
+                    "Specify a competition:\n"
+                    "`/knockout_bracket competition:CL` or `competition:EL`",
+                    ephemeral=True
+                )
+                return
+        else:
+            competition_value = competition.value
         
         async with db.pool.acquire() as conn:
-            competition = await conn.fetchval("""
-                SELECT competition FROM european_groups
-                WHERE team_id = $1
-                LIMIT 1
-            """, player['team_id'])
-            
-            if not competition:
-                await interaction.followup.send("Your team isn't in Europe!", ephemeral=True)
-                return
-            
             ties = await conn.fetch("""
                 SELECT k.*,
                        COALESCE(ht.team_name, eht.team_name) as home_name,
@@ -166,13 +322,13 @@ class European(commands.Cog):
                         WHEN 'semis' THEN 3
                         WHEN 'final' THEN 4
                     END
-            """, competition)
+            """, competition_value)
         
         if not ties:
             await interaction.followup.send("Knockout stage hasn't started!", ephemeral=True)
             return
         
-        comp_name = "Champions League" if competition == 'CL' else "Europa League"
+        comp_name = "Champions League" if competition_value == 'CL' else "Europa League"
         embed = discord.Embed(
             title=f"🏆 {comp_name} Knockout Bracket",
             color=discord.Color.blue()
