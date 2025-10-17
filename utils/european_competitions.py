@@ -1,4 +1,3 @@
-```python
 """
 European Competition Management System
 Groups, Knockout Stages, Fixtures, Standings
@@ -373,6 +372,3 @@ async def get_group_standings(competition, group_name):
         """, competition, group_name)
         
         return [dict(row) for row in standings]
-```
-
----
