@@ -166,6 +166,87 @@ async def post_match_result_to_channel(bot, guild, fixture, home_score, away_sco
         traceback.print_exc()
 
 
+async def post_european_results(bot, competition, week_number):
+    """
+    Post European match results to news channel
+    
+    Args:
+        bot: Discord bot instance
+        competition: 'CL' for Champions League or 'EL' for Europa League
+        week_number: Week number of the competition
+    """
+    comp_name = "Champions League" if competition == 'CL' else "Europa League"
+    
+    try:
+        async with db.pool.acquire() as conn:
+            results = await conn.fetch("""
+                SELECT f.*,
+                       COALESCE(t1.team_name, et1.team_name) as home_name,
+                       COALESCE(t2.team_name, et2.team_name) as away_name
+                FROM european_fixtures f
+                LEFT JOIN teams t1 ON f.home_team_id = t1.team_id
+                LEFT JOIN teams t2 ON f.away_team_id = t2.team_id
+                LEFT JOIN european_teams et1 ON f.home_team_id = et1.team_id
+                LEFT JOIN european_teams et2 ON f.away_team_id = et2.team_id
+                WHERE f.competition = $1 
+                AND f.week_number = $2 
+                AND f.played = TRUE
+                ORDER BY f.home_score + f.away_score DESC
+                LIMIT 10
+            """, competition, week_number)
+        
+        if not results:
+            print(f"  📰 No {comp_name} results for Week {week_number}")
+            return
+        
+        # Post to all guilds
+        for guild in bot.guilds:
+            try:
+                # Try european-news channel first, then news-feed, then general
+                news_channel = discord.utils.get(guild.text_channels, name='european-news')
+                if not news_channel:
+                    news_channel = discord.utils.get(guild.text_channels, name='news-feed')
+                if not news_channel:
+                    news_channel = discord.utils.get(guild.text_channels, name='general')
+                
+                if not news_channel:
+                    continue
+                
+                # Create embed with appropriate color
+                embed = discord.Embed(
+                    title=f"🏆 {comp_name} Results - Week {week_number}",
+                    color=discord.Color.blue() if competition == 'CL' else discord.Color.gold()
+                )
+                
+                # Build results text
+                results_text = ""
+                for result in results[:8]:
+                    leg_text = f" (Leg {result['leg']})" if result.get('leg', 1) > 1 else ""
+                    results_text += f"**{result['home_name']}** {result['home_score']}-{result['away_score']} **{result['away_name']}**{leg_text}\n"
+                
+                embed.description = results_text
+                
+                # Add competition logo if available
+                from utils.football_data_api import get_competition_logo
+                comp_logo = get_competition_logo(comp_name)
+                if comp_logo:
+                    embed.set_thumbnail(url=comp_logo)
+                
+                # Footer with context
+                embed.set_footer(text=f"{comp_name} • Matchday {week_number}")
+                
+                await news_channel.send(embed=embed)
+                print(f"  ✅ Posted {comp_name} results to {guild.name}")
+                
+            except Exception as e:
+                print(f"  ❌ Could not post {comp_name} results to {guild.name}: {e}")
+    
+    except Exception as e:
+        print(f"❌ Error in post_european_results: {e}")
+        import traceback
+        traceback.print_exc()
+
+
 async def post_weekly_news_digest(bot, week_number: int):
     """
     🆕 ENHANCED: Auto-post weekly news with standings, scorers, and fixtures
