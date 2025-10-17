@@ -9,6 +9,7 @@ CRITICAL FIXES:
 7. ✅ Form update now uses CORRECT match ratings from database
 8. ✅ Action buttons now verify user identity - prevents cross-player interference
 9. ✅ MEMORY LEAK FIXED - Auto-cleanup of old matches every hour
+10. ✅ European competition support added
 """
 import discord
 from discord.ext import commands
@@ -205,9 +206,16 @@ class MatchEngine:
         except Exception as e:
             print(f"❌ Error updating pinned score: {e}")
 
-    async def start_match(self, fixture: dict, interaction: discord.Interaction):
-        home_team = await db.get_team(fixture['home_team_id'])
-        away_team = await db.get_team(fixture['away_team_id'])
+    async def start_match(self, fixture: dict, interaction: discord.Interaction, is_european: bool = False):
+        """Start a match - supports both domestic and European competitions"""
+        
+        # Get teams from appropriate tables
+        if is_european:
+            home_team = await self.get_team_info(fixture['home_team_id'], is_european=True)
+            away_team = await self.get_team_info(fixture['away_team_id'], is_european=True)
+        else:
+            home_team = await db.get_team(fixture['home_team_id'])
+            away_team = await db.get_team(fixture['away_team_id'])
 
         guild = interaction.guild
         category = discord.utils.get(guild.categories, name="⚽ ACTIVE MATCHES")
@@ -238,9 +246,16 @@ class MatchEngine:
 
         num_events = random.randint(config.MATCH_EVENTS_PER_GAME_MIN, config.MATCH_EVENTS_PER_GAME_MAX)
 
+        # Competition display
+        comp_display = fixture.get('competition', 'League')
+        if is_european:
+            comp_display = "🏆 Champions League" if fixture.get('competition') == 'CL' else "🏆 Europa League"
+            if fixture.get('leg', 1) > 1:
+                comp_display += f" (Leg {fixture['leg']})"
+
         embed = discord.Embed(
             title="🟢 MATCH STARTING!",
-            description=f"## {home_team['team_name']} 🆚 {away_team['team_name']}\n\n**{fixture['competition']}** • Week {fixture['week_number']}",
+            description=f"## {home_team['team_name']} 🆚 {away_team['team_name']}\n\n**{comp_display}** • Week {fixture['week_number']}",
             color=discord.Color.green()
         )
 
@@ -262,8 +277,8 @@ class MatchEngine:
         except ImportError:
             pass
 
-        embed.add_field(name="🏠 Home", value=f"**{home_team['team_name']}**\n{home_team['league']}", inline=True)
-        embed.add_field(name="✈️ Away", value=f"**{away_team['team_name']}**\n{away_team['league']}", inline=True)
+        embed.add_field(name="🏠 Home", value=f"**{home_team['team_name']}**\n{home_team.get('league', 'N/A')}", inline=True)
+        embed.add_field(name="✈️ Away", value=f"**{away_team['team_name']}**\n{away_team.get('league', 'N/A')}", inline=True)
 
         embed.add_field(
             name="📊 Match Info",
@@ -302,7 +317,7 @@ class MatchEngine:
         # Track when this match started for cleanup
         self._match_timestamps[match_id] = datetime.now()
 
-        self.active_matches[match_id] = {'rivalry': rivalry}
+        self.active_matches[match_id] = {'rivalry': rivalry, 'is_european': is_european}
 
         for user_id in player_users:
             player = await db.get_player(user_id)
@@ -313,14 +328,38 @@ class MatchEngine:
                         match_id, user_id, player['team_id'], 5.0)
 
         await asyncio.sleep(5)
-        await self.run_match(match_id, fixture, match_channel, num_events)
+        await self.run_match(match_id, fixture, match_channel, num_events, is_european)
 
-    async def run_match(self, match_id: int, fixture: dict, channel: discord.TextChannel, num_events: int):
+    async def get_team_info(self, team_id, is_european=False):
+        """Get team info from appropriate table"""
+        async with db.pool.acquire() as conn:
+            if is_european:
+                # Try european_teams first
+                team = await conn.fetchrow("""
+                    SELECT team_id, team_name, 'European' as league
+                    FROM european_teams WHERE team_id = $1
+                """, team_id)
+                
+                # Fallback to regular teams
+                if not team:
+                    team = await conn.fetchrow("""
+                        SELECT team_id, team_name, league
+                        FROM teams WHERE team_id = $1
+                    """, team_id)
+            else:
+                team = await conn.fetchrow("""
+                    SELECT team_id, team_name, league
+                    FROM teams WHERE team_id = $1
+                """, team_id)
+            
+            return dict(team) if team else None
+
+    async def run_match(self, match_id: int, fixture: dict, channel: discord.TextChannel, num_events: int, is_european: bool = False):
         # Check if cleanup needed (runs every hour)
         await self.maybe_cleanup()
         
-        home_team = await db.get_team(fixture['home_team_id'])
-        away_team = await db.get_team(fixture['away_team_id'])
+        home_team = await self.get_team_info(fixture['home_team_id'], is_european)
+        away_team = await self.get_team_info(fixture['away_team_id'], is_european)
         home_score = 0
         away_score = 0
 
@@ -358,7 +397,7 @@ class MatchEngine:
                     player = await db.get_player(participant['user_id'])
                     if player:
                         result = await self.handle_player_moment(channel, player, participant, minute, home_team,
-                                                                 away_team, True, match_id)
+                                                                 away_team, True, match_id, is_european)
                         if result and result.get('goal'):
                             home_score += 1
                             await self.post_goal_celebration(channel, result['scorer_name'], home_team['team_name'],
@@ -368,7 +407,7 @@ class MatchEngine:
                                                            away_score, minute)
                 else:
                     result = await self.handle_npc_moment(channel, fixture['home_team_id'], minute, home_team,
-                                                          away_team, True)
+                                                          away_team, True, is_european)
                     if result == 'goal':
                         home_score += 1
                         await self.update_pinned_score(channel, match_id, home_team, away_team, home_score, away_score,
@@ -379,7 +418,7 @@ class MatchEngine:
                     player = await db.get_player(participant['user_id'])
                     if player:
                         result = await self.handle_player_moment(channel, player, participant, minute, away_team,
-                                                                 home_team, False, match_id)
+                                                                 home_team, False, match_id, is_european)
                         if result and result.get('goal'):
                             away_score += 1
                             await self.post_goal_celebration(channel, result['scorer_name'], away_team['team_name'],
@@ -389,7 +428,7 @@ class MatchEngine:
                                                            away_score, minute)
                 else:
                     result = await self.handle_npc_moment(channel, fixture['away_team_id'], minute, away_team,
-                                                          home_team, False)
+                                                          home_team, False, is_european)
                     if result == 'goal':
                         away_score += 1
                         await self.update_pinned_score(channel, match_id, home_team, away_team, home_score, away_score,
@@ -402,10 +441,10 @@ class MatchEngine:
 
             await asyncio.sleep(2)
 
-        await self.end_match(match_id, fixture, channel, home_score, away_score, participants)
+        await self.end_match(match_id, fixture, channel, home_score, away_score, participants, is_european)
 
     async def handle_player_moment(self, channel, player, participant, minute, attacking_team, defending_team,
-                                   is_home, match_id):
+                                   is_home, match_id, is_european=False):
         member = channel.guild.get_member(player['user_id'])
         if not member:
             return None
@@ -414,10 +453,22 @@ class MatchEngine:
         available_actions = self.get_position_events(player['position'])
 
         async with db.pool.acquire() as conn:
-            result = await conn.fetchrow(
-                "SELECT * FROM npc_players WHERE team_id = $1 AND position IN ('CB', 'FB', 'CDM', 'GK') ORDER BY RANDOM() LIMIT 1",
-                defending_team['team_id']
-            )
+            # Get defender from appropriate NPC table
+            if is_european:
+                result = await conn.fetchrow("""
+                    SELECT * FROM npc_players 
+                    WHERE team_id = $1 AND position IN ('CB', 'FB', 'CDM', 'GK') AND retired = FALSE
+                    ORDER BY RANDOM() LIMIT 1
+                    UNION ALL
+                    SELECT * FROM european_npc_players 
+                    WHERE team_id = $1 AND position IN ('CB', 'FB', 'CDM', 'GK') AND retired = FALSE
+                    ORDER BY RANDOM() LIMIT 1
+                """, defending_team['team_id'])
+            else:
+                result = await conn.fetchrow(
+                    "SELECT * FROM npc_players WHERE team_id = $1 AND position IN ('CB', 'FB', 'CDM', 'GK') ORDER BY RANDOM() LIMIT 1",
+                    defending_team['team_id']
+                )
             defender = dict(result) if result else None
 
         from utils.form_morale_system import get_form_description
@@ -484,12 +535,12 @@ class MatchEngine:
             await channel.send(f"⏰ {member.mention} **AUTO-SELECTED**: {action.upper()}")
 
         result = await self.execute_action_with_duel(channel, player, adjusted_stats, defender, action, minute,
-                                                     match_id, member, attacking_team)
+                                                     match_id, member, attacking_team, is_european)
 
         return result
 
     async def execute_action_with_duel(self, channel, player, adjusted_stats, defender, action, minute,
-                                       match_id, member, attacking_team):
+                                       match_id, member, attacking_team, is_european=False):
         stat_name = self.get_stat_for_action(action)
         player_stat = adjusted_stats[stat_name]
         player_roll = random.randint(1, 20)
@@ -665,7 +716,7 @@ class MatchEngine:
             elif action in ['pass', 'through_ball', 'key_pass', 'cross'] and success:
                 assist_chance = {'pass': 0.35, 'through_ball': 0.40, 'key_pass': 0.45, 'cross': 0.40}
                 if random.random() < assist_chance.get(action, 0.35):
-                    teammate_result = await self.handle_teammate_goal(channel, player, attacking_team, match_id)
+                    teammate_result = await self.handle_teammate_goal(channel, player, attacking_team, match_id, is_european)
                     if teammate_result:
                         is_goal = True
                         scorer_name = teammate_result['scorer_name']
@@ -764,18 +815,36 @@ class MatchEngine:
         except Exception as e:
             print(f"❌ Could not send red card DM to {player['user_id']}: {e}")
 
-    async def handle_teammate_goal(self, channel, player, attacking_team, match_id):
+    async def handle_teammate_goal(self, channel, player, attacking_team, match_id, is_european=False):
         """Handle teammate scoring after assist"""
         async with db.pool.acquire() as conn:
-            teammate = await conn.fetchrow(
-                """SELECT player_name
-                   FROM npc_players
-                   WHERE team_id = $1
-                     AND position IN ('ST', 'W', 'CAM')
-                     AND retired = FALSE
-                   ORDER BY RANDOM() LIMIT 1""",
-                attacking_team['team_id']
-            )
+            if is_european:
+                teammate = await conn.fetchrow(
+                    """SELECT player_name
+                       FROM npc_players
+                       WHERE team_id = $1
+                         AND position IN ('ST', 'W', 'CAM')
+                         AND retired = FALSE
+                       ORDER BY RANDOM() LIMIT 1
+                       UNION ALL
+                       SELECT player_name
+                       FROM european_npc_players
+                       WHERE team_id = $1
+                         AND position IN ('ST', 'W', 'CAM')
+                         AND retired = FALSE
+                       ORDER BY RANDOM() LIMIT 1""",
+                    attacking_team['team_id']
+                )
+            else:
+                teammate = await conn.fetchrow(
+                    """SELECT player_name
+                       FROM npc_players
+                       WHERE team_id = $1
+                         AND position IN ('ST', 'W', 'CAM')
+                         AND retired = FALSE
+                       ORDER BY RANDOM() LIMIT 1""",
+                    attacking_team['team_id']
+                )
             if teammate:
                 await conn.execute(
                     """UPDATE players
@@ -787,12 +856,23 @@ class MatchEngine:
                 return {'scorer_name': teammate['player_name']}
         return None
 
-    async def handle_npc_moment(self, channel, team_id, minute, attacking_team, defending_team, is_home):
+    async def handle_npc_moment(self, channel, team_id, minute, attacking_team, defending_team, is_home, is_european=False):
         async with db.pool.acquire() as conn:
-            result = await conn.fetchrow(
-                "SELECT * FROM npc_players WHERE team_id = $1 AND retired = FALSE ORDER BY RANDOM() LIMIT 1",
-                team_id
-            )
+            if is_european:
+                result = await conn.fetchrow("""
+                    SELECT * FROM npc_players 
+                    WHERE team_id = $1 AND retired = FALSE 
+                    ORDER BY RANDOM() LIMIT 1
+                    UNION ALL
+                    SELECT * FROM european_npc_players 
+                    WHERE team_id = $1 AND retired = FALSE 
+                    ORDER BY RANDOM() LIMIT 1
+                """, team_id)
+            else:
+                result = await conn.fetchrow(
+                    "SELECT * FROM npc_players WHERE team_id = $1 AND retired = FALSE ORDER BY RANDOM() LIMIT 1",
+                    team_id
+                )
             npc = dict(result) if result else None
 
         if not npc:
@@ -813,10 +893,16 @@ class MatchEngine:
             )
             await channel.send(embed=embed)
             async with db.pool.acquire() as conn:
-                await conn.execute(
-                    "UPDATE npc_players SET season_goals = season_goals + 1 WHERE npc_id = $1",
-                    npc['npc_id']
-                )
+                if is_european and 'european_npc_id' in npc:
+                    await conn.execute(
+                        "UPDATE european_npc_players SET season_goals = season_goals + 1 WHERE european_npc_id = $1",
+                        npc['european_npc_id']
+                    )
+                else:
+                    await conn.execute(
+                        "UPDATE npc_players SET season_goals = season_goals + 1 WHERE npc_id = $1",
+                        npc['npc_id']
+                    )
             return 'goal'
 
         return None
@@ -850,18 +936,27 @@ class MatchEngine:
         await channel.send(embed=embed)
         await asyncio.sleep(3)
 
-    async def end_match(self, match_id, fixture, channel, home_score, away_score, participants):
-        home_team = await db.get_team(fixture['home_team_id'])
-        away_team = await db.get_team(fixture['away_team_id'])
+    async def end_match(self, match_id, fixture, channel, home_score, away_score, participants, is_european=False):
+        home_team = await self.get_team_info(fixture['home_team_id'], is_european)
+        away_team = await self.get_team_info(fixture['away_team_id'], is_european)
 
+        # Update appropriate fixtures table
         async with db.pool.acquire() as conn:
-            await conn.execute(
-                'UPDATE fixtures SET home_score = $1, away_score = $2, played = TRUE, playable = FALSE WHERE fixture_id = $3',
-                home_score, away_score, fixture['fixture_id']
-            )
+            if is_european:
+                await conn.execute(
+                    'UPDATE european_fixtures SET home_score = $1, away_score = $2, played = TRUE, playable = FALSE WHERE fixture_id = $3',
+                    home_score, away_score, fixture['fixture_id']
+                )
+            else:
+                await conn.execute(
+                    'UPDATE fixtures SET home_score = $1, away_score = $2, played = TRUE, playable = FALSE WHERE fixture_id = $3',
+                    home_score, away_score, fixture['fixture_id']
+                )
 
-        await self.update_team_stats(fixture['home_team_id'], home_score, away_score)
-        await self.update_team_stats(fixture['away_team_id'], away_score, home_score)
+        # Update team stats only for domestic matches
+        if not is_european:
+            await self.update_team_stats(fixture['home_team_id'], home_score, away_score)
+            await self.update_team_stats(fixture['away_team_id'], away_score, home_score)
 
         from utils.form_morale_system import update_player_form, update_player_morale
 
@@ -884,7 +979,7 @@ class MatchEngine:
                 )
                 print(f"  📊 Form updated for user {participant['user_id']}: Rating {actual_rating:.1f} → Form {new_form}")
 
-        # ✅ NEW: Update appearance counts for all participating players
+        # Update appearance counts for all participating players
         for participant in participants:
             if participant['user_id']:
                 async with db.pool.acquire() as conn:
