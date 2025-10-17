@@ -482,6 +482,117 @@ class Database:
                     notify_news BOOLEAN DEFAULT TRUE
                 )
             ''')
+
+            # European Teams
+            await conn.execute('''
+                CREATE TABLE IF NOT EXISTS european_teams (
+                    team_id TEXT PRIMARY KEY,
+                    team_name TEXT NOT NULL,
+                    country TEXT NOT NULL,
+                    league TEXT NOT NULL,
+                    reputation INTEGER DEFAULT 75
+                )
+            ''')
+
+            # European NPC Players
+            await conn.execute('''
+                CREATE TABLE IF NOT EXISTS european_npc_players (
+                    npc_id SERIAL PRIMARY KEY,
+                    player_name TEXT NOT NULL,
+                    team_id TEXT REFERENCES european_teams(team_id),
+                    position TEXT NOT NULL,
+                    overall_rating INTEGER NOT NULL,
+                    age INTEGER NOT NULL,
+                    nationality TEXT,
+                    pace INTEGER DEFAULT 70,
+                    shooting INTEGER DEFAULT 70,
+                    passing INTEGER DEFAULT 70,
+                    dribbling INTEGER DEFAULT 70,
+                    defending INTEGER DEFAULT 70,
+                    physical INTEGER DEFAULT 70,
+                    value INTEGER DEFAULT 1000000,
+                    wage INTEGER DEFAULT 50000,
+                    retired BOOLEAN DEFAULT FALSE
+                )
+            ''')
+
+            # European Fixtures
+            await conn.execute('''
+                CREATE TABLE IF NOT EXISTS european_fixtures (
+                    fixture_id SERIAL PRIMARY KEY,
+                    competition TEXT NOT NULL,
+                    stage TEXT NOT NULL,
+                    group_name TEXT,
+                    home_team_id TEXT NOT NULL,
+                    away_team_id TEXT NOT NULL,
+                    week_number INTEGER NOT NULL,
+                    match_day INTEGER NOT NULL,
+                    home_score INTEGER,
+                    away_score INTEGER,
+                    played BOOLEAN DEFAULT FALSE,
+                    playable BOOLEAN DEFAULT FALSE,
+                    season TEXT DEFAULT '2027/28',
+                    leg INTEGER DEFAULT 1,
+                    tie_id INTEGER
+                )
+            ''')
+
+            # European Groups
+            await conn.execute('''
+                CREATE TABLE IF NOT EXISTS european_groups (
+                    id SERIAL PRIMARY KEY,
+                    competition TEXT NOT NULL,
+                    group_name TEXT NOT NULL,
+                    team_id TEXT NOT NULL,
+                    played INTEGER DEFAULT 0,
+                    won INTEGER DEFAULT 0,
+                    drawn INTEGER DEFAULT 0,
+                    lost INTEGER DEFAULT 0,
+                    goals_for INTEGER DEFAULT 0,
+                    goals_against INTEGER DEFAULT 0,
+                    points INTEGER DEFAULT 0,
+                    season TEXT DEFAULT '2027/28'
+                )
+            ''')
+
+            # Knockout Ties
+            await conn.execute('''
+                CREATE TABLE IF NOT EXISTS european_knockout (
+                    tie_id SERIAL PRIMARY KEY,
+                    competition TEXT NOT NULL,
+                    stage TEXT NOT NULL,
+                    home_team_id TEXT NOT NULL,
+                    away_team_id TEXT NOT NULL,
+                    first_leg_home_score INTEGER DEFAULT 0,
+                    first_leg_away_score INTEGER DEFAULT 0,
+                    second_leg_home_score INTEGER DEFAULT 0,
+                    second_leg_away_score INTEGER DEFAULT 0,
+                    aggregate_home INTEGER DEFAULT 0,
+                    aggregate_away INTEGER DEFAULT 0,
+                    winner_team_id TEXT,
+                    first_leg_played BOOLEAN DEFAULT FALSE,
+                    second_leg_played BOOLEAN DEFAULT FALSE,
+                    penalties_taken BOOLEAN DEFAULT FALSE,
+                    penalty_winner TEXT,
+                    season TEXT DEFAULT '2027/28'
+                )
+            ''')
+
+            # Player European Stats
+            await conn.execute('''
+                CREATE TABLE IF NOT EXISTS player_european_stats (
+                    stat_id SERIAL PRIMARY KEY,
+                    user_id BIGINT NOT NULL,
+                    competition TEXT NOT NULL,
+                    stage TEXT DEFAULT 'group',
+                    appearances INTEGER DEFAULT 0,
+                    goals INTEGER DEFAULT 0,
+                    assists INTEGER DEFAULT 0,
+                    clean_sheets INTEGER DEFAULT 0,
+                    season TEXT DEFAULT '2027/28',
+                    UNIQUE(user_id, competition, season)
+                )
+            ''')
         
         print("✅ Database tables created")
     
