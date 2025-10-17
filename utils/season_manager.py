@@ -19,8 +19,8 @@ def is_match_window_time():
     now = datetime.now(EST)
     is_match_day = now.weekday() in MATCH_DAYS
     is_match_hours = MATCH_START_HOUR <= now.hour < MATCH_END_HOUR
-    is_start = (is_match_day and now.hour == MATCH_START_HOUR and now.minute < 5)  # ✅ Added is_match_day check
-    is_end = (is_match_day and now.hour == MATCH_END_HOUR and now.minute < 5)      # ✅ Added is_match_day check
+    is_start = (is_match_day and now.hour == MATCH_START_HOUR and now.minute < 5)
+    is_end = (is_match_day and now.hour == MATCH_END_HOUR and now.minute < 5)
     return (is_match_day and is_match_hours), is_start, is_end
 
 
@@ -74,8 +74,6 @@ async def start_season(bot=None):
         print("⚠️ Season already started")
         return False
 
-    # ✅ FIX: Explicitly set match_window_open=False
-    # Don't auto-open window - wait for next Mon/Wed/Sat at 3PM
     new_season = state.get('current_season', '2027/28')
     
     await db.update_game_state(
@@ -83,28 +81,24 @@ async def start_season(bot=None):
         current_week=1,
         current_season=new_season,
         season_start_date=datetime.now(EST).isoformat(),
-        match_window_open=False  # ✅ CRITICAL: Don't auto-open
+        match_window_open=False
     )
 
     await generate_season_fixtures()
 
-    # Calculate next valid match window
     next_window = get_next_match_window()
     next_window_str = next_window.strftime('%A, %B %d at %I:%M %p EST')
     
     print(f"✅ Season started! Next match window: {next_window_str}")
     print(f"   Match window will ONLY open on Mon/Wed/Sat at 3:00 PM EST")
 
-    # ✅ FIX #3: NOTIFY ALL SERVERS ABOUT SEASON START
     if bot:
         for guild in bot.guilds:
             try:
-                # Try to find appropriate channel
                 channel = discord.utils.get(guild.text_channels, name="general")
                 if not channel:
                     channel = discord.utils.get(guild.text_channels, name="announcements")
                 if not channel:
-                    # Fall back to first text channel bot can send to
                     channel = next((c for c in guild.text_channels if c.permissions_for(guild.me).send_messages), None)
                 
                 if channel:
@@ -145,7 +139,6 @@ async def generate_season_fixtures():
 
 async def open_match_window():
     """Open the match window - with race condition protection"""
-    # ✅ CRITICAL FIX #3: Simplified lock usage (bot.py guarantees lock exists)
     from bot import bot
     async with bot.match_window_lock:
         return await _open_match_window_internal()
@@ -155,7 +148,6 @@ async def _open_match_window_internal():
     """Internal implementation"""
     state = await db.get_game_state()
 
-    # Double-check window not already open
     if state['match_window_open']:
         print("⚠️ Match window already open, skipping")
         return False
@@ -163,7 +155,6 @@ async def _open_match_window_internal():
     current_week = state['current_week']
 
     async with db.pool.acquire() as conn:
-        # Atomic update with WHERE clause
         result = await conn.execute(
             """UPDATE game_state
                SET match_window_open = TRUE
@@ -251,11 +242,9 @@ async def check_contract_morale(bot=None):
     warned = 0
 
     for player in expiring_players:
-        # Apply morale penalty
         await update_player_morale(player['user_id'], 'contract_expiring')
         affected += 1
 
-        # ✅ SEND WARNING DM
         if player['contract_years'] == 1 and bot:
             try:
                 user = await bot.fetch_user(player['user_id'])
@@ -266,7 +255,6 @@ async def check_contract_morale(bot=None):
                     color=discord.Color.orange()
                 )
 
-                # Get team name
                 team = await db.get_team(player['team_id'])
                 team_name = team['team_name'] if team else player['team_id']
 
@@ -315,9 +303,7 @@ async def advance_week(bot=None):
 
     await check_contract_morale(bot=bot)
 
-    # ============================================
-    # 🆕 AUTO-POST WEEKLY NEWS DIGEST
-    # ============================================
+    # Auto-post weekly news digest
     if bot:
         from utils.event_poster import post_weekly_news_digest
         try:
@@ -325,6 +311,53 @@ async def advance_week(bot=None):
             print(f"📰 Posted weekly news digest for Week {current_week}")
         except Exception as e:
             print(f"⚠️ Could not post news digest: {e}")
+
+    # ============================================
+    # EUROPEAN COMPETITION MANAGEMENT
+    # ============================================
+    from utils.european_competitions import (
+        open_european_window,
+        close_european_window,
+        generate_knockout_draw,
+        close_knockout_round
+    )
+
+    # Open European window
+    if current_week in config.EUROPEAN_MATCH_WEEKS:
+        await open_european_window(current_week)
+
+    # Close previous European window
+    if (current_week - 1) in config.EUROPEAN_MATCH_WEEKS:
+        await close_european_window(current_week - 1, bot=bot)
+
+    # Generate knockout draws
+    season = state['current_season']
+    
+    if current_week == 22:
+        await generate_knockout_draw('CL', 'r16', season)
+        await generate_knockout_draw('EL', 'r16', season)
+    
+    if current_week == 28:
+        await close_knockout_round('CL', 'r16', season)
+        await close_knockout_round('EL', 'r16', season)
+        await generate_knockout_draw('CL', 'quarters', season)
+        await generate_knockout_draw('EL', 'quarters', season)
+    
+    if current_week == 34:
+        await close_knockout_round('CL', 'quarters', season)
+        await close_knockout_round('EL', 'quarters', season)
+        await generate_knockout_draw('CL', 'semis', season)
+        await generate_knockout_draw('EL', 'semis', season)
+    
+    if current_week == 40:
+        await close_knockout_round('CL', 'semis', season)
+        await close_knockout_round('EL', 'semis', season)
+        await generate_knockout_draw('CL', 'final', season)
+        await generate_knockout_draw('EL', 'final', season)
+    
+    if current_week == 43:
+        await close_knockout_round('CL', 'final', season)
+        await close_knockout_round('EL', 'final', season)
 
     # ============================================
     # TRANSFER WINDOW MANAGEMENT
@@ -345,6 +378,22 @@ async def advance_week(bot=None):
 
     elif current_week in config.TRANSFER_WINDOW_WEEKS and next_week not in config.TRANSFER_WINDOW_WEEKS:
         await close_transfer_window()
+
+        # Simulate inter-European transfers
+        from utils.european_transfer_system import (
+            simulate_european_transfers,
+            simulate_european_to_english_transfers,
+            simulate_english_to_european_transfers
+        )
+        try:
+            euro_transfers = await simulate_european_transfers()
+            euro_to_eng = await simulate_european_to_english_transfers()
+            eng_to_euro = await simulate_english_to_european_transfers()
+            print(f"🌍 {euro_transfers} inter-European transfers")
+            print(f"🌍 {euro_to_eng} European → English transfers")
+            print(f"🌍 {eng_to_euro} English → European transfers")
+        except Exception as e:
+            print(f"⚠️ European transfer error: {e}")
 
         from utils.npc_transfer_system import balance_team_squads
         try:
@@ -401,33 +450,28 @@ async def promote_team(team_id: str, from_league: str, to_league: str, bot=None)
     """Promote a team to higher league"""
     team = await db.get_team(team_id)
     
-    # Update team league
     async with db.pool.acquire() as conn:
         await conn.execute(
             "UPDATE teams SET league = $1 WHERE team_id = $2",
             to_league, team_id
         )
         
-        # Update all players on this team
         await conn.execute(
             "UPDATE players SET league = $1 WHERE team_id = $2",
             to_league, team_id
         )
         
-        # Update NPC players
         await conn.execute(
             "UPDATE npc_players SET league = $1 WHERE team_id = $2",
             to_league, team_id
         )
     
-    # Add news
     await db.add_news(
         f"PROMOTION: {team['team_name']} promoted to {to_league}!",
         f"{team['team_name']} have earned promotion from {from_league} to {to_league}!",
         "league_news", None, 10
     )
     
-    # Notify user players
     if bot:
         async with db.pool.acquire() as conn:
             players = await conn.fetch(
@@ -454,27 +498,23 @@ async def relegate_team(team_id: str, from_league: str, to_league: str, bot=None
     """Relegate a team to lower league"""
     team = await db.get_team(team_id)
     
-    # Update team league
     async with db.pool.acquire() as conn:
         await conn.execute(
             "UPDATE teams SET league = $1 WHERE team_id = $2",
             to_league, team_id
         )
         
-        # Update all players on this team
         await conn.execute(
             "UPDATE players SET league = $1 WHERE team_id = $2",
             to_league, team_id
         )
     
-    # Add news
     await db.add_news(
         f"RELEGATION: {team['team_name']} relegated to {to_league}",
         f"{team['team_name']} have been relegated from {from_league} to {to_league}.",
         "league_news", None, 10
     )
     
-    # Notify and offer exit clause to user players
     if bot:
         async with db.pool.acquire() as conn:
             players = await conn.fetch(
@@ -497,7 +537,6 @@ async def relegate_team(team_id: str, from_league: str, to_league: str, bot=None
                 )
                 await user.send(embed=embed)
                 
-                # Reduce contract by 1 year (release clause)
                 await conn.execute(
                     "UPDATE players SET contract_years = GREATEST(0, contract_years - 1) WHERE user_id = $1",
                     player['user_id']
@@ -515,13 +554,10 @@ async def end_season(bot=None):
 
     print(f"🏆 Season {current_season} complete!")
 
-    # ============================================
-    # ✅ CALCULATE SEASON AWARDS
-    # ============================================
+    # Calculate season awards
     awards = {}
 
     async with db.pool.acquire() as conn:
-        # Golden Boot (Top Scorer)
         golden_boot = await conn.fetchrow("""
                                           SELECT p.player_name, p.season_goals, p.user_id, t.team_name
                                           FROM players p
@@ -532,7 +568,6 @@ async def end_season(bot=None):
         if golden_boot and golden_boot['season_goals'] > 0:
             awards['golden_boot'] = dict(golden_boot)
 
-        # Most Assists
         most_assists = await conn.fetchrow("""
                                            SELECT p.player_name, p.season_assists, p.user_id, t.team_name
                                            FROM players p
@@ -543,7 +578,6 @@ async def end_season(bot=None):
         if most_assists and most_assists['season_assists'] > 0:
             awards['most_assists'] = dict(most_assists)
 
-        # Player of the Year (Highest Average Rating)
         poty = await conn.fetchrow("""
                                    SELECT p.player_name, p.season_rating, p.season_apps, p.user_id, t.team_name
                                    FROM players p
@@ -555,7 +589,6 @@ async def end_season(bot=None):
         if poty and poty['season_rating'] > 0:
             awards['poty'] = dict(poty)
 
-        # Most MOTM Awards
         most_motm = await conn.fetchrow("""
                                         SELECT p.player_name, p.season_motm, p.user_id, t.team_name
                                         FROM players p
@@ -566,7 +599,6 @@ async def end_season(bot=None):
         if most_motm and most_motm['season_motm'] > 0:
             awards['most_motm'] = dict(most_motm)
 
-        # Young Player of the Year (Under 23)
         ypoty = await conn.fetchrow("""
                                     SELECT p.player_name, p.overall_rating, p.age, p.user_id, t.team_name
                                     FROM players p
@@ -579,7 +611,7 @@ async def end_season(bot=None):
         if ypoty:
             awards['ypoty'] = dict(ypoty)
 
-    # ✅ POST AWARDS TO ALL SERVERS
+    # Post awards to all servers
     if bot:
         for guild in bot.guilds:
             try:
@@ -641,7 +673,7 @@ async def end_season(bot=None):
             except Exception as e:
                 print(f"  ⚠️ Could not post awards to {guild.name}: {e}")
 
-        # ✅ SEND DMs TO AWARD WINNERS
+        # Send DMs to award winners
         for award_name, award_data in awards.items():
             if 'user_id' in award_data:
                 try:
@@ -670,26 +702,21 @@ async def end_season(bot=None):
                 except Exception as e:
                     print(f"  ⚠️ Could not send award DM: {e}")
 
-    # ============================================
-    # PROMOTIONS & RELEGATIONS
-    # ============================================
+    # Promotions & Relegations
     print("\n=== Processing Promotions & Relegations ===")
 
-    # Get final standings for all leagues
     pl_table = await db.get_league_table('Premier League')
     champ_table = await db.get_league_table('Championship')
     l1_table = await db.get_league_table('League One')
 
-    # PREMIER LEAGUE RELEGATION (Bottom 3)
     if len(pl_table) >= 20:
-        relegated_from_pl = pl_table[-3:]  # Teams 18, 19, 20
+        relegated_from_pl = pl_table[-3:]
         for team in relegated_from_pl:
             await relegate_team(team['team_id'], 'Premier League', 'Championship', bot)
 
-    # CHAMPIONSHIP PROMOTION (Top 2) & RELEGATION (Bottom 3)
     if len(champ_table) >= 24:
-        promoted_from_champ = champ_table[:2]  # Top 2
-        relegated_from_champ = champ_table[-3:]  # Bottom 3
+        promoted_from_champ = champ_table[:2]
+        relegated_from_champ = champ_table[-3:]
         
         for team in promoted_from_champ:
             await promote_team(team['team_id'], 'Championship', 'Premier League', bot)
@@ -697,20 +724,17 @@ async def end_season(bot=None):
         for team in relegated_from_champ:
             await relegate_team(team['team_id'], 'Championship', 'League One', bot)
 
-    # LEAGUE ONE PROMOTION (Top 2)
     if len(l1_table) >= 24:
         promoted_from_l1 = l1_table[:2]
         for team in promoted_from_l1:
             await promote_team(team['team_id'], 'League One', 'Championship', bot)
 
-    # ============================================
-    # END OF AWARDS & PROMOTIONS - Continue with season reset
-    # ============================================
-
+    # Age and retire players
     await db.age_all_players()
     retired_count = await db.retire_old_players()
     print(f"👴 {retired_count} players retired")
 
+    # Reset all stats
     async with db.pool.acquire() as conn:
         await conn.execute("""
                            UPDATE players
@@ -745,16 +769,21 @@ async def end_season(bot=None):
     print(f"✅ All players reset - fresh start for next season!")
 
     year = int(current_season.split('/')[0])
-    new_season = f"{year + 1}/{str(year + 2)[-2:]}"
+    next_season = f"{year + 1}/{str(year + 2)[-2:]}"
+
+    # Draw European groups for next season
+    from utils.european_competitions import draw_groups
+    await draw_groups(season=next_season)
+    print(f"🏆 European groups drawn for {next_season}")
 
     await db.update_game_state(
-        current_season=new_season,
+        current_season=next_season,
         current_week=0,
         fixtures_generated=False,
         season_started=False
     )
 
-    print(f"✅ Ready for Season {new_season}")
+    print(f"✅ Ready for Season {next_season}")
 
 
 # ============================================
