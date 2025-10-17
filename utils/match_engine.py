@@ -1050,6 +1050,98 @@ class MatchEngine:
                 won, drawn, lost, goals_for, goals_against, points, team_id
             )
 
+    async def simulate_npc_match(self, home_team_id, away_team_id, week=None, is_european=False):
+        """
+        Simulate an NPC vs NPC match
+        NEW: is_european parameter for European competitions
+        """
+        async with db.pool.acquire() as conn:
+            # Get teams - check BOTH tables if is_european
+            if is_european:
+                home_team = await conn.fetchrow("""
+                    SELECT team_id, team_name FROM european_teams WHERE team_id = $1
+                """, home_team_id)
+                away_team = await conn.fetchrow("""
+                    SELECT team_id, team_name FROM european_teams WHERE team_id = $1
+                """, away_team_id)
+                
+                if not home_team:
+                    home_team = await conn.fetchrow("""
+                        SELECT team_id, team_name FROM teams WHERE team_id = $1
+                    """, home_team_id)
+                if not away_team:
+                    away_team = await conn.fetchrow("""
+                        SELECT team_id, team_name FROM teams WHERE team_id = $1
+                    """, away_team_id)
+            else:
+                home_team = await conn.fetchrow("""
+                    SELECT team_id, team_name FROM teams WHERE team_id = $1
+                """, home_team_id)
+                away_team = await conn.fetchrow("""
+                    SELECT team_id, team_name FROM teams WHERE team_id = $1
+                """, away_team_id)
+
+            if not home_team or not away_team:
+                raise ValueError(f"Could not find teams: {home_team_id}, {away_team_id}")
+
+            # Get squad ratings - check BOTH NPC tables if is_european
+            if is_european:
+                home_npcs = await conn.fetch("""
+                    SELECT overall_rating FROM npc_players 
+                    WHERE team_id = $1 AND retired = FALSE
+                    UNION ALL
+                    SELECT overall_rating FROM european_npc_players 
+                    WHERE team_id = $1 AND retired = FALSE
+                """, home_team_id)
+                
+                away_npcs = await conn.fetch("""
+                    SELECT overall_rating FROM npc_players 
+                    WHERE team_id = $1 AND retired = FALSE
+                    UNION ALL
+                    SELECT overall_rating FROM european_npc_players 
+                    WHERE team_id = $1 AND retired = FALSE
+                """, away_team_id)
+            else:
+                home_npcs = await conn.fetch("""
+                    SELECT overall_rating FROM npc_players 
+                    WHERE team_id = $1 AND retired = FALSE
+                """, home_team_id)
+                
+                away_npcs = await conn.fetch("""
+                    SELECT overall_rating FROM npc_players 
+                    WHERE team_id = $1 AND retired = FALSE
+                """, away_team_id)
+
+            # Calculate team strengths
+            home_rating = sum(p['overall_rating'] for p in home_npcs) / len(home_npcs) if home_npcs else 70
+            away_rating = sum(p['overall_rating'] for p in away_npcs) / len(away_npcs) if away_npcs else 70
+
+            # Simulate match
+            home_advantage = 3
+            home_strength = home_rating + home_advantage
+            away_strength = away_rating
+
+            home_goals = 0
+            away_goals = 0
+
+            for _ in range(random.randint(8, 15)):
+                if random.random() < (home_strength / 100):
+                    home_goals += 1
+
+            for _ in range(random.randint(8, 15)):
+                if random.random() < (away_strength / 100):
+                    away_goals += 1
+
+            home_goals = min(home_goals, 6)
+            away_goals = min(away_goals, 6)
+
+            return {
+                'home_score': home_goals,
+                'away_score': away_goals,
+                'home_team': home_team['team_name'],
+                'away_team': away_team['team_name']
+            }
+
 
 class EnhancedActionView(discord.ui.View):
     def __init__(self, available_actions, user_id, timeout=30):
