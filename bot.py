@@ -210,6 +210,7 @@ class FootballBot(commands.Bot):
             'commands.adm',
             'commands.organized',
             'commands.achievements',
+            'commands.european',
         ]
 
         for cog in cogs:
@@ -272,6 +273,16 @@ class FootballBot(commands.Bot):
             logger.info("✅ All teams now have complete squads!")
 
         await db.retire_old_players(bot=self)
+
+        # Initialize European teams
+        async with db.pool.acquire() as conn:
+            euro_count = await conn.fetchval("SELECT COUNT(*) FROM european_teams")
+        
+        if euro_count == 0:
+            logger.info("🌍 Populating European teams...")
+            from utils.european_npc_populator import populate_european_teams
+            teams, players = await populate_european_teams()
+            logger.info(f"✅ European teams populated! {teams} teams, {players} players")
 
     async def populate_real_players(self, pl_players, champ_players, l1_players):
         """Populate real players with proper stats"""
