@@ -1,4 +1,3 @@
-```python
 """
 Inter-European Transfer System - NPC ONLY
 """
@@ -177,6 +176,3 @@ async def simulate_english_to_european_transfers():
     
     print(f"✅ {transfers_made} English NPC → European transfers completed!")
     return transfers_made
-```
-
----
