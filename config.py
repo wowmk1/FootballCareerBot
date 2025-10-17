@@ -37,15 +37,6 @@ NOTIFY_MATCH_WINDOW = True
 NOTIFY_TRAINING_READY = True
 NOTIFY_TRANSFER_OFFERS = True
 
-print("✅ Config loaded successfully")
-print(f"📊 Environment: production")
-print(f"⚽ Match schedule: Mon/Wed/Sat (1 game week per real day)")
-print(f"🎲 Match events per game: {MATCH_EVENTS_PER_GAME_MIN}-{MATCH_EVENTS_PER_GAME_MAX}")
-print(f"⏱️ Match window: {MATCH_WINDOW_HOURS} hours")
-print(f"⏰ Match start time: {MATCH_START_HOUR}:00")
-print(f"🏋️ Training cooldown: {TRAINING_COOLDOWN_HOURS}h")
-print(f"👴 Retirement age: {RETIREMENT_AGE}")
-
 # Training effectiveness by league (better facilities = better training)
 TRAINING_EFFECTIVENESS_BY_LEAGUE = {
     'Premier League': 1.2,     # Better facilities = 20% bonus
@@ -57,8 +48,8 @@ TRAINING_EFFECTIVENESS_BY_LEAGUE = {
 # ===== EUROPEAN COMPETITIONS =====
 CHAMPIONS_LEAGUE_TEAMS = 32
 EUROPA_LEAGUE_TEAMS = 32
-CHAMPIONS_LEAGUE_MATCH_DAY = 1  # Tuesday
-EUROPA_LEAGUE_MATCH_DAY = 3  # Thursday
+CHAMPIONS_LEAGUE_MATCH_DAY = 2  # Wednesday (FIXED from 1)
+EUROPA_LEAGUE_MATCH_DAY = 3     # Thursday
 EUROPEAN_MATCH_START_HOUR = 15  # 3 PM
 
 GROUP_STAGE_WEEKS = [3, 6, 9, 12, 18, 21]
@@ -80,3 +71,13 @@ EL_QUALIFICATION_POSITIONS = {
     'Championship': [],
     'League One': []
 }
+
+print("✅ Config loaded successfully")
+print(f"📊 Environment: production")
+print(f"⚽ Match schedule: Mon/Wed/Sat (1 game week per real day)")
+print(f"🎲 Match events per game: {MATCH_EVENTS_PER_GAME_MIN}-{MATCH_EVENTS_PER_GAME_MAX}")
+print(f"⏱️ Match window: {MATCH_WINDOW_HOURS} hours")
+print(f"⏰ Match start time: {MATCH_START_HOUR}:00")
+print(f"🏋️ Training cooldown: {TRAINING_COOLDOWN_HOURS}h")
+print(f"👴 Retirement age: {RETIREMENT_AGE}")
+print(f"🏆 European match weeks: {EUROPEAN_MATCH_WEEKS}")
