@@ -1,7 +1,7 @@
 """
-Season Management - Everyone Advances Together
-European weeks: Tue (CL+EL) → Wed (Domestic+Advance)
-Non-European weeks: Wed (Domestic+Advance)
+Season Management - Two Windows on Same Days
+12-2 PM: European (CL+EL) on European weeks
+3-5 PM: Domestic (always) - advances week after close
 """
 import asyncio
 from datetime import datetime, timedelta, timezone
@@ -13,10 +13,14 @@ logger = logging.getLogger(__name__)
 
 EST = timezone(timedelta(hours=-5))
 
-EUROPEAN_MATCH_DAY = 1  # Tuesday (both CL and EL)
-DOMESTIC_MATCH_DAY = 2  # Wednesday
-MATCH_START_HOUR = 15
-MATCH_END_HOUR = 17
+# Match days (Mon/Wed/Sat)
+MATCH_DAYS = [0, 2, 5]
+
+# Window times
+EUROPEAN_START_HOUR = 12  # 12 PM (Noon)
+EUROPEAN_END_HOUR = 14    # 2 PM
+DOMESTIC_START_HOUR = 15  # 3 PM
+DOMESTIC_END_HOUR = 17    # 5 PM
 
 
 def get_next_match_window():
@@ -26,44 +30,54 @@ def get_next_match_window():
     for days_ahead in range(7):
         check_date = now + timedelta(days=days_ahead)
         
-        if check_date.weekday() in [EUROPEAN_MATCH_DAY, DOMESTIC_MATCH_DAY]:
-            window_time = check_date.replace(hour=MATCH_START_HOUR, minute=0, second=0, microsecond=0)
+        if check_date.weekday() in MATCH_DAYS:
+            # Check if European window is next
+            european_time = check_date.replace(hour=EUROPEAN_START_HOUR, minute=0, second=0, microsecond=0)
+            if european_time > now:
+                return european_time
             
-            if window_time > now:
-                return window_time
+            # Otherwise check domestic window
+            domestic_time = check_date.replace(hour=DOMESTIC_START_HOUR, minute=0, second=0, microsecond=0)
+            if domestic_time > now:
+                return domestic_time
     
-    # Fallback
-    days_until_wednesday = (2 - now.weekday()) % 7
-    if days_until_wednesday == 0:
-        days_until_wednesday = 7
+    # Fallback: next Monday at noon
+    days_until_monday = (7 - now.weekday()) % 7
+    if days_until_monday == 0:
+        days_until_monday = 7
     
-    next_wednesday = now + timedelta(days=days_until_wednesday)
-    return next_wednesday.replace(hour=MATCH_START_HOUR, minute=0, second=0, microsecond=0)
+    next_monday = now + timedelta(days=days_until_monday)
+    return next_monday.replace(hour=EUROPEAN_START_HOUR, minute=0, second=0, microsecond=0)
 
 
 def is_match_window_time():
     """
     Check if current time is match window time
     Returns: (is_window_time, is_start_time, is_end_time, window_type)
+    window_type: 'european' or 'domestic'
     """
     now = datetime.now(EST)
     current_day = now.weekday()
     current_hour = now.hour
     current_minute = now.minute
     
-    window_type = None
-    if current_day == EUROPEAN_MATCH_DAY:
-        window_type = 'european'
-    elif current_day == DOMESTIC_MATCH_DAY:
-        window_type = 'domestic'
-    else:
+    # Must be a match day
+    if current_day not in MATCH_DAYS:
         return False, False, False, None
     
-    is_start = (current_hour == MATCH_START_HOUR and current_minute < 5)
-    is_end = (current_hour == MATCH_END_HOUR and current_minute < 5)
-    is_window = (MATCH_START_HOUR <= current_hour < MATCH_END_HOUR)
+    # Check European window (12-2 PM)
+    if EUROPEAN_START_HOUR <= current_hour < EUROPEAN_END_HOUR:
+        is_start = (current_hour == EUROPEAN_START_HOUR and current_minute < 5)
+        is_end = (current_hour == EUROPEAN_END_HOUR and current_minute < 5)
+        return True, is_start, is_end, 'european'
     
-    return is_window, is_start, is_end, window_type
+    # Check Domestic window (3-5 PM)
+    if DOMESTIC_START_HOUR <= current_hour < DOMESTIC_END_HOUR:
+        is_start = (current_hour == DOMESTIC_START_HOUR and current_minute < 5)
+        is_end = (current_hour == DOMESTIC_END_HOUR and current_minute < 5)
+        return True, is_start, is_end, 'domestic'
+    
+    return False, False, False, None
 
 
 def should_send_warning(warning_type):
@@ -73,16 +87,27 @@ def should_send_warning(warning_type):
     current_hour = now.hour
     current_minute = now.minute
     
-    if current_day not in [EUROPEAN_MATCH_DAY, DOMESTIC_MATCH_DAY]:
+    if current_day not in MATCH_DAYS:
         return False
     
-    if warning_type == 'pre_1h':
+    # European warnings (11 AM, 11:30, 11:45, 1:45 PM)
+    if warning_type == 'european_1h':  # 11 AM
+        return current_hour == 11 and current_minute < 5
+    elif warning_type == 'european_30m':  # 11:30 AM
+        return current_hour == 11 and 30 <= current_minute < 35
+    elif warning_type == 'european_15m':  # 11:45 AM
+        return current_hour == 11 and 45 <= current_minute < 50
+    elif warning_type == 'european_closing':  # 1:45 PM
+        return current_hour == 13 and 45 <= current_minute < 50
+    
+    # Domestic warnings (2 PM, 2:30, 2:45, 4:45 PM)
+    elif warning_type == 'domestic_1h':  # 2 PM
         return current_hour == 14 and current_minute < 5
-    elif warning_type == 'pre_30m':
+    elif warning_type == 'domestic_30m':  # 2:30 PM
         return current_hour == 14 and 30 <= current_minute < 35
-    elif warning_type == 'pre_15m':
+    elif warning_type == 'domestic_15m':  # 2:45 PM
         return current_hour == 14 and 45 <= current_minute < 50
-    elif warning_type == 'closing_soon':
+    elif warning_type == 'domestic_closing':  # 4:45 PM
         return current_hour == 16 and 45 <= current_minute < 50
     
     return False
@@ -97,7 +122,7 @@ async def open_match_window(window_type='domestic'):
         current_week = state['current_week']
         
         if window_type == 'domestic':
-            # Open domestic fixtures for EVERYONE
+            # Open domestic fixtures
             await conn.execute("""
                 UPDATE fixtures 
                 SET playable = TRUE 
@@ -106,16 +131,16 @@ async def open_match_window(window_type='domestic'):
             logger.info(f"✅ Domestic fixtures opened for Week {current_week}")
         
         elif window_type == 'european':
-            # Open BOTH CL and EL if it's a European week
+            # Open European fixtures if it's a European week
             if current_week in config.EUROPEAN_MATCH_WEEKS:
                 await conn.execute("""
                     UPDATE european_fixtures 
                     SET playable = TRUE 
                     WHERE week_number = $1 AND played = FALSE
                 """, current_week)
-                logger.info(f"🏆 CL + EL fixtures opened for Week {current_week}")
+                logger.info(f"🏆 European fixtures (CL + EL) opened for Week {current_week}")
             else:
-                logger.info(f"⏭️ No European matches this week")
+                logger.info(f"⏭️ No European matches this week (Week {current_week})")
         
         await conn.execute("UPDATE game_state SET match_window_open = TRUE")
 
@@ -172,11 +197,11 @@ async def close_match_window(window_type='domestic', bot=None):
             # Close European window (both CL and EL)
             if current_week in config.EUROPEAN_MATCH_WEEKS:
                 from utils.european_competitions import close_european_window
-                await close_european_window(current_week, bot=bot, competition=None)  # None = both
+                await close_european_window(current_week, bot=bot, competition=None)
                 logger.info(f"🏆 European matches closed for Week {current_week}")
             
             # ❌ European window does NOT advance week
-            logger.info(f"⏸️ Week stays at {current_week} (domestic match tomorrow)")
+            logger.info(f"⏸️ Week stays at {current_week} (domestic window at 3 PM)")
             await conn.execute("UPDATE game_state SET match_window_open = FALSE")
     
     return results
@@ -257,14 +282,19 @@ async def end_season(bot=None):
         logger.info(f"✅ New season: {current_season + 1}/{current_season + 2}")
 
 
+# Warning functions
 async def send_1h_warning(bot):
+    """Send 1 hour warning (for domestic 2 PM or European 11 AM)"""
     pass
 
 async def send_30m_warning(bot):
+    """Send 30 minute warning"""
     pass
 
 async def send_15m_warning(bot):
+    """Send 15 minute warning"""
     pass
 
 async def send_closing_warning(bot):
+    """Send closing warning"""
     pass
