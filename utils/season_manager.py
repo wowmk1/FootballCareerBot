@@ -2,6 +2,8 @@
 Season Management - Two Windows on Same Days
 12-2 PM: European (CL+EL) on European weeks
 3-5 PM: Domestic (always) - advances week after close
+
+✅ UPDATED: Now adds match results to news database
 """
 import asyncio
 from datetime import datetime, timedelta, timezone
@@ -144,6 +146,66 @@ async def open_match_window(window_type='domestic'):
         await conn.execute("UPDATE game_state SET match_window_open = TRUE")
 
 
+# ✅ NEW HELPER FUNCTION
+async def add_match_result_news(home_team, away_team, home_score, away_score, 
+                                category, week_number, competition='League'):
+    """
+    Add match result to news database
+    
+    Args:
+        home_team: Home team name
+        away_team: Away team name
+        home_score: Home team score
+        away_score: Away team score
+        category: News category (match_news)
+        week_number: Current week
+        competition: Competition name (League, Champions League, Europa League)
+    """
+    
+    # Determine headline based on result
+    if home_score > away_score:
+        margin = home_score - away_score
+        if margin >= 3:
+            headline = f"{home_team} Thrash {away_team} {home_score}-{away_score}"
+            content = f"{home_team} dominated with a {home_score}-{away_score} victory over {away_team} in the {competition}."
+            importance = 7
+        else:
+            headline = f"{home_team} Beat {away_team} {home_score}-{away_score}"
+            content = f"{home_team} secured a {home_score}-{away_score} win against {away_team} in the {competition}."
+            importance = 5
+    
+    elif away_score > home_score:
+        margin = away_score - home_score
+        if margin >= 3:
+            headline = f"{away_team} Demolish {home_team} {away_score}-{home_score}"
+            content = f"{away_team} put on a stunning away performance, winning {away_score}-{home_score} at {home_team} in the {competition}."
+            importance = 7
+        else:
+            headline = f"{away_team} Win at {home_team} {away_score}-{home_score}"
+            content = f"{away_team} claimed all three points with a {away_score}-{home_score} away victory at {home_team} in the {competition}."
+            importance = 5
+    
+    else:  # Draw
+        if home_score >= 3:
+            headline = f"Thriller: {home_team} {home_score}-{away_score} {away_team}"
+            content = f"An entertaining {home_score}-{away_score} draw between {home_team} and {away_team} in the {competition}."
+            importance = 6
+        else:
+            headline = f"{home_team} {home_score}-{away_score} {away_team}"
+            content = f"{home_team} and {away_team} shared the points in a {home_score}-{away_score} draw in the {competition}."
+            importance = 4
+    
+    # Add to news database
+    await db.add_news(
+        headline=headline,
+        content=content,
+        category=category,
+        user_id=None,  # NPC match, no specific user
+        importance=importance,
+        week_number=week_number
+    )
+
+
 async def close_match_window(window_type='domestic', bot=None):
     """Close match window and simulate unplayed matches"""
     logger.info(f"🔴 Closing {window_type} match window...")
@@ -186,6 +248,17 @@ async def close_match_window(window_type='domestic', bot=None):
                     'home_score': result['home_score'],
                     'away_score': result['away_score']
                 })
+                
+                # ✅ NEW: Add match result to news database
+                await add_match_result_news(
+                    result['home_team'],
+                    result['away_team'],
+                    result['home_score'],
+                    result['away_score'],
+                    'match_news',
+                    current_week,
+                    competition='League'
+                )
             
             # ✅ Domestic window ALWAYS advances week
             logger.info(f"✅ Advancing from Week {current_week} to Week {current_week + 1}")
