@@ -5,6 +5,7 @@ Season Management - Two Windows on Same Days
 
 ✅ UPDATED: Now adds match results to news database
 ✅ FIXED: Corrected window end time detection
+✅ FIXED: NPC transfers only during transfer windows
 """
 import asyncio
 from datetime import datetime, timedelta, timezone
@@ -30,33 +31,43 @@ DOMESTIC_END_HOUR = 17    # 5 PM
 def get_next_match_window():
     """
     Get the next match window datetime
-    ✅ FIXED: Properly continues to next day when today's windows have passed
+    ✅ FIXED: Properly skips to next match day when both windows have passed
     """
     now = datetime.now(EST)
+    logger.debug(f"🔍 get_next_match_window called at: {now} (weekday: {now.weekday()})")
     
     for days_ahead in range(8):  # Check up to 8 days to ensure we find next match day
         check_date = now + timedelta(days=days_ahead)
+        logger.debug(f"  Checking days_ahead={days_ahead}, date={check_date.strftime('%A %b %d')}, weekday={check_date.weekday()}")
         
         if check_date.weekday() in MATCH_DAYS:
             # Check if European window is next (only if it hasn't passed)
             european_time = check_date.replace(hour=EUROPEAN_START_HOUR, minute=0, second=0, microsecond=0)
+            logger.debug(f"    European time: {european_time}, now: {now}, european > now: {european_time > now}")
             if european_time > now:
+                logger.info(f"✅ Next window: {european_time.strftime('%A, %B %d at %I:%M %p EST')} (European)")
                 return european_time
             
             # Check domestic window (only if it hasn't passed)
             domestic_time = check_date.replace(hour=DOMESTIC_START_HOUR, minute=0, second=0, microsecond=0)
+            logger.debug(f"    Domestic time: {domestic_time}, now: {now}, domestic > now: {domestic_time > now}")
             if domestic_time > now:
+                logger.info(f"✅ Next window: {domestic_time.strftime('%A, %B %d at %I:%M %p EST')} (Domestic)")
                 return domestic_time
             
-            # Both windows have passed today, continue to next match day
+            logger.debug(f"    Both windows passed, continuing...")
+            # Both windows have passed for this day, continue to next match day
     
     # Fallback: next Monday at European window time
+    logger.warning("⚠️ Using fallback logic for next match window")
     days_until_monday = (7 - now.weekday()) % 7
     if days_until_monday == 0:
         days_until_monday = 7
     
     next_monday = now + timedelta(days=days_until_monday)
-    return next_monday.replace(hour=EUROPEAN_START_HOUR, minute=0, second=0, microsecond=0)
+    result = next_monday.replace(hour=EUROPEAN_START_HOUR, minute=0, second=0, microsecond=0)
+    logger.info(f"✅ Fallback - Next window: {result.strftime('%A, %B %d at %I:%M %p EST')}")
+    return result
 
 
 def is_match_window_time():
@@ -156,21 +167,9 @@ async def open_match_window(window_type='domestic'):
         await conn.execute("UPDATE game_state SET match_window_open = TRUE")
 
 
-# ✅ NEW HELPER FUNCTION
 async def add_match_result_news(home_team, away_team, home_score, away_score, 
                                 category, week_number, competition='League'):
-    """
-    Add match result to news database
-    
-    Args:
-        home_team: Home team name
-        away_team: Away team name
-        home_score: Home team score
-        away_score: Away team score
-        category: News category (match_news)
-        week_number: Current week
-        competition: Competition name (League, Champions League, Europa League)
-    """
+    """Add match result to news database"""
     
     # Determine headline based on result
     if home_score > away_score:
@@ -210,7 +209,7 @@ async def add_match_result_news(home_team, away_team, home_score, away_score,
         headline=headline,
         content=content,
         category=category,
-        user_id=None,  # NPC match, no specific user
+        user_id=None,
         importance=importance,
         week_number=week_number
     )
@@ -259,7 +258,6 @@ async def close_match_window(window_type='domestic', bot=None):
                     'away_score': result['away_score']
                 })
                 
-                # ✅ NEW: Add match result to news database
                 await add_match_result_news(
                     result['home_team'],
                     result['away_team'],
@@ -322,47 +320,40 @@ async def advance_week(bot=None):
         logger.info(f"📅 Advanced to Week {next_week}")
         
         # ✅ EUROPEAN COMPETITION PROGRESSION
-        # This only runs AFTER domestic window closes (week has advanced)
         from utils import european_competitions as euro
         
         try:
-            # After group stage completes (week 18 just finished)
-            if current_week == 18:  # Last group stage week
+            if current_week == 18:
                 logger.info("🏆 Group stage complete, drawing Round of 16...")
                 await euro.generate_knockout_draw('CL', 'r16', state['current_season'])
                 await euro.generate_knockout_draw('EL', 'r16', state['current_season'])
             
-            # After R16 completes (week 24 just finished)
-            elif current_week == 24:  # Last R16 week
+            elif current_week == 24:
                 logger.info("🏆 R16 complete, drawing Quarter-Finals...")
                 await euro.close_knockout_round('CL', 'r16', state['current_season'])
                 await euro.close_knockout_round('EL', 'r16', state['current_season'])
                 await euro.generate_knockout_draw('CL', 'quarters', state['current_season'])
                 await euro.generate_knockout_draw('EL', 'quarters', state['current_season'])
             
-            # After Quarters complete (week 30 just finished)
-            elif current_week == 30:  # Last QF week
+            elif current_week == 30:
                 logger.info("🏆 Quarter-Finals complete, drawing Semi-Finals...")
                 await euro.close_knockout_round('CL', 'quarters', state['current_season'])
                 await euro.close_knockout_round('EL', 'quarters', state['current_season'])
                 await euro.generate_knockout_draw('CL', 'semis', state['current_season'])
                 await euro.generate_knockout_draw('EL', 'semis', state['current_season'])
             
-            # After Semis complete (week 36 just finished)
-            elif current_week == 36:  # Last SF week
+            elif current_week == 36:
                 logger.info("🏆 Semi-Finals complete, preparing Finals...")
                 await euro.close_knockout_round('CL', 'semis', state['current_season'])
                 await euro.close_knockout_round('EL', 'semis', state['current_season'])
                 await euro.generate_knockout_draw('CL', 'final', state['current_season'])
                 await euro.generate_knockout_draw('EL', 'final', state['current_season'])
             
-            # After Finals complete (week 38 just finished - LAST WEEK!)
-            elif current_week == 38:  # Final week of season
+            elif current_week == 38:
                 logger.info("🏆 Finals played, crowning champions!")
                 await euro.close_knockout_round('CL', 'final', state['current_season'])
                 await euro.close_knockout_round('EL', 'final', state['current_season'])
                 
-                # Announce winners to Discord
                 if bot:
                     try:
                         from utils.event_poster import post_european_champions
@@ -373,11 +364,27 @@ async def advance_week(bot=None):
         except Exception as e:
             logger.error(f"❌ Error in European competition progression: {e}", exc_info=True)
         
-        # Transfer window
+        # ✅ CRITICAL FIX: Transfer window - ONLY run during transfer windows
         if next_week in config.TRANSFER_WINDOW_WEEKS:
-            logger.info("💼 Transfer window opening...")
-            from utils.transfer_system import generate_offers
-            await generate_offers()
+            logger.info(f"💼 Transfer window opening for Week {next_week}...")
+            
+            try:
+                # Generate player offers
+                from utils.transfer_system import process_weekly_transfer_offers
+                await process_weekly_transfer_offers(bot=bot)
+                logger.info("✅ Player transfer offers generated")
+            except Exception as e:
+                logger.error(f"❌ Error generating player offers: {e}", exc_info=True)
+            
+            try:
+                # Simulate NPC transfers (has built-in week check as failsafe)
+                from utils.transfer_system import simulate_npc_transfers
+                npc_count = await simulate_npc_transfers()
+                logger.info(f"✅ NPC transfers complete: {npc_count} transfers")
+            except Exception as e:
+                logger.error(f"❌ Error in NPC transfers: {e}", exc_info=True)
+        else:
+            logger.info(f"⏸️ Week {next_week}: No transfer window")
         
         # Weekly news digest
         if bot:
