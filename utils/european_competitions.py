@@ -77,6 +77,7 @@ async def create_group_fixtures(conn, competition, group_name, teams, season):
     """Create all fixtures for a group"""
     match_weeks = config.GROUP_STAGE_WEEKS
     
+    # Create all possible home/away fixtures
     fixtures = []
     for i in range(len(teams)):
         for j in range(i+1, len(teams)):
@@ -84,15 +85,17 @@ async def create_group_fixtures(conn, competition, group_name, teams, season):
     
     random.shuffle(fixtures)
     
+    # Assign fixtures to match days (1-6 for group stage)
     for idx, (home, away) in enumerate(fixtures):
         week = match_weeks[idx % 6]
+        match_day = (idx % 6) + 1  # ✅ FIX: Match days 1-6
         
         await conn.execute("""
             INSERT INTO european_fixtures
             (competition, stage, group_name, home_team_id, away_team_id, 
-             week_number, season)
-            VALUES ($1, $2, $3, $4, $5, $6, $7)
-        """, competition, 'group', group_name, home, away, week, season)
+             week_number, season, match_day)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        """, competition, 'group', group_name, home, away, week, season, match_day)
 
 async def generate_knockout_draw(competition, stage, season):
     """Generate knockout stage draw"""
@@ -163,12 +166,16 @@ async def create_knockout_fixtures(conn, competition, stage, season):
     """Create knockout fixtures"""
     if stage == 'r16':
         weeks = config.KNOCKOUT_R16_WEEKS
+        match_day = 1  # R16 is match day 1 of knockouts
     elif stage == 'quarters':
         weeks = config.KNOCKOUT_QF_WEEKS
+        match_day = 2  # QF is match day 2
     elif stage == 'semis':
         weeks = config.KNOCKOUT_SF_WEEKS
+        match_day = 3  # SF is match day 3
     else:
         weeks = [config.KNOCKOUT_FINAL_WEEK]
+        match_day = 4  # Final is match day 4
     
     ties = await conn.fetch("""
         SELECT tie_id, home_team_id, away_team_id
@@ -179,18 +186,18 @@ async def create_knockout_fixtures(conn, competition, stage, season):
     for tie in ties:
         await conn.execute("""
             INSERT INTO european_fixtures
-            (competition, stage, home_team_id, away_team_id, week_number, season, leg, tie_id)
-            VALUES ($1, $2, $3, $4, $5, $6, 1, $7)
+            (competition, stage, home_team_id, away_team_id, week_number, season, leg, tie_id, match_day)
+            VALUES ($1, $2, $3, $4, $5, $6, 1, $7, $8)
         """, competition, stage, tie['home_team_id'], tie['away_team_id'], 
-             weeks[0], season, tie['tie_id'])
+             weeks[0], season, tie['tie_id'], match_day)
         
         if stage != 'final':
             await conn.execute("""
                 INSERT INTO european_fixtures
-                (competition, stage, home_team_id, away_team_id, week_number, season, leg, tie_id)
-                VALUES ($1, $2, $3, $4, $5, $6, 2, $7)
+                (competition, stage, home_team_id, away_team_id, week_number, season, leg, tie_id, match_day)
+                VALUES ($1, $2, $3, $4, $5, $6, 2, $7, $8)
             """, competition, stage, tie['away_team_id'], tie['home_team_id'], 
-                 weeks[1], season, tie['tie_id'])
+                 weeks[1], season, tie['tie_id'], match_day)
 
 async def close_knockout_round(competition, stage, season):
     """Process knockout round results"""
