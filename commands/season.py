@@ -1,6 +1,7 @@
 """
 Simplified /season command - shows fixed schedule
 COMPLETE REPLACEMENT for commands/season.py
+✅ FIXED: Corrected unpacking of is_match_window_time() return values (4 instead of 3)
 """
 import discord
 from discord import app_commands
@@ -38,17 +39,22 @@ class SeasonCommands(commands.Cog):
         # MATCH WINDOW STATUS - Simplified
         from utils.season_manager import is_match_window_time, get_next_match_window, EST
         
-        is_window_time, _, _ = is_match_window_time()
+        # ✅ FIXED: Changed from 3 to 4 underscores to unpack all return values
+        is_window_time, _, _, window_type = is_match_window_time()
         window_open = state['match_window_open']
         
         if window_open:
             # Window is currently OPEN
             now = datetime.now(EST)
             
+            # Determine which window is open
+            window_name = "European" if window_type == 'european' else "Domestic"
+            close_time = "2:00 PM" if window_type == 'european' else "5:00 PM"
+            
             embed.add_field(
-                name="🟢 Match Window: OPEN",
+                name=f"🟢 {window_name} Match Window: OPEN",
                 value=f"**Current Time:** {now.strftime('%I:%M %p EST')}\n"
-                      f"**Closes:** 5:00 PM EST\n\n"
+                      f"**Closes:** {close_time} EST\n\n"
                       f"🎮 Use `/play_match` to play your match!",
                 inline=False
             )
