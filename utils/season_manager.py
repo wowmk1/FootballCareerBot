@@ -200,7 +200,7 @@ async def close_match_window(window_type='domestic', bot=None):
                 logger.info(f"🏆 European matches closed for Week {current_week}")
             
             # ❌ European window does NOT advance week
-            logger.info(f"⏸️ Week stays at {current_week} (domestic window at 3 PM)")
+            logger.info(f"⏸️ Week stays at {current_week} (domestic window at 3 PM will advance)")
             await conn.execute("UPDATE game_state SET match_window_open = FALSE")
     
     return results
@@ -238,11 +238,65 @@ async def advance_week(bot=None):
         await conn.execute("UPDATE game_state SET current_week = $1", next_week)
         logger.info(f"📅 Advanced to Week {next_week}")
         
+        # ✅ EUROPEAN COMPETITION PROGRESSION
+        # This only runs AFTER domestic window closes (week has advanced)
+        from utils import european_competitions as euro
+        
+        try:
+            # After group stage completes (check if we just finished last group week)
+            if current_week in config.GROUP_STAGE_WEEKS and current_week == config.GROUP_STAGE_WEEKS[-1]:
+                logger.info("🏆 Group stage complete, drawing Round of 16...")
+                await euro.generate_knockout_draw('CL', 'r16', f"{state['current_season']}/{state['current_season'] + 1}")
+                await euro.generate_knockout_draw('EL', 'r16', f"{state['current_season']}/{state['current_season'] + 1}")
+            
+            # After R16 completes
+            elif hasattr(config, 'KNOCKOUT_R16_WEEKS') and current_week == config.KNOCKOUT_R16_WEEKS[-1]:
+                logger.info("🏆 R16 complete, drawing Quarter-Finals...")
+                await euro.close_knockout_round('CL', 'r16', f"{state['current_season']}/{state['current_season'] + 1}")
+                await euro.close_knockout_round('EL', 'r16', f"{state['current_season']}/{state['current_season'] + 1}")
+                await euro.generate_knockout_draw('CL', 'quarters', f"{state['current_season']}/{state['current_season'] + 1}")
+                await euro.generate_knockout_draw('EL', 'quarters', f"{state['current_season']}/{state['current_season'] + 1}")
+            
+            # After Quarters complete
+            elif hasattr(config, 'KNOCKOUT_QF_WEEKS') and current_week == config.KNOCKOUT_QF_WEEKS[-1]:
+                logger.info("🏆 Quarter-Finals complete, drawing Semi-Finals...")
+                await euro.close_knockout_round('CL', 'quarters', f"{state['current_season']}/{state['current_season'] + 1}")
+                await euro.close_knockout_round('EL', 'quarters', f"{state['current_season']}/{state['current_season'] + 1}")
+                await euro.generate_knockout_draw('CL', 'semis', f"{state['current_season']}/{state['current_season'] + 1}")
+                await euro.generate_knockout_draw('EL', 'semis', f"{state['current_season']}/{state['current_season'] + 1}")
+            
+            # After Semis complete
+            elif hasattr(config, 'KNOCKOUT_SF_WEEKS') and current_week == config.KNOCKOUT_SF_WEEKS[-1]:
+                logger.info("🏆 Semi-Finals complete, preparing Finals...")
+                await euro.close_knockout_round('CL', 'semis', f"{state['current_season']}/{state['current_season'] + 1}")
+                await euro.close_knockout_round('EL', 'semis', f"{state['current_season']}/{state['current_season'] + 1}")
+                await euro.generate_knockout_draw('CL', 'final', f"{state['current_season']}/{state['current_season'] + 1}")
+                await euro.generate_knockout_draw('EL', 'final', f"{state['current_season']}/{state['current_season'] + 1}")
+            
+            # After Finals complete
+            elif hasattr(config, 'KNOCKOUT_FINAL_WEEK') and current_week == config.KNOCKOUT_FINAL_WEEK:
+                logger.info("🏆 Finals played, crowning champions!")
+                await euro.close_knockout_round('CL', 'final', f"{state['current_season']}/{state['current_season'] + 1}")
+                await euro.close_knockout_round('EL', 'final', f"{state['current_season']}/{state['current_season'] + 1}")
+                
+                # Announce winners to Discord
+                if bot:
+                    try:
+                        from utils.event_poster import post_european_champions
+                        await post_european_champions(bot, state['current_season'])
+                    except Exception as e:
+                        logger.warning(f"⚠️ Could not post European champions: {e}")
+        
+        except Exception as e:
+            logger.error(f"❌ Error in European competition progression: {e}", exc_info=True)
+        
+        # Transfer window
         if next_week in config.TRANSFER_WINDOW_WEEKS:
             logger.info("💼 Transfer window opening...")
             from utils.transfer_system import generate_offers
             await generate_offers()
         
+        # Weekly news digest
         if bot:
             try:
                 from utils.event_poster import post_weekly_news_digest
@@ -268,7 +322,7 @@ async def end_season(bot=None):
         await db.age_all_players(bot=bot)
         
         from utils.fixture_generator import generate_all_fixtures
-        await generate_all_fixtures(f"{current_season + 1}/{current_season + 2}")
+        await generate_all_fixtures()
         
         from utils.european_competitions import draw_groups
         await draw_groups(f"{current_season + 1}/{current_season + 2}")
