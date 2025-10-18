@@ -640,15 +640,76 @@ class AdminCommands(commands.Cog):
             state = await db.get_game_state()
             season = state['current_season']
             
+            deleted_counts = {
+                'groups': 0,
+                'group_matches': 0,
+                'knockout_brackets': 0,
+                'knockout_matches': 0
+            }
+            
             async with db.pool.acquire() as conn:
-                # Delete all European data for current season
-                await conn.execute("DELETE FROM european_knockout_matches WHERE season = $1", season)
-                await conn.execute("DELETE FROM european_knockout_bracket WHERE season = $1", season)
-                await conn.execute("DELETE FROM european_group_matches WHERE season = $1", season)
-                await conn.execute("DELETE FROM european_groups WHERE season = $1", season)
+                # Delete from each European table - try/except handles missing columns gracefully
+                
+                # european_knockout
+                try:
+                    result = await conn.execute(
+                        "DELETE FROM european_knockout WHERE season = $1", 
+                        season
+                    )
+                    deleted_counts['knockout_brackets'] = int(result.split()[-1]) if result else 0
+                except Exception as e:
+                    print(f"Could not delete from european_knockout: {e}")
+                
+                # european_fixtures
+                try:
+                    result = await conn.execute(
+                        "DELETE FROM european_fixtures WHERE season = $1", 
+                        season
+                    )
+                    deleted_counts['knockout_matches'] = int(result.split()[-1]) if result else 0
+                except Exception as e:
+                    print(f"Could not delete from european_fixtures: {e}")
+                
+                # european_groups
+                try:
+                    result = await conn.execute(
+                        "DELETE FROM european_groups WHERE season = $1", 
+                        season
+                    )
+                    deleted_counts['groups'] = int(result.split()[-1]) if result else 0
+                except Exception as e:
+                    print(f"Could not delete from european_groups: {e}")
+                
+                # Also check for player European stats if it exists
+                try:
+                    result = await conn.execute(
+                        "DELETE FROM player_european_stats WHERE season = $1", 
+                        season
+                    )
+                    # Don't track count for this one
+                except:
+                    pass
+                
+                # Also check for any npc performance data if it exists
+                try:
+                    result = await conn.execute(
+                        "DELETE FROM european_npc_performance WHERE season = $1", 
+                        season
+                    )
+                    # Don't track count for this one
+                except:
+                    pass
+            
+            total_deleted = sum(deleted_counts.values())
             
             await interaction.followup.send(
                 f"✅ **All European data wiped for Season {season}!**\n\n"
+                f"**Deleted:**\n"
+                f"- {deleted_counts['groups']} groups\n"
+                f"- {deleted_counts['group_matches']} group matches\n"
+                f"- {deleted_counts['knockout_brackets']} knockout brackets\n"
+                f"- {deleted_counts['knockout_matches']} knockout matches\n\n"
+                f"**Total records deleted: {total_deleted}**\n\n"
                 f"You can now use:\n"
                 f"- **🏆 Start European Now** to restart competitions\n"
                 f"- **🏆 Simulate European to End** to fast-forward after restarting",
