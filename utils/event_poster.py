@@ -168,19 +168,18 @@ async def post_match_result_to_channel(bot, guild, fixture, home_score, away_sco
 
 async def post_european_results(bot, competition, week_number):
     """
-    Post European match results to news channel
-    
-    Args:
-        bot: Discord bot instance
-        competition: 'CL' for Champions League or 'EL' for Europa League
-        week_number: Week number of the competition
+    Post BEAUTIFUL European match results with rich embeds
     """
     comp_name = "Champions League" if competition == 'CL' else "Europa League"
+    comp_emoji = "⭐" if competition == 'CL' else "🌟"
+    comp_color = discord.Color.blue() if competition == 'CL' else discord.Color.gold()
     
     try:
         async with db.pool.acquire() as conn:
             results = await conn.fetch("""
                 SELECT f.*,
+                       f.home_team_id,
+                       f.away_team_id,
                        COALESCE(t1.team_name, et1.team_name) as home_name,
                        COALESCE(t2.team_name, et2.team_name) as away_name
                 FROM european_fixtures f
@@ -192,17 +191,19 @@ async def post_european_results(bot, competition, week_number):
                 AND f.week_number = $2 
                 AND f.played = TRUE
                 ORDER BY f.home_score + f.away_score DESC
-                LIMIT 10
             """, competition, week_number)
         
         if not results:
             print(f"  📰 No {comp_name} results for Week {week_number}")
             return
         
+        from utils.football_data_api import get_team_crest_url, get_competition_logo
+        comp_logo = get_competition_logo(comp_name)
+        
         # Post to all guilds
         for guild in bot.guilds:
             try:
-                # Try european-news channel first, then news-feed, then general
+                # Find appropriate channel
                 news_channel = discord.utils.get(guild.text_channels, name='european-news')
                 if not news_channel:
                     news_channel = discord.utils.get(guild.text_channels, name='news-feed')
@@ -212,34 +213,83 @@ async def post_european_results(bot, competition, week_number):
                 if not news_channel:
                     continue
                 
-                # Create embed with appropriate color
-                embed = discord.Embed(
-                    title=f"🏆 {comp_name} Results - Week {week_number}",
-                    color=discord.Color.blue() if competition == 'CL' else discord.Color.gold()
-                )
+                # Create beautiful result embeds (max 10 per batch)
+                embeds = []
                 
-                # Build results text
-                results_text = ""
-                for result in results[:8]:
-                    leg_text = f" (Leg {result['leg']})" if result.get('leg', 1) > 1 else ""
-                    results_text += f"**{result['home_name']}** {result['home_score']}-{result['away_score']} **{result['away_name']}**{leg_text}\n"
+                for result in results[:10]:
+                    # Get crests
+                    home_crest = get_team_crest_url(result['home_team_id'])
+                    away_crest = get_team_crest_url(result['away_team_id'])
+                    
+                    # Determine result
+                    if result['home_score'] > result['away_score']:
+                        result_emoji = "🏆"
+                        winner_text = f"**{result['home_name']} wins!**"
+                    elif result['away_score'] > result['home_score']:
+                        result_emoji = "🏆"
+                        winner_text = f"**{result['away_name']} wins!**"
+                    else:
+                        result_emoji = "🤝"
+                        winner_text = "**Draw!**"
+                    
+                    # Stage info
+                    if result['stage'] == 'group':
+                        stage_text = f"Group {result.get('group_name', '?')}"
+                    else:
+                        leg = f" - Leg {result['leg']}" if result.get('leg', 1) > 1 else ""
+                        stage_text = f"{result['stage'].title()}{leg}"
+                    
+                    embed = discord.Embed(
+                        title=f"{comp_emoji} {comp_name} - {stage_text}",
+                        description=f"## {result['home_name']} **{result['home_score']} - {result['away_score']}** {result['away_name']}\n\n{result_emoji} {winner_text}",
+                        color=comp_color
+                    )
+                    
+                    # Competition logo
+                    if comp_logo:
+                        embed.set_thumbnail(url=comp_logo)
+                    
+                    # Home team crest as author
+                    if home_crest:
+                        embed.set_author(name=result['home_name'], icon_url=home_crest)
+                    
+                    # Away team crest as footer
+                    if away_crest:
+                        embed.set_footer(text=result['away_name'], icon_url=away_crest)
+                    
+                    # Match stats
+                    embed.add_field(
+                        name="📊 Match Info",
+                        value=f"**Week:** {week_number}\n**Stage:** {stage_text}",
+                        inline=True
+                    )
+                    
+                    # Goal scorers would go here if tracked
+                    total_goals = result['home_score'] + result['away_score']
+                    if total_goals >= 4:
+                        embed.add_field(
+                            name="⚽ Goals",
+                            value=f"🔥 **{total_goals} goal thriller!**",
+                            inline=True
+                        )
+                    
+                    embeds.append(embed)
                 
-                embed.description = results_text
+                # Send header message
+                header = f"## {comp_emoji} {comp_name} Results - Week {week_number}\n"
+                header += f"**{len(results)} matches completed**"
                 
-                # Add competition logo if available
-                from utils.football_data_api import get_competition_logo
-                comp_logo = get_competition_logo(comp_name)
-                if comp_logo:
-                    embed.set_thumbnail(url=comp_logo)
+                await news_channel.send(header)
                 
-                # Footer with context
-                embed.set_footer(text=f"{comp_name} • Matchday {week_number}")
+                # Send embeds in batches
+                for i in range(0, len(embeds), 10):
+                    batch = embeds[i:i+10]
+                    await news_channel.send(embeds=batch)
                 
-                await news_channel.send(embed=embed)
-                print(f"  ✅ Posted {comp_name} results to {guild.name}")
+                print(f"  ✅ Posted beautiful {comp_name} results to {guild.name}")
                 
             except Exception as e:
-                print(f"  ❌ Could not post {comp_name} results to {guild.name}: {e}")
+                print(f"  ❌ Could not post to {guild.name}: {e}")
     
     except Exception as e:
         print(f"❌ Error in post_european_results: {e}")
