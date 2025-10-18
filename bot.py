@@ -587,7 +587,9 @@ class FootballBot(commands.Bot):
     async def check_warnings(self):
         """
         Check if we should send warnings
-        Times: 2:00 PM, 2:30 PM, 2:45 PM (before open), 4:45 PM (before close)
+        Times: 
+        - European: 11:00 AM, 11:30 AM, 11:45 AM (before 12 PM open)
+        - Domestic: 2:00 PM, 2:30 PM, 2:45 PM (before 3 PM open), 4:45 PM (before close)
         SELF-HEALING: Errors logged but task continues
         """
         try:
@@ -596,7 +598,10 @@ class FootballBot(commands.Bot):
                 send_1h_warning,
                 send_30m_warning,
                 send_15m_warning,
-                send_closing_warning
+                send_closing_warning,
+                send_european_1h_warning,
+                send_european_30m_warning,
+                send_european_15m_warning
             )
 
             state = await db.get_game_state()
@@ -604,7 +609,18 @@ class FootballBot(commands.Bot):
             if not state['season_started']:
                 return
 
-            if should_send_warning('domestic_1h'):
+            # European warnings (11 AM, 11:30 AM, 11:45 AM)
+            if should_send_warning('european_1h'):
+                await send_european_1h_warning(self)
+
+            elif should_send_warning('european_30m'):
+                await send_european_30m_warning(self)
+
+            elif should_send_warning('european_15m'):
+                await send_european_15m_warning(self)
+
+            # Domestic warnings (2 PM, 2:30 PM, 2:45 PM, 4:45 PM)
+            elif should_send_warning('domestic_1h'):
                 await send_1h_warning(self)
 
             elif should_send_warning('domestic_30m'):
