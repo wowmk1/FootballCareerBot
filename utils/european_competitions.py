@@ -1,7 +1,6 @@
 """
-European Competition Management System - FIXED VERSION
+European Competition Management System
 Groups, Knockout Stages, Fixtures, Standings
-FIX: Changed league_table references to teams table
 """
 
 import random
@@ -14,7 +13,6 @@ async def draw_groups(season='2027/28'):
     print("🏆 Drawing European groups...")
     
     async with db.pool.acquire() as conn:
-        # FIX: Changed from league_table to teams table
         # Get qualified English teams based on current standings
         standings = await conn.fetch("""
             SELECT team_id, position
@@ -78,7 +76,6 @@ async def create_groups(conn, competition, teams, season):
 async def create_group_fixtures(conn, competition, group_name, teams, season):
     """Create all fixtures for a group"""
     match_weeks = config.GROUP_STAGE_WEEKS
-    match_day = config.CHAMPIONS_LEAGUE_MATCH_DAY if competition == 'CL' else config.EUROPA_LEAGUE_MATCH_DAY
     
     fixtures = []
     for i in range(len(teams)):
@@ -93,9 +90,9 @@ async def create_group_fixtures(conn, competition, group_name, teams, season):
         await conn.execute("""
             INSERT INTO european_fixtures
             (competition, stage, group_name, home_team_id, away_team_id, 
-             week_number, match_day, season)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-        """, competition, 'group', group_name, home, away, week, match_day, season)
+             week_number, season)
+            VALUES ($1, $2, $3, $4, $5, $6, $7)
+        """, competition, 'group', group_name, home, away, week, season)
 
 async def generate_knockout_draw(competition, stage, season):
     """Generate knockout stage draw"""
@@ -164,8 +161,6 @@ async def generate_knockout_draw(competition, stage, season):
 
 async def create_knockout_fixtures(conn, competition, stage, season):
     """Create knockout fixtures"""
-    match_day = config.CHAMPIONS_LEAGUE_MATCH_DAY if competition == 'CL' else config.EUROPA_LEAGUE_MATCH_DAY
-    
     if stage == 'r16':
         weeks = config.KNOCKOUT_R16_WEEKS
     elif stage == 'quarters':
@@ -184,18 +179,18 @@ async def create_knockout_fixtures(conn, competition, stage, season):
     for tie in ties:
         await conn.execute("""
             INSERT INTO european_fixtures
-            (competition, stage, home_team_id, away_team_id, week_number, match_day, season, leg, tie_id)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, 1, $8)
+            (competition, stage, home_team_id, away_team_id, week_number, season, leg, tie_id)
+            VALUES ($1, $2, $3, $4, $5, $6, 1, $7)
         """, competition, stage, tie['home_team_id'], tie['away_team_id'], 
-             weeks[0], match_day, season, tie['tie_id'])
+             weeks[0], season, tie['tie_id'])
         
         if stage != 'final':
             await conn.execute("""
                 INSERT INTO european_fixtures
-                (competition, stage, home_team_id, away_team_id, week_number, match_day, season, leg, tie_id)
-                VALUES ($1, $2, $3, $4, $5, $6, $7, 2, $8)
+                (competition, stage, home_team_id, away_team_id, week_number, season, leg, tie_id)
+                VALUES ($1, $2, $3, $4, $5, $6, 2, $7)
             """, competition, stage, tie['away_team_id'], tie['home_team_id'], 
-                 weeks[1], match_day, season, tie['tie_id'])
+                 weeks[1], season, tie['tie_id'])
 
 async def close_knockout_round(competition, stage, season):
     """Process knockout round results"""
@@ -284,17 +279,29 @@ async def open_european_window(current_week):
         print(f"🏆 European window OPENED for week {current_week}")
         return True
 
-async def close_european_window(current_week, bot=None):
-    """Close European window and simulate matches"""
+async def close_european_window(current_week, bot=None, competition=None):
+    """
+    Close European window and simulate matches
+    competition: 'CL', 'EL', or None (simulates both)
+    """
     async with db.pool.acquire() as conn:
-        unplayed = await conn.fetch("""
-            SELECT * FROM european_fixtures
-            WHERE week_number = $1 AND played = FALSE
-        """, current_week)
+        if competition:
+            # Close specific competition
+            unplayed = await conn.fetch("""
+                SELECT * FROM european_fixtures
+                WHERE week_number = $1 AND played = FALSE AND competition = $2
+            """, current_week, competition)
+        else:
+            # Close both CL and EL
+            unplayed = await conn.fetch("""
+                SELECT * FROM european_fixtures
+                WHERE week_number = $1 AND played = FALSE
+            """, current_week)
+        
+        from utils.match_engine import match_engine
         
         for fixture in unplayed:
-            from utils.match_engine import simulate_npc_match
-            result = await simulate_npc_match(
+            result = await match_engine.simulate_npc_match(
                 fixture['home_team_id'],
                 fixture['away_team_id'],
                 is_european=True
@@ -317,9 +324,13 @@ async def close_european_window(current_week, bot=None):
         
         if bot:
             from utils.event_poster import post_european_results
-            competitions = set(f['competition'] for f in unplayed)
-            for comp in competitions:
-                await post_european_results(bot, comp, current_week)
+            if competition:
+                await post_european_results(bot, competition, current_week)
+            else:
+                # Post results for both competitions
+                competitions = set(f['competition'] for f in unplayed)
+                for comp in competitions:
+                    await post_european_results(bot, comp, current_week)
 
 async def update_group_standings(conn, comp, group, home, away, home_score, away_score):
     """Update group standings"""
