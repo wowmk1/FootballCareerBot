@@ -130,7 +130,6 @@ async def open_match_window(window_type='domestic'):
         elif window_type == 'champions_league':
             # Open ONLY Champions League fixtures
             if current_week in config.EUROPEAN_MATCH_WEEKS:
-                from utils.european_competitions import open_european_window
                 await conn.execute("""
                     UPDATE european_fixtures 
                     SET playable = TRUE 
@@ -139,12 +138,10 @@ async def open_match_window(window_type='domestic'):
                 logger.info(f"🏆 Champions League fixtures opened for Week {current_week}")
             else:
                 logger.info(f"⏭️ No Champions League matches this week")
-                return
         
         elif window_type == 'europa_league':
             # Open ONLY Europa League fixtures
             if current_week in config.EUROPEAN_MATCH_WEEKS:
-                from utils.european_competitions import open_european_window
                 await conn.execute("""
                     UPDATE european_fixtures 
                     SET playable = TRUE 
@@ -153,13 +150,9 @@ async def open_match_window(window_type='domestic'):
                 logger.info(f"🏆 Europa League fixtures opened for Week {current_week}")
             else:
                 logger.info(f"⏭️ No Europa League matches this week")
-                return
         
         # Mark window as open
-        await conn.execute("""
-            UPDATE game_state 
-            SET match_window_open = TRUE
-        """)
+        await conn.execute("UPDATE game_state SET match_window_open = TRUE")
 
 
 async def close_match_window(window_type='domestic', bot=None):
@@ -220,7 +213,6 @@ async def close_match_window(window_type='domestic', bot=None):
         elif window_type == 'champions_league':
             # Close Champions League only
             if current_week in config.EUROPEAN_MATCH_WEEKS:
-                from utils.european_competitions import close_european_window
                 await conn.execute("""
                     UPDATE european_fixtures 
                     SET playable = FALSE 
@@ -239,7 +231,6 @@ async def close_match_window(window_type='domestic', bot=None):
         elif window_type == 'europa_league':
             # Close Europa League only
             if current_week in config.EUROPEAN_MATCH_WEEKS:
-                from utils.european_competitions import close_european_window
                 await conn.execute("""
                     UPDATE european_fixtures 
                     SET playable = FALSE 
@@ -348,26 +339,62 @@ async def end_season(bot=None):
         logger.info(f"✅ New season started: {current_season + 1}/{current_season + 2}")
 
 
-# Warning functions (work for all match days)
+# Warning functions
 async def send_1h_warning(bot):
     """Send 1 hour warning"""
     logger.info("⏰ Sending 1-hour warning...")
-    # ... existing code ...
+    for guild in bot.guilds:
+        channel = discord.utils.get(guild.text_channels, name="match-results") or \
+                  discord.utils.get(guild.text_channels, name="general")
+        if channel:
+            embed = discord.Embed(
+                title="⏰ Match Window Opening Soon!",
+                description="Match window opens in **1 HOUR** (3:00 PM EST)",
+                color=discord.Color.orange()
+            )
+            await channel.send(embed=embed)
 
 
 async def send_30m_warning(bot):
     """Send 30 minute warning"""
     logger.info("⏰ Sending 30-minute warning...")
-    # ... existing code ...
+    for guild in bot.guilds:
+        channel = discord.utils.get(guild.text_channels, name="match-results") or \
+                  discord.utils.get(guild.text_channels, name="general")
+        if channel:
+            embed = discord.Embed(
+                title="⏰ Match Window Opening Soon!",
+                description="Match window opens in **30 MINUTES** (3:00 PM EST)",
+                color=discord.Color.gold()
+            )
+            await channel.send(embed=embed)
 
 
 async def send_15m_warning(bot):
     """Send 15 minute warning"""
     logger.info("⏰ Sending 15-minute warning...")
-    # ... existing code ...
+    for guild in bot.guilds:
+        channel = discord.utils.get(guild.text_channels, name="match-results") or \
+                  discord.utils.get(guild.text_channels, name="general")
+        if channel:
+            embed = discord.Embed(
+                title="⏰ Match Window Opening Soon!",
+                description="Match window opens in **15 MINUTES** (3:00 PM EST)\n\nGet ready!",
+                color=discord.Color.red()
+            )
+            await channel.send(embed=embed)
 
 
 async def send_closing_warning(bot):
     """Send closing soon warning"""
     logger.info("⏰ Sending closing warning...")
-    # ... existing code ...
+    for guild in bot.guilds:
+        channel = discord.utils.get(guild.text_channels, name="match-results") or \
+                  discord.utils.get(guild.text_channels, name="general")
+        if channel:
+            embed = discord.Embed(
+                title="⚠️ Match Window Closing Soon!",
+                description="Match window closes in **15 MINUTES** (5:00 PM EST)\n\nPlay your matches now!",
+                color=discord.Color.red()
+            )
+            await channel.send(embed=embed)
