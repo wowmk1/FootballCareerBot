@@ -1,6 +1,8 @@
 """
 European Competition Management System
 Groups, Knockout Stages, Fixtures, Standings
+
+✅ UPDATED: Now adds match results to news database
 """
 
 import random
@@ -290,6 +292,8 @@ async def close_european_window(current_week, bot=None, competition=None):
     """
     Close European window and simulate matches
     competition: 'CL', 'EL', or None (simulates both)
+    
+    ✅ UPDATED: Now adds match results to news database
     """
     async with db.pool.acquire() as conn:
         if competition:
@@ -326,9 +330,26 @@ async def close_european_window(current_week, bot=None, competition=None):
                     fixture['home_team_id'], fixture['away_team_id'],
                     result['home_score'], result['away_score']
                 )
+            
+            # ✅ NEW: Add European match result to news database
+            comp_name = "Champions League" if fixture['competition'] == 'CL' else "Europa League"
+            
+            # Import the helper function from season_manager
+            from utils.season_manager import add_match_result_news
+            
+            await add_match_result_news(
+                result['home_team'],
+                result['away_team'],
+                result['home_score'],
+                result['away_score'],
+                'match_news',  # Same category as league matches
+                current_week,
+                competition=comp_name
+            )
         
         print(f"🏆 European window CLOSED. Simulated {len(unplayed)} matches")
         
+        # Post to Discord channels (existing functionality)
         if bot:
             from utils.event_poster import post_european_results
             if competition:
