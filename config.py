@@ -54,13 +54,14 @@ TRAINING_EFFECTIVENESS_BY_LEAGUE = {
 CHAMPIONS_LEAGUE_TEAMS = 32
 EUROPA_LEAGUE_TEAMS = 32
 
-# European Competition Weeks
-GROUP_STAGE_WEEKS = [3, 6, 9, 12, 18, 21]
-KNOCKOUT_R16_WEEKS = [24, 27]
-KNOCKOUT_QF_WEEKS = [30, 33]
-KNOCKOUT_SF_WEEKS = [36, 39]
-KNOCKOUT_FINAL_WEEK = 42
+# European Competition Weeks (FIXED to fit within 38-week season)
+GROUP_STAGE_WEEKS = [3, 6, 9, 12, 15, 18]       # 6 group stage matchdays (weeks 3-18)
+KNOCKOUT_R16_WEEKS = [21, 24]                    # Round of 16 (2 legs, weeks 21-24)
+KNOCKOUT_QF_WEEKS = [27, 30]                     # Quarter-Finals (2 legs, weeks 27-30)
+KNOCKOUT_SF_WEEKS = [33, 36]                     # Semi-Finals (2 legs, weeks 33-36)
+KNOCKOUT_FINAL_WEEK = 38                         # Final (single match, week 38 - LAST WEEK!)
 
+# All European match weeks combined
 EUROPEAN_MATCH_WEEKS = GROUP_STAGE_WEEKS + KNOCKOUT_R16_WEEKS + KNOCKOUT_QF_WEEKS + KNOCKOUT_SF_WEEKS + [KNOCKOUT_FINAL_WEEK]
 
 # Qualification positions
@@ -88,3 +89,4 @@ print(f"⏰ European start time: {EUROPEAN_MATCH_START_HOUR}:00")
 print(f"🏋️ Training cooldown: {TRAINING_COOLDOWN_HOURS}h")
 print(f"👴 Retirement age: {RETIREMENT_AGE}")
 print(f"🏆 European match weeks: {EUROPEAN_MATCH_WEEKS}")
+print(f"🏆 CL/EL Final: Week {KNOCKOUT_FINAL_WEEK} (final week of season!)")
