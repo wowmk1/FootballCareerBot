@@ -516,8 +516,9 @@ class FootballBot(commands.Bot):
     @tasks.loop(minutes=5)
     async def check_match_windows(self):
         """
-        Check match windows: Tue (European), Wed (Domestic+Advance)
-        SELF-HEALING: Errors logged but task continues
+        Check BOTH windows:
+        - 12-2 PM: European (on European weeks)
+        - 3-5 PM: Domestic (always, advances week)
         """
         try:
             from utils.season_manager import (
@@ -531,7 +532,7 @@ class FootballBot(commands.Bot):
             if not state['season_started']:
                 return
 
-            # ✅ NOW RETURNS 4 VALUES
+            # Check which window we're in
             is_window_time, is_start_time, is_end_time, window_type = is_match_window_time()
             window_open = state['match_window_open']
 
@@ -543,8 +544,9 @@ class FootballBot(commands.Bot):
                 if window_type == 'domestic':
                     await self.notify_match_window_open()
 
+                time_text = "12-2 PM" if window_type == 'european' else "3-5 PM"
                 await self.change_presence(
-                    activity=discord.Game(name=f"🟢 {window_type.upper()} | Week {state['current_week']}"),
+                    activity=discord.Game(name=f"🟢 {window_type.upper()} {time_text} | Week {state['current_week']}"),
                     status=discord.Status.online
                 )
 
@@ -556,9 +558,10 @@ class FootballBot(commands.Bot):
                 from utils.season_manager import get_next_match_window
                 try:
                     next_window = get_next_match_window()
+                    time_str = next_window.strftime('%I:%M %p')
                     day = next_window.strftime('%a')
                     await self.change_presence(
-                        activity=discord.Game(name=f"Next: {day} 3PM EST | Week {state['current_week']}"),
+                        activity=discord.Game(name=f"Next: {day} {time_str} | Week {state['current_week']}"),
                         status=discord.Status.online
                     )
                 except:
@@ -601,16 +604,16 @@ class FootballBot(commands.Bot):
             if not state['season_started']:
                 return
 
-            if should_send_warning('pre_1h'):
+            if should_send_warning('domestic_1h'):
                 await send_1h_warning(self)
 
-            elif should_send_warning('pre_30m'):
+            elif should_send_warning('domestic_30m'):
                 await send_30m_warning(self)
 
-            elif should_send_warning('pre_15m'):
+            elif should_send_warning('domestic_15m'):
                 await send_15m_warning(self)
 
-            elif should_send_warning('closing_soon'):
+            elif should_send_warning('domestic_closing'):
                 await send_closing_warning(self)
 
         except Exception as e:
@@ -827,8 +830,9 @@ class FootballBot(commands.Bot):
             else:
                 try:
                     next_window = get_next_match_window()
+                    time_str = next_window.strftime('%I:%M %p')
                     day = next_window.strftime('%a')
-                    status_text = f"Next: {day} 3PM EST | Week {state['current_week']}"
+                    status_text = f"Next: {day} {time_str} | Week {state['current_week']}"
                 except:
                     status_text = f"⚽ Week {state['current_week']} | /season"
         else:
