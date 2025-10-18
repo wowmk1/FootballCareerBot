@@ -4,6 +4,7 @@ Season Management - Two Windows on Same Days
 3-5 PM: Domestic (always) - advances week after close
 
 ✅ UPDATED: Now adds match results to news database
+✅ FIXED: Corrected window end time detection
 """
 import asyncio
 from datetime import datetime, timedelta, timezone
@@ -58,6 +59,8 @@ def is_match_window_time():
     Check if current time is match window time
     Returns: (is_window_time, is_start_time, is_end_time, window_type)
     window_type: 'european' or 'domestic'
+    
+    ✅ FIXED: End time detection now checks WITHIN the window (e.g., 1:55 PM for 2 PM close)
     """
     now = datetime.now(EST)
     current_day = now.weekday()
@@ -71,13 +74,15 @@ def is_match_window_time():
     # Check European window (12-2 PM)
     if EUROPEAN_START_HOUR <= current_hour < EUROPEAN_END_HOUR:
         is_start = (current_hour == EUROPEAN_START_HOUR and current_minute < 5)
-        is_end = (current_hour == EUROPEAN_END_HOUR and current_minute < 5)
+        # ✅ FIXED: Check at 1:55 PM (within window) instead of 2:00 PM (outside window)
+        is_end = (current_hour == EUROPEAN_END_HOUR - 1 and current_minute >= 55)
         return True, is_start, is_end, 'european'
     
     # Check Domestic window (3-5 PM)
     if DOMESTIC_START_HOUR <= current_hour < DOMESTIC_END_HOUR:
         is_start = (current_hour == DOMESTIC_START_HOUR and current_minute < 5)
-        is_end = (current_hour == DOMESTIC_END_HOUR and current_minute < 5)
+        # ✅ FIXED: Check at 4:55 PM (within window) instead of 5:00 PM (outside window)
+        is_end = (current_hour == DOMESTIC_END_HOUR - 1 and current_minute >= 55)
         return True, is_start, is_end, 'domestic'
     
     return False, False, False, None
