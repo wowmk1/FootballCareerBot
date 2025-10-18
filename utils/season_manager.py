@@ -28,24 +28,29 @@ DOMESTIC_END_HOUR = 17    # 5 PM
 
 
 def get_next_match_window():
-    """Get the next match window datetime"""
+    """
+    Get the next match window datetime
+    ✅ FIXED: Properly continues to next day when today's windows have passed
+    """
     now = datetime.now(EST)
     
-    for days_ahead in range(7):
+    for days_ahead in range(8):  # Check up to 8 days to ensure we find next match day
         check_date = now + timedelta(days=days_ahead)
         
         if check_date.weekday() in MATCH_DAYS:
-            # Check if European window is next
+            # Check if European window is next (only if it hasn't passed)
             european_time = check_date.replace(hour=EUROPEAN_START_HOUR, minute=0, second=0, microsecond=0)
             if european_time > now:
                 return european_time
             
-            # Otherwise check domestic window
+            # Check domestic window (only if it hasn't passed)
             domestic_time = check_date.replace(hour=DOMESTIC_START_HOUR, minute=0, second=0, microsecond=0)
             if domestic_time > now:
                 return domestic_time
+            
+            # Both windows have passed today, continue to next match day
     
-    # Fallback: next Monday at noon
+    # Fallback: next Monday at European window time
     days_until_monday = (7 - now.weekday()) % 7
     if days_until_monday == 0:
         days_until_monday = 7
