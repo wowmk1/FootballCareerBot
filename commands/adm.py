@@ -2,6 +2,7 @@
 Admin Command - Single command with all admin actions in dropdown
 FIXED VERSION - Now passes bot instance to season manager functions
 ENHANCED VERSION - Added European competition admin controls
+SAFEGUARDED VERSION - Prevents duplicate starts and allows clean restarts
 """
 import discord
 from discord import app_commands
@@ -41,6 +42,7 @@ class AdminCommands(commands.Cog):
         app_commands.Choice(name="🔧 Fix MOTM Columns", value="fix_motm"),
         app_commands.Choice(name="🏆 Start European Now", value="start_european_now"),
         app_commands.Choice(name="🏆 Simulate European to End", value="simulate_european_to_end"),
+        app_commands.Choice(name="🗑️ Wipe & Restart European", value="wipe_european"),
         app_commands.Choice(name="🔄 Restart Bot", value="restart"),
     ])
     @app_commands.checks.has_permissions(administrator=True)
@@ -90,6 +92,8 @@ class AdminCommands(commands.Cog):
             await self._start_european_now(interaction)
         elif action == "simulate_european_to_end":
             await self._simulate_european_to_end(interaction)
+        elif action == "wipe_european":
+            await self._wipe_european(interaction)
         elif action == "restart":
             await self._restart(interaction)
     
@@ -487,13 +491,30 @@ class AdminCommands(commands.Cog):
             await interaction.followup.send(f"❌ Error: {e}", ephemeral=True)
     
     async def _start_european_now(self, interaction: discord.Interaction):
-        """START EUROPEAN COMPETITIONS MID-SEASON"""
+        """START EUROPEAN COMPETITIONS MID-SEASON (with duplicate prevention)"""
         await interaction.response.defer()
         
         try:
             state = await db.get_game_state()
             current_week = state['current_week']
             season = state['current_season']
+            
+            # ✅ CRITICAL: Check if already started
+            async with db.pool.acquire() as conn:
+                existing_groups = await conn.fetchval(
+                    "SELECT COUNT(*) FROM european_groups WHERE season = $1", 
+                    season
+                )
+                
+                if existing_groups > 0:
+                    await interaction.followup.send(
+                        f"❌ **European competitions already started for Season {season}!**\n\n"
+                        f"Found {existing_groups} existing groups.\n\n"
+                        f"Use `/european_standings` to view current state, or\n"
+                        f"Use **🗑️ Wipe & Restart European** to start fresh.",
+                        ephemeral=True
+                    )
+                    return
             
             await interaction.followup.send(
                 f"🏆 Starting European competitions!\n"
@@ -545,6 +566,21 @@ class AdminCommands(commands.Cog):
             current_week = state['current_week']
             season = state['current_season']
             
+            # ✅ Check if started first
+            async with db.pool.acquire() as conn:
+                existing_groups = await conn.fetchval(
+                    "SELECT COUNT(*) FROM european_groups WHERE season = $1", 
+                    season
+                )
+                
+                if existing_groups == 0:
+                    await interaction.followup.send(
+                        f"❌ **European competitions haven't started yet for Season {season}!**\n\n"
+                        f"Use **🏆 Start European Now** first.",
+                        ephemeral=True
+                    )
+                    return
+            
             await interaction.followup.send(
                 f"🏆 Simulating ENTIRE European season to completion!\n"
                 f"Current Week: {current_week}\n\n"
@@ -577,6 +613,53 @@ class AdminCommands(commands.Cog):
             import traceback
             traceback.print_exc()
     
+    async def _wipe_european(self, interaction: discord.Interaction):
+        """WIPE ALL EUROPEAN DATA AND START FRESH"""
+        
+        # Confirmation dialog
+        view = ConfirmEuropeanWipeView()
+        await interaction.response.send_message(
+            "⚠️ **WARNING: WIPE ALL EUROPEAN COMPETITION DATA?**\n\n"
+            "This will delete:\n"
+            "- All groups\n"
+            "- All group matches\n"
+            "- All knockout brackets\n"
+            "- All knockout matches\n\n"
+            "You can then use **🏆 Start European Now** to restart from scratch.\n\n"
+            "**This cannot be undone!**",
+            view=view,
+            ephemeral=True
+        )
+        
+        await view.wait()
+        
+        if not view.confirmed:
+            return
+        
+        try:
+            state = await db.get_game_state()
+            season = state['current_season']
+            
+            async with db.pool.acquire() as conn:
+                # Delete all European data for current season
+                await conn.execute("DELETE FROM european_knockout_matches WHERE season = $1", season)
+                await conn.execute("DELETE FROM european_knockout_bracket WHERE season = $1", season)
+                await conn.execute("DELETE FROM european_group_matches WHERE season = $1", season)
+                await conn.execute("DELETE FROM european_groups WHERE season = $1", season)
+            
+            await interaction.followup.send(
+                f"✅ **All European data wiped for Season {season}!**\n\n"
+                f"You can now use:\n"
+                f"- **🏆 Start European Now** to restart competitions\n"
+                f"- **🏆 Simulate European to End** to fast-forward after restarting",
+                ephemeral=True
+            )
+                
+        except Exception as e:
+            await interaction.followup.send(f"❌ Error: {e}", ephemeral=True)
+            import traceback
+            traceback.print_exc()
+    
     async def _restart(self, interaction: discord.Interaction):
         """Restart the bot"""
         await interaction.response.send_message("🔄 Restarting bot...", ephemeral=True)
@@ -589,6 +672,25 @@ class ConfirmWipeView(discord.ui.View):
         self.confirmed = False
     
     @discord.ui.button(label="⚠️ YES, WIPE EVERYTHING", style=discord.ButtonStyle.danger)
+    async def confirm_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        self.confirmed = True
+        self.stop()
+        await interaction.response.defer()
+    
+    @discord.ui.button(label="❌ Cancel", style=discord.ButtonStyle.secondary)
+    async def cancel_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        self.confirmed = False
+        self.stop()
+        await interaction.response.defer()
+
+
+class ConfirmEuropeanWipeView(discord.ui.View):
+    """Separate confirmation for European data wipe"""
+    def __init__(self):
+        super().__init__(timeout=30)
+        self.confirmed = False
+    
+    @discord.ui.button(label="⚠️ YES, WIPE EUROPEAN DATA", style=discord.ButtonStyle.danger)
     async def confirm_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         self.confirmed = True
         self.stop()
