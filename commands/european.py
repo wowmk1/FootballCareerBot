@@ -194,7 +194,7 @@ class European(commands.Cog):
             if home_crest:
                 embed.set_author(name=fixture['home_name'], icon_url=home_crest)
             if away_crest:
-                embed.set_footer(text=fixture['away_name'], icon_url=away_crest)
+                embed.set_footer(text="", icon_url=away_crest)
             
             embed.add_field(name="📋 Status", value=f"{status_emoji} **{status_text}**", inline=True)
             embed.add_field(name="🏆 Stage", value=stage_display, inline=True)
@@ -284,18 +284,18 @@ class European(commands.Cog):
                 embed.set_author(name=f"🥇 Group Leaders: {leader['team_name']}", icon_url=leader_crest)
         
         table = "```\n"
-        table += "Pos │ Team              │ Pld │  W  D  L │ GF GA GD │ Pts\n"
-        table += "────┼───────────────────┼─────┼──────────┼──────────┼────\n"
+        table += "Pos│Team             │Pld│ W  D  L│GF GA GD│Pts\n"
+        table += "───┼─────────────────┼───┼────────┼────────┼───\n"
         
         for idx, team in enumerate(standings, 1):
             pos_emoji = "🟢" if idx <= 2 else "🟡" if idx == 3 else "🔴"
-            team_name = team['team_name'][:17].ljust(17)
+            team_name = team['team_name'][:16].ljust(16)
             gd = team['goal_difference']
             gd_str = f"{gd:+3}"
             
-            table += f" {pos_emoji}{idx} │ {team_name} │  {team['played']}  │ "
-            table += f" {team['won']}  {team['drawn']}  {team['lost']} │ "
-            table += f"{team['goals_for']:2} {team['goals_against']:2} {gd_str} │ {team['points']:2}\n"
+            table += f" {pos_emoji}{idx}│{team_name} │ {team['played']} │"
+            table += f" {team['won']}  {team['drawn']}  {team['lost']}│"
+            table += f"{team['goals_for']:2} {team['goals_against']:2} {gd_str}│{team['points']:2}\n"
         
         table += "```\n🟢 Qualified for R16  │  🟡 Europa League  │  🔴 Eliminated"
         embed.add_field(name="📊 Group Standings", value=table, inline=False)
@@ -409,9 +409,7 @@ class European(commands.Cog):
         else:
             embed.set_author(name=match['home_name'])
         if away_crest:
-            embed.set_footer(text=match['away_name'], icon_url=away_crest)
-        else:
-            embed.set_footer(text=match['away_name'])
+            embed.set_footer(text="", icon_url=away_crest)
         
         embed.add_field(name=f"{stage_emoji} Stage", value=f"**{stage_display}**", inline=True)
         embed.add_field(name="📅 Week", value=f"**{match['week_number']}**", inline=True)
