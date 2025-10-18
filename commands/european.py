@@ -182,7 +182,7 @@ class European(commands.Cog):
                 status_emoji = "✅"
                 status_text = "Full Time"
                 score_display = f"**{fixture['home_score']} - {fixture['away_score']}**"
-            elif fixture['playable']:
+            elif fixture.get('playable'):
                 status_emoji = "🟢"
                 status_text = "Live - Play Now!"
                 score_display = "**VS**"
@@ -351,7 +351,7 @@ class European(commands.Cog):
         """Show detailed match card"""
         await interaction.response.defer()
         
-        # If no away_team, show user's next match
+        # If no home_team, show user's next match
         if not home_team:
             player = await db.get_player(interaction.user.id)
             if player and player['team_id']:
@@ -399,11 +399,12 @@ class European(commands.Cog):
             await interaction.followup.send("❌ Match not found!", ephemeral=True)
             return
         
-        # Styling
+        # Competition styling
         comp_name = "Champions League" if match['competition'] == 'CL' else "Europa League"
         comp_emoji = "⭐" if match['competition'] == 'CL' else "🌟"
         comp_color = discord.Color.blue() if match['competition'] == 'CL' else discord.Color.gold()
         
+        # Get all images - ✅ FIXED: Proper crest fetching
         home_crest = get_team_crest_url(match['home_team_id'])
         away_crest = get_team_crest_url(match['away_team_id'])
         comp_logo = get_competition_logo(comp_name)
@@ -419,7 +420,7 @@ class European(commands.Cog):
                 result_text = f"🏆 **{match['away_name']} wins!**"
             else:
                 result_text = "🤝 **Draw!**"
-        elif match['playable']:
+        elif match.get('playable'):
             status_emoji = "🟢"
             status_text = "⚡ LIVE - Play Now!"
             score = "**VS**"
@@ -428,7 +429,7 @@ class European(commands.Cog):
             status_emoji = "⏳"
             status_text = "Upcoming"
             score = "**VS**"
-            result_text = f"Week {match['week_number']}"
+            result_text = f"Match scheduled for Week {match['week_number']}"
         
         # Stage
         if match['stage'] == 'group':
@@ -439,42 +440,45 @@ class European(commands.Cog):
             stage_display = f"{match['stage'].title()}{leg_text}"
             stage_emoji = "🏆"
         
+        # ✅ FIXED: Simplified title without duplicate names
         embed = discord.Embed(
-            title=f"{match['home_name']} vs {match['away_name']}",
-            description=f"## {score}\n\n{result_text}",
+            title=f"{comp_emoji} {comp_name}",  # Just competition name
+            description=f"## {match['home_name']} {score} {match['away_name']}\n\n{result_text}",  # Match details here
             color=comp_color
         )
         
+        # ✅ FIXED: Competition logo as thumbnail (not team crest)
         if comp_logo:
             embed.set_thumbnail(url=comp_logo)
         
-        embed.add_field(name=f"{comp_emoji} Competition", value=f"**{comp_name}**", inline=True)
+        # ✅ FIXED: Home team crest as author
+        if home_crest:
+            embed.set_author(name=match['home_name'], icon_url=home_crest)
+        else:
+            embed.set_author(name=match['home_name'])
+        
+        # ✅ FIXED: Away team crest as footer
+        if away_crest:
+            embed.set_footer(text=match['away_name'], icon_url=away_crest)
+        else:
+            embed.set_footer(text=match['away_name'])
+        
+        # Match details fields
         embed.add_field(name=f"{stage_emoji} Stage", value=f"**{stage_display}**", inline=True)
         embed.add_field(name="📅 Week", value=f"**{match['week_number']}**", inline=True)
         embed.add_field(name=f"{status_emoji} Status", value=f"**{status_text}**", inline=True)
-        embed.add_field(name="⏰ Kickoff", value=f"Week {match['week_number']} window", inline=True)
         
+        # Additional info
         if match['stage'] != 'group':
-            importance = "🔥 Knockout Match!"
+            importance = "🔥 **Knockout Match!**"
         elif match.get('group_name'):
-            importance = f"Group {match['group_name']} Match"
+            importance = f"**Group {match['group_name']} Match**"
         else:
-            importance = "European Fixture"
-        embed.add_field(name="🎯 Match Type", value=f"**{importance}**", inline=True)
+            importance = "**European Fixture**"
         
-        # Team crests
-        crest_info = "**Teams:**\n"
-        if home_crest:
-            crest_info += f"🏠 [{match['home_name']}]({home_crest}) (Home)\n"
-        else:
-            crest_info += f"🏠 {match['home_name']} (Home)\n"
-        if away_crest:
-            crest_info += f"✈️ [{match['away_name']}]({away_crest}) (Away)"
-        else:
-            crest_info += f"✈️ {match['away_name']} (Away)"
-        
-        embed.add_field(name="👥 Matchup", value=crest_info, inline=False)
-        embed.set_footer(text=f"{comp_name} • {stage_display}", icon_url=comp_logo if comp_logo else None)
+        embed.add_field(name="🎯 Match Type", value=importance, inline=True)
+        embed.add_field(name="⏰ Kickoff", value=f"**Week {match['week_number']} window**", inline=True)
+        embed.add_field(name="🏟️ Venue", value=f"**{match['home_name']} (Home)**", inline=True)
         
         await interaction.followup.send(embed=embed)
     
@@ -575,7 +579,7 @@ class European(commands.Cog):
             
             for tie in stage_ties:
                 if tie['winner_team_id']:
-                    if tie['penalties_taken']:
+                    if tie.get('penalties_taken'):
                         field_value += f"~~{tie['home_name']}~~ vs ~~{tie['away_name']}~~\n"
                         field_value += f"👑 **{tie['winner_name']}** (Penalties)\n\n"
                     else:
@@ -599,11 +603,3 @@ class European(commands.Cog):
 
 async def setup(bot):
     await bot.add_cog(European(bot))
-```
-
-**Usage examples:**
-```
-/european action:fixtures competition:CL
-/european action:standings competition:CL group:A
-/european action:match home_team:Real Madrid away_team:Barcelona
-/european action:bracket competition:CL
