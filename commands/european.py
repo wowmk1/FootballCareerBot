@@ -1,5 +1,5 @@
 """
-European Competition Commands - BEAUTIFUL DISPLAY SYSTEM
+European Competition Commands - UNIFIED ACTION MENU
 """
 
 import discord
@@ -14,215 +14,60 @@ class European(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
     
-    @app_commands.command(name="european_match", description="🎯 View detailed European match card")
+    @app_commands.command(name="european", description="🏆 European competition tools")
     @app_commands.describe(
-        home_team="Home team name",
-        away_team="Away team name (optional - shows next match if empty)"
+        action="Choose what to view",
+        competition="Competition (CL/EL)",
+        group="Group for standings (A-H)",
+        team_name="Filter by team name",
+        home_team="Home team for match card",
+        away_team="Away team for match card"
     )
-    async def european_match(
+    @app_commands.choices(
+        action=[
+            app_commands.Choice(name="📋 Fixtures", value="fixtures"),
+            app_commands.Choice(name="📊 Standings", value="standings"),
+            app_commands.Choice(name="🎯 Match Card", value="match"),
+            app_commands.Choice(name="🏆 Knockout Bracket", value="bracket")
+        ],
+        competition=[
+            app_commands.Choice(name="⭐ Champions League", value="CL"),
+            app_commands.Choice(name="🌟 Europa League", value="EL")
+        ],
+        group=[
+            app_commands.Choice(name="Group A", value="A"),
+            app_commands.Choice(name="Group B", value="B"),
+            app_commands.Choice(name="Group C", value="C"),
+            app_commands.Choice(name="Group D", value="D"),
+            app_commands.Choice(name="Group E", value="E"),
+            app_commands.Choice(name="Group F", value="F"),
+            app_commands.Choice(name="Group G", value="G"),
+            app_commands.Choice(name="Group H", value="H")
+        ]
+    )
+    async def european(
         self,
         interaction: discord.Interaction,
-        home_team: str,
+        action: app_commands.Choice[str],
+        competition: app_commands.Choice[str] = None,
+        group: app_commands.Choice[str] = None,
+        team_name: str = None,
+        home_team: str = None,
         away_team: str = None
     ):
-        """
-        Display a beautiful match card similar to the AC Milan vs Fiorentina example
-        """
-        await interaction.response.defer()
+        """Unified European competition command"""
         
-        from utils.football_data_api import get_team_crest_url, get_competition_logo
-        
-        # If no away_team, show user's next European match
-        if not away_team:
-            player = await db.get_player(interaction.user.id)
-            if player and player['team_id']:
-                async with db.pool.acquire() as conn:
-                    match = await conn.fetchrow("""
-                        SELECT f.*,
-                               f.home_team_id, f.away_team_id,
-                               COALESCE(ht.team_name, eht.team_name) as home_name,
-                               COALESCE(at.team_name, eat.team_name) as away_name
-                        FROM european_fixtures f
-                        LEFT JOIN teams ht ON f.home_team_id = ht.team_id
-                        LEFT JOIN teams at ON f.away_team_id = at.team_id
-                        LEFT JOIN european_teams eht ON f.home_team_id = eht.team_id
-                        LEFT JOIN european_teams eat ON f.away_team_id = eat.team_id
-                        WHERE (f.home_team_id = $1 OR f.away_team_id = $1)
-                        AND f.played = FALSE
-                        ORDER BY f.week_number
-                        LIMIT 1
-                    """, player['team_id'])
-            else:
-                await interaction.followup.send(
-                    "❌ Specify both teams:\n`/european_match home_team:Real Madrid away_team:Barcelona`",
-                    ephemeral=True
-                )
-                return
-        else:
-            # Find specific match
-            async with db.pool.acquire() as conn:
-                match = await conn.fetchrow("""
-                    SELECT f.*,
-                           f.home_team_id, f.away_team_id,
-                           COALESCE(ht.team_name, eht.team_name) as home_name,
-                           COALESCE(at.team_name, eat.team_name) as away_name
-                    FROM european_fixtures f
-                    LEFT JOIN teams ht ON f.home_team_id = ht.team_id
-                    LEFT JOIN teams at ON f.away_team_id = at.team_id
-                    LEFT JOIN european_teams eht ON f.home_team_id = eht.team_id
-                    LEFT JOIN european_teams eat ON f.away_team_id = eat.team_id
-                    WHERE LOWER(COALESCE(ht.team_name, eht.team_name)) LIKE LOWER($1)
-                    AND LOWER(COALESCE(at.team_name, eat.team_name)) LIKE LOWER($2)
-                    ORDER BY f.week_number DESC
-                    LIMIT 1
-                """, f"%{home_team}%", f"%{away_team}%")
-        
-        if not match:
-            await interaction.followup.send(
-                "❌ Match not found! Check team names.",
-                ephemeral=True
-            )
-            return
-        
-        # Competition styling
-        comp_name = "Champions League" if match['competition'] == 'CL' else "Europa League"
-        comp_emoji = "⭐" if match['competition'] == 'CL' else "🌟"
-        comp_color = discord.Color.blue() if match['competition'] == 'CL' else discord.Color.gold()
-        
-        # Get all images
-        home_crest = get_team_crest_url(match['home_team_id'])
-        away_crest = get_team_crest_url(match['away_team_id'])
-        comp_logo = get_competition_logo(comp_name)
-        
-        # Match status
-        if match['played']:
-            status_emoji = "✅"
-            status_text = "Full Time"
-            score = f"**{match['home_score']} - {match['away_score']}**"
-            
-            if match['home_score'] > match['away_score']:
-                result_text = f"🏆 **{match['home_name']} wins!**"
-            elif match['away_score'] > match['home_score']:
-                result_text = f"🏆 **{match['away_name']} wins!**"
-            else:
-                result_text = "🤝 **Draw!**"
-        elif match['playable']:
-            status_emoji = "🟢"
-            status_text = "⚡ LIVE - Play Now!"
-            score = "**VS**"
-            result_text = "Use `/play_match` to play this match!"
-        else:
-            status_emoji = "⏳"
-            status_text = "Upcoming"
-            score = "**VS**"
-            result_text = f"Match scheduled for Week {match['week_number']}"
-        
-        # Stage display
-        if match['stage'] == 'group':
-            stage_display = f"Group {match.get('group_name', '?')}"
-            stage_emoji = "📊"
-        else:
-            leg_text = f" - Leg {match['leg']}" if match.get('leg', 1) > 1 else ""
-            stage_display = f"{match['stage'].title()}{leg_text}"
-            stage_emoji = "🏆"
-        
-        # Create stunning embed (similar to example)
-        embed = discord.Embed(
-            title=f"{match['home_name']} vs {match['away_name']}",
-            description=f"## {score}\n\n{result_text}",
-            color=comp_color
-        )
-        
-        # Competition info with logo
-        if comp_logo:
-            embed.set_thumbnail(url=comp_logo)
-        
-        embed.add_field(
-            name=f"{comp_emoji} Competition",
-            value=f"**{comp_name}**",
-            inline=True
-        )
-        
-        embed.add_field(
-            name=f"{stage_emoji} Stage",
-            value=f"**{stage_display}**",
-            inline=True
-        )
-        
-        embed.add_field(
-            name="📅 Week",
-            value=f"**{match['week_number']}**",
-            inline=True
-        )
-        
-        embed.add_field(
-            name=f"{status_emoji} Status",
-            value=f"**{status_text}**",
-            inline=True
-        )
-        
-        # Kickoff time (simulated)
-        embed.add_field(
-            name="⏰ Kickoff",
-            value=f"Week {match['week_number']} window",
-            inline=True
-        )
-        
-        # Match importance
-        if match['stage'] != 'group':
-            importance = "🔥 Knockout Match!"
-        elif match.get('group_name'):
-            importance = f"Group {match['group_name']} Match"
-        else:
-            importance = "European Fixture"
-        
-        embed.add_field(
-            name="🎯 Match Type",
-            value=f"**{importance}**",
-            inline=True
-        )
-        
-        # Team crests showcase
-        crest_info = "**Teams:**\n"
-        if home_crest:
-            crest_info += f"🏠 [{match['home_name']}]({home_crest}) (Home)\n"
-        else:
-            crest_info += f"🏠 {match['home_name']} (Home)\n"
-        
-        if away_crest:
-            crest_info += f"✈️ [{match['away_name']}]({away_crest}) (Away)"
-        else:
-            crest_info += f"✈️ {match['away_name']} (Away)"
-        
-        embed.add_field(
-            name="👥 Matchup",
-            value=crest_info,
-            inline=False
-        )
-        
-        # Footer with comp branding
-        embed.set_footer(
-            text=f"{comp_name} • {stage_display}",
-            icon_url=comp_logo if comp_logo else None
-        )
-        
-        await interaction.followup.send(embed=embed)
+        if action.value == "fixtures":
+            await self._show_fixtures(interaction, competition, team_name)
+        elif action.value == "standings":
+            await self._show_standings(interaction, competition, group)
+        elif action.value == "match":
+            await self._show_match(interaction, home_team, away_team)
+        elif action.value == "bracket":
+            await self._show_bracket(interaction, competition)
     
-    @app_commands.command(name="european_fixtures", description="🏆 View stunning European fixtures")
-    @app_commands.describe(
-        competition="Competition to view",
-        team_name="Filter by specific team (optional)"
-    )
-    @app_commands.choices(competition=[
-        app_commands.Choice(name="⭐ Champions League", value="CL"),
-        app_commands.Choice(name="🌟 Europa League", value="EL")
-    ])
-    async def european_fixtures(
-        self, 
-        interaction: discord.Interaction,
-        competition: app_commands.Choice[str] = None,
-        team_name: str = None
-    ):
+    async def _show_fixtures(self, interaction, competition, team_name):
+        """Show European fixtures"""
         await interaction.response.defer()
         
         competition_value = None
@@ -246,14 +91,14 @@ class European(commands.Cog):
                     else:
                         await interaction.followup.send(
                             "❌ Your team isn't in Europe! Specify:\n"
-                            "`/european_fixtures competition:CL`",
+                            "`/european action:fixtures competition:CL`",
                             ephemeral=True
                         )
                         return
             else:
                 await interaction.followup.send(
                     "❌ Specify a competition:\n"
-                    "`/european_fixtures competition:CL`",
+                    "`/european action:fixtures competition:CL`",
                     ephemeral=True
                 )
                 return
@@ -316,10 +161,7 @@ class European(commands.Cog):
                 """, competition_value)
         
         if not fixtures:
-            await interaction.followup.send(
-                "❌ No fixtures found!",
-                ephemeral=True
-            )
+            await interaction.followup.send("❌ No fixtures found!", ephemeral=True)
             return
         
         # Competition styling
@@ -327,11 +169,10 @@ class European(commands.Cog):
         comp_emoji = "⭐" if competition_value == 'CL' else "🌟"
         comp_color = discord.Color.blue() if competition_value == 'CL' else discord.Color.gold()
         
-        # Create stunning embeds (max 10 per message, Discord limit)
+        # Create stunning embeds
         embeds = []
         
         for idx, fixture in enumerate(fixtures[:10]):
-            # Get team crests
             home_crest = get_team_crest_url(fixture['home_team_id'])
             away_crest = get_team_crest_url(fixture['away_team_id'])
             comp_logo = get_competition_logo(comp_name)
@@ -363,82 +204,34 @@ class European(commands.Cog):
                 color=comp_color
             )
             
-            # Competition logo as thumbnail
             if comp_logo:
                 embed.set_thumbnail(url=comp_logo)
-            
-            # Home team crest as author
             if home_crest:
                 embed.set_author(name=fixture['home_name'], icon_url=home_crest)
-            
-            # Away team crest as footer
             if away_crest:
                 embed.set_footer(text=fixture['away_name'], icon_url=away_crest)
             
-            # Match details
-            embed.add_field(
-                name="📋 Status",
-                value=f"{status_emoji} **{status_text}**",
-                inline=True
-            )
-            
-            embed.add_field(
-                name="🏆 Stage",
-                value=stage_display,
-                inline=True
-            )
-            
-            embed.add_field(
-                name="📅 Week",
-                value=f"**{fixture['week_number']}**",
-                inline=True
-            )
+            embed.add_field(name="📋 Status", value=f"{status_emoji} **{status_text}**", inline=True)
+            embed.add_field(name="🏆 Stage", value=stage_display, inline=True)
+            embed.add_field(name="📅 Week", value=f"**{fixture['week_number']}**", inline=True)
             
             embeds.append(embed)
         
-        # Send all embeds
+        # Send embeds
         if len(embeds) == 1:
             await interaction.followup.send(embed=embeds[0])
         else:
-            # Show count in first message
             count_msg = f"**{comp_emoji} Showing {len(embeds)} {comp_name} fixtures**"
             if display_team_name:
                 count_msg += f" for **{display_team_name}**"
-            
             await interaction.followup.send(count_msg)
             
-            # Send embeds in batches of 10 (Discord limit)
             for i in range(0, len(embeds), 10):
                 batch = embeds[i:i+10]
                 await interaction.followup.send(embeds=batch)
     
-    @app_commands.command(name="european_standings", description="📊 Beautiful European group standings")
-    @app_commands.describe(
-        competition="Competition to view",
-        group="Group to view (A-H)"
-    )
-    @app_commands.choices(
-        competition=[
-            app_commands.Choice(name="⭐ Champions League", value="CL"),
-            app_commands.Choice(name="🌟 Europa League", value="EL")
-        ],
-        group=[
-            app_commands.Choice(name="Group A", value="A"),
-            app_commands.Choice(name="Group B", value="B"),
-            app_commands.Choice(name="Group C", value="C"),
-            app_commands.Choice(name="Group D", value="D"),
-            app_commands.Choice(name="Group E", value="E"),
-            app_commands.Choice(name="Group F", value="F"),
-            app_commands.Choice(name="Group G", value="G"),
-            app_commands.Choice(name="Group H", value="H")
-        ]
-    )
-    async def european_standings(
-        self,
-        interaction: discord.Interaction,
-        competition: app_commands.Choice[str] = None,
-        group: app_commands.Choice[str] = None
-    ):
+    async def _show_standings(self, interaction, competition, group):
+        """Show group standings"""
         await interaction.response.defer()
         
         competition_value = None
@@ -461,14 +254,14 @@ class European(commands.Cog):
                     else:
                         await interaction.followup.send(
                             "❌ Your team isn't in Europe! Specify:\n"
-                            "`/european_standings competition:CL group:A`",
+                            "`/european action:standings competition:CL group:A`",
                             ephemeral=True
                         )
                         return
             else:
                 await interaction.followup.send(
                     "❌ Specify competition and group:\n"
-                    "`/european_standings competition:CL group:A`",
+                    "`/european action:standings competition:CL group:A`",
                     ephemeral=True
                 )
                 return
@@ -491,10 +284,7 @@ class European(commands.Cog):
             """, competition_value, group_value)
         
         if not standings:
-            await interaction.followup.send(
-                f"❌ No standings found for Group {group_value}!",
-                ephemeral=True
-            )
+            await interaction.followup.send(f"❌ No standings found for Group {group_value}!", ephemeral=True)
             return
         
         # Competition styling
@@ -503,40 +293,33 @@ class European(commands.Cog):
         comp_color = discord.Color.blue() if competition_value == 'CL' else discord.Color.gold()
         comp_logo = get_competition_logo(comp_name)
         
-        # Main standings embed
         embed = discord.Embed(
             title=f"{comp_emoji} {comp_name}",
             description=f"**Group {group_value} Standings**",
             color=comp_color
         )
         
-        # Competition logo
         if comp_logo:
             embed.set_thumbnail(url=comp_logo)
         
-        # Leader's crest
         if standings:
             leader = standings[0]
             leader_crest = get_team_crest_url(leader['team_id'])
             if leader_crest:
-                embed.set_author(
-                    name=f"🥇 Group Leaders: {leader['team_name']}",
-                    icon_url=leader_crest
-                )
+                embed.set_author(name=f"🥇 Group Leaders: {leader['team_name']}", icon_url=leader_crest)
         
-        # Build beautiful table
+        # Build table
         table = "```\n"
         table += "Pos │ Team              │ Pld │  W  D  L │ GF GA GD │ Pts\n"
         table += "────┼───────────────────┼─────┼──────────┼──────────┼────\n"
         
         for idx, team in enumerate(standings, 1):
-            # Qualification indicators
             if idx <= 2:
-                pos_emoji = "🟢"  # Qualified
+                pos_emoji = "🟢"
             elif idx == 3:
-                pos_emoji = "🟡"  # Europa League
+                pos_emoji = "🟡"
             else:
-                pos_emoji = "🔴"  # Eliminated
+                pos_emoji = "🔴"
             
             team_name = team['team_name'][:17].ljust(17)
             gd = team['goal_difference']
@@ -549,13 +332,9 @@ class European(commands.Cog):
         table += "```\n"
         table += "🟢 Qualified for R16  │  🟡 Europa League  │  🔴 Eliminated"
         
-        embed.add_field(
-            name="📊 Group Standings",
-            value=table,
-            inline=False
-        )
+        embed.add_field(name="📊 Group Standings", value=table, inline=False)
         
-        # Team crests showcase
+        # Team crests
         crest_display = ""
         for idx, team in enumerate(standings, 1):
             crest = get_team_crest_url(team['team_id'])
@@ -564,30 +343,147 @@ class European(commands.Cog):
                 crest_display += f"{medal} [{team['team_name']}]({crest})\n"
         
         if crest_display:
-            embed.add_field(
-                name="🏅 Teams",
-                value=crest_display[:1024],  # Discord field limit
-                inline=False
-            )
+            embed.add_field(name="🏅 Teams", value=crest_display[:1024], inline=False)
         
         await interaction.followup.send(embed=embed)
     
-    @app_commands.command(name="knockout_bracket", description="🏆 Visual knockout bracket")
-    @app_commands.describe(competition="Competition to view")
-    @app_commands.choices(competition=[
-        app_commands.Choice(name="⭐ Champions League", value="CL"),
-        app_commands.Choice(name="🌟 Europa League", value="EL")
-    ])
-    async def knockout_bracket(
-        self,
-        interaction: discord.Interaction,
-        competition: app_commands.Choice[str] = None
-    ):
+    async def _show_match(self, interaction, home_team, away_team):
+        """Show detailed match card"""
+        await interaction.response.defer()
+        
+        # If no away_team, show user's next match
+        if not home_team:
+            player = await db.get_player(interaction.user.id)
+            if player and player['team_id']:
+                async with db.pool.acquire() as conn:
+                    match = await conn.fetchrow("""
+                        SELECT f.*,
+                               f.home_team_id, f.away_team_id,
+                               COALESCE(ht.team_name, eht.team_name) as home_name,
+                               COALESCE(at.team_name, eat.team_name) as away_name
+                        FROM european_fixtures f
+                        LEFT JOIN teams ht ON f.home_team_id = ht.team_id
+                        LEFT JOIN teams at ON f.away_team_id = at.team_id
+                        LEFT JOIN european_teams eht ON f.home_team_id = eht.team_id
+                        LEFT JOIN european_teams eat ON f.away_team_id = eat.team_id
+                        WHERE (f.home_team_id = $1 OR f.away_team_id = $1)
+                        AND f.played = FALSE
+                        ORDER BY f.week_number
+                        LIMIT 1
+                    """, player['team_id'])
+            else:
+                await interaction.followup.send(
+                    "❌ Specify teams:\n`/european action:match home_team:Real Madrid away_team:Barcelona`",
+                    ephemeral=True
+                )
+                return
+        else:
+            async with db.pool.acquire() as conn:
+                match = await conn.fetchrow("""
+                    SELECT f.*,
+                           f.home_team_id, f.away_team_id,
+                           COALESCE(ht.team_name, eht.team_name) as home_name,
+                           COALESCE(at.team_name, eat.team_name) as away_name
+                    FROM european_fixtures f
+                    LEFT JOIN teams ht ON f.home_team_id = ht.team_id
+                    LEFT JOIN teams at ON f.away_team_id = at.team_id
+                    LEFT JOIN european_teams eht ON f.home_team_id = eht.team_id
+                    LEFT JOIN european_teams eat ON f.away_team_id = eat.team_id
+                    WHERE LOWER(COALESCE(ht.team_name, eht.team_name)) LIKE LOWER($1)
+                    AND LOWER(COALESCE(at.team_name, eat.team_name)) LIKE LOWER($2)
+                    ORDER BY f.week_number DESC
+                    LIMIT 1
+                """, f"%{home_team}%", f"%{away_team}%" if away_team else "%")
+        
+        if not match:
+            await interaction.followup.send("❌ Match not found!", ephemeral=True)
+            return
+        
+        # Styling
+        comp_name = "Champions League" if match['competition'] == 'CL' else "Europa League"
+        comp_emoji = "⭐" if match['competition'] == 'CL' else "🌟"
+        comp_color = discord.Color.blue() if match['competition'] == 'CL' else discord.Color.gold()
+        
+        home_crest = get_team_crest_url(match['home_team_id'])
+        away_crest = get_team_crest_url(match['away_team_id'])
+        comp_logo = get_competition_logo(comp_name)
+        
+        # Match status
+        if match['played']:
+            status_emoji = "✅"
+            status_text = "Full Time"
+            score = f"**{match['home_score']} - {match['away_score']}**"
+            if match['home_score'] > match['away_score']:
+                result_text = f"🏆 **{match['home_name']} wins!**"
+            elif match['away_score'] > match['home_score']:
+                result_text = f"🏆 **{match['away_name']} wins!**"
+            else:
+                result_text = "🤝 **Draw!**"
+        elif match['playable']:
+            status_emoji = "🟢"
+            status_text = "⚡ LIVE - Play Now!"
+            score = "**VS**"
+            result_text = "Use `/play_match` to play!"
+        else:
+            status_emoji = "⏳"
+            status_text = "Upcoming"
+            score = "**VS**"
+            result_text = f"Week {match['week_number']}"
+        
+        # Stage
+        if match['stage'] == 'group':
+            stage_display = f"Group {match.get('group_name', '?')}"
+            stage_emoji = "📊"
+        else:
+            leg_text = f" - Leg {match['leg']}" if match.get('leg', 1) > 1 else ""
+            stage_display = f"{match['stage'].title()}{leg_text}"
+            stage_emoji = "🏆"
+        
+        embed = discord.Embed(
+            title=f"{match['home_name']} vs {match['away_name']}",
+            description=f"## {score}\n\n{result_text}",
+            color=comp_color
+        )
+        
+        if comp_logo:
+            embed.set_thumbnail(url=comp_logo)
+        
+        embed.add_field(name=f"{comp_emoji} Competition", value=f"**{comp_name}**", inline=True)
+        embed.add_field(name=f"{stage_emoji} Stage", value=f"**{stage_display}**", inline=True)
+        embed.add_field(name="📅 Week", value=f"**{match['week_number']}**", inline=True)
+        embed.add_field(name=f"{status_emoji} Status", value=f"**{status_text}**", inline=True)
+        embed.add_field(name="⏰ Kickoff", value=f"Week {match['week_number']} window", inline=True)
+        
+        if match['stage'] != 'group':
+            importance = "🔥 Knockout Match!"
+        elif match.get('group_name'):
+            importance = f"Group {match['group_name']} Match"
+        else:
+            importance = "European Fixture"
+        embed.add_field(name="🎯 Match Type", value=f"**{importance}**", inline=True)
+        
+        # Team crests
+        crest_info = "**Teams:**\n"
+        if home_crest:
+            crest_info += f"🏠 [{match['home_name']}]({home_crest}) (Home)\n"
+        else:
+            crest_info += f"🏠 {match['home_name']} (Home)\n"
+        if away_crest:
+            crest_info += f"✈️ [{match['away_name']}]({away_crest}) (Away)"
+        else:
+            crest_info += f"✈️ {match['away_name']} (Away)"
+        
+        embed.add_field(name="👥 Matchup", value=crest_info, inline=False)
+        embed.set_footer(text=f"{comp_name} • {stage_display}", icon_url=comp_logo if comp_logo else None)
+        
+        await interaction.followup.send(embed=embed)
+    
+    async def _show_bracket(self, interaction, competition):
+        """Show knockout bracket"""
         await interaction.response.defer()
         
         competition_value = None
         
-        # Auto-detect
         if not competition:
             player = await db.get_player(interaction.user.id)
             if player and player['team_id']:
@@ -596,20 +492,13 @@ class European(commands.Cog):
                         SELECT competition FROM european_groups
                         WHERE team_id = $1 LIMIT 1
                     """, player['team_id'])
-                    
                     if comp:
                         competition_value = comp
                     else:
-                        await interaction.followup.send(
-                            "❌ Your team isn't in Europe!",
-                            ephemeral=True
-                        )
+                        await interaction.followup.send("❌ Your team isn't in Europe!", ephemeral=True)
                         return
             else:
-                await interaction.followup.send(
-                    "❌ Specify: `/knockout_bracket competition:CL`",
-                    ephemeral=True
-                )
+                await interaction.followup.send("❌ Specify: `/european action:bracket competition:CL`", ephemeral=True)
                 return
         else:
             competition_value = competition.value
@@ -640,19 +529,15 @@ class European(commands.Cog):
             """, competition_value)
         
         if not ties:
-            await interaction.followup.send(
-                "⏳ Knockout stage hasn't started yet!",
-                ephemeral=True
-            )
+            await interaction.followup.send("⏳ Knockout stage hasn't started yet!", ephemeral=True)
             return
         
-        # Competition styling
+        # Styling
         comp_name = "Champions League" if competition_value == 'CL' else "Europa League"
         comp_emoji = "⭐" if competition_value == 'CL' else "🌟"
         comp_color = discord.Color.blue() if competition_value == 'CL' else discord.Color.gold()
         comp_logo = get_competition_logo(comp_name)
         
-        # Main bracket embed
         embed = discord.Embed(
             title=f"{comp_emoji} {comp_name} Knockout Bracket",
             description="**Road to the Final**",
@@ -662,22 +547,18 @@ class European(commands.Cog):
         if comp_logo:
             embed.set_thumbnail(url=comp_logo)
         
-        # Check for champion
+        # Champion
         final_winner = next((t for t in ties if t['stage'] == 'final' and t['winner_team_id']), None)
         if final_winner:
             winner_crest = get_team_crest_url(final_winner['winner_team_id'])
             if winner_crest:
-                embed.set_author(
-                    name=f"🏆 CHAMPIONS: {final_winner['winner_name']}",
-                    icon_url=winner_crest
-                )
+                embed.set_author(name=f"🏆 CHAMPIONS: {final_winner['winner_name']}", icon_url=winner_crest)
         
-        # Organize by stage
+        # Organize stages
         stages = {'r16': [], 'quarters': [], 'semis': [], 'final': []}
         for tie in ties:
             stages[tie['stage']].append(tie)
         
-        # Display each stage beautifully
         stage_info = {
             'r16': {'name': 'Round of 16', 'emoji': '⚡'},
             'quarters': {'name': 'Quarter-Finals', 'emoji': '🔥'},
@@ -693,12 +574,7 @@ class European(commands.Cog):
             field_value = ""
             
             for tie in stage_ties:
-                home_crest = get_team_crest_url(tie['home_team_id'])
-                away_crest = get_team_crest_url(tie['away_team_id'])
-                
                 if tie['winner_team_id']:
-                    winner_crest = get_team_crest_url(tie['winner_team_id'])
-                    
                     if tie['penalties_taken']:
                         field_value += f"~~{tie['home_name']}~~ vs ~~{tie['away_name']}~~\n"
                         field_value += f"👑 **{tie['winner_name']}** (Penalties)\n\n"
@@ -717,13 +593,17 @@ class European(commands.Cog):
                         field_value += f"Leg 2: {tie['second_leg_home_score']}-{tie['second_leg_away_score']}\n"
                     field_value += "⏳ To be decided\n\n"
             
-            embed.add_field(
-                name=f"{info['emoji']} {info['name']}",
-                value=field_value or "Not started",
-                inline=False
-            )
+            embed.add_field(name=f"{info['emoji']} {info['name']}", value=field_value or "Not started", inline=False)
         
         await interaction.followup.send(embed=embed)
 
 async def setup(bot):
     await bot.add_cog(European(bot))
+```
+
+**Usage examples:**
+```
+/european action:fixtures competition:CL
+/european action:standings competition:CL group:A
+/european action:match home_team:Real Madrid away_team:Barcelona
+/european action:bracket competition:CL
