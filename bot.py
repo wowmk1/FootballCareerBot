@@ -519,6 +519,8 @@ class FootballBot(commands.Bot):
         Check BOTH windows:
         - 12-2 PM: European (on European weeks)
         - 3-5 PM: Domestic (always, advances week)
+        
+        ✅ FIXED: Now properly handles 4-value return from is_match_window_time()
         """
         try:
             from utils.season_manager import (
@@ -532,7 +534,7 @@ class FootballBot(commands.Bot):
             if not state['season_started']:
                 return
 
-            # Check which window we're in
+            # ✅ FIXED: Unpack all 4 values from is_match_window_time()
             is_window_time, is_start_time, is_end_time, window_type = is_match_window_time()
             window_open = state['match_window_open']
 
