@@ -243,38 +243,38 @@ async def advance_week(bot=None):
         from utils import european_competitions as euro
         
         try:
-            # After group stage completes (week 21 just finished)
-            if current_week == 21:  # Last group stage week
+            # After group stage completes (week 18 just finished)
+            if current_week == 18:  # Last group stage week
                 logger.info("🏆 Group stage complete, drawing Round of 16...")
                 await euro.generate_knockout_draw('CL', 'r16', state['current_season'])
                 await euro.generate_knockout_draw('EL', 'r16', state['current_season'])
             
-            # After R16 completes (week 27 just finished)
-            elif current_week == 27:  # Last R16 week
+            # After R16 completes (week 24 just finished)
+            elif current_week == 24:  # Last R16 week
                 logger.info("🏆 R16 complete, drawing Quarter-Finals...")
                 await euro.close_knockout_round('CL', 'r16', state['current_season'])
                 await euro.close_knockout_round('EL', 'r16', state['current_season'])
                 await euro.generate_knockout_draw('CL', 'quarters', state['current_season'])
                 await euro.generate_knockout_draw('EL', 'quarters', state['current_season'])
             
-            # After Quarters complete (week 33 just finished)
-            elif current_week == 33:  # Last QF week
+            # After Quarters complete (week 30 just finished)
+            elif current_week == 30:  # Last QF week
                 logger.info("🏆 Quarter-Finals complete, drawing Semi-Finals...")
                 await euro.close_knockout_round('CL', 'quarters', state['current_season'])
                 await euro.close_knockout_round('EL', 'quarters', state['current_season'])
                 await euro.generate_knockout_draw('CL', 'semis', state['current_season'])
                 await euro.generate_knockout_draw('EL', 'semis', state['current_season'])
             
-            # After Semis complete (week 39 just finished)
-            elif current_week == 39:  # Last SF week
+            # After Semis complete (week 36 just finished)
+            elif current_week == 36:  # Last SF week
                 logger.info("🏆 Semi-Finals complete, preparing Finals...")
                 await euro.close_knockout_round('CL', 'semis', state['current_season'])
                 await euro.close_knockout_round('EL', 'semis', state['current_season'])
                 await euro.generate_knockout_draw('CL', 'final', state['current_season'])
                 await euro.generate_knockout_draw('EL', 'final', state['current_season'])
             
-            # After Finals complete (week 42 just finished)
-            elif current_week == 42:  # Final week
+            # After Finals complete (week 38 just finished - LAST WEEK!)
+            elif current_week == 38:  # Final week of season
                 logger.info("🏆 Finals played, crowning champions!")
                 await euro.close_knockout_round('CL', 'final', state['current_season'])
                 await euro.close_knockout_round('EL', 'final', state['current_season'])
