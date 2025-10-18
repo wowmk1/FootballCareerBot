@@ -6,7 +6,7 @@ These URLs are verified to work in Discord
 
 # Premier League Team Crests - Official Premier League CDN
 PREMIER_LEAGUE_CRESTS = {
-    'arsenal': 'https://resources.premierleague.com/premierleague/badges/100/t3@2x.png',
+    'arsenal': 'https://r2.thesportsdb.com/images/media/team/badge/uyhbfe1612467038.png/tiny',
     'aston_villa': 'https://resources.premierleague.com/premierleague/badges/100/t7@2x.png',
     'bournemouth': 'https://resources.premierleague.com/premierleague/badges/100/t91@2x.png',
     'brentford': 'https://resources.premierleague.com/premierleague/badges/100/t94@2x.png',
