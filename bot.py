@@ -35,7 +35,7 @@ class FootballBot(commands.Bot):
             help_command=None
         )
         self.season_task_started = False
-        self.match_window_lock = asyncio.Lock()  # CRITICAL FIX #3: Always initialize lock
+        self.match_window_lock = asyncio.Lock()
 
     async def setup_hook(self):
         """Called when bot is starting up"""
@@ -49,23 +49,23 @@ class FootballBot(commands.Bot):
         try:
             async with db.pool.acquire() as conn:
                 result = await conn.fetchrow("""
-                                             SELECT column_name
-                                             FROM information_schema.columns
-                                             WHERE table_name = 'game_state'
-                                               AND column_name = 'current_match_of_week'
-                                             """)
+                    SELECT column_name
+                    FROM information_schema.columns
+                    WHERE table_name = 'game_state'
+                      AND column_name = 'current_match_of_week'
+                """)
 
                 if not result:
                     logger.info("📋 Auto-migration: Adding current_match_of_week column...")
                     await conn.execute("""
-                                       ALTER TABLE game_state
-                                           ADD COLUMN current_match_of_week INTEGER DEFAULT 0
-                                       """)
+                        ALTER TABLE game_state
+                        ADD COLUMN current_match_of_week INTEGER DEFAULT 0
+                    """)
                     await conn.execute("""
-                                       UPDATE game_state
-                                       SET current_match_of_week = 0
-                                       WHERE current_match_of_week IS NULL
-                                       """)
+                        UPDATE game_state
+                        SET current_match_of_week = 0
+                        WHERE current_match_of_week IS NULL
+                    """)
                     logger.info("✅ Auto-migration complete!")
                 else:
                     logger.info("✅ current_match_of_week column already exists")
@@ -78,18 +78,18 @@ class FootballBot(commands.Bot):
         try:
             async with db.pool.acquire() as conn:
                 result = await conn.fetchrow("""
-                                             SELECT column_name
-                                             FROM information_schema.columns
-                                             WHERE table_name = 'players'
-                                               AND column_name = 'last_reminded'
-                                             """)
+                    SELECT column_name
+                    FROM information_schema.columns
+                    WHERE table_name = 'players'
+                      AND column_name = 'last_reminded'
+                """)
 
                 if not result:
                     logger.info("📋 Adding last_reminded column for training notifications...")
                     await conn.execute("""
-                                       ALTER TABLE players
-                                           ADD COLUMN last_reminded TEXT
-                                       """)
+                        ALTER TABLE players
+                        ADD COLUMN last_reminded TEXT
+                    """)
                     logger.info("✅ last_reminded column added")
                 else:
                     logger.info("✅ last_reminded column already exists")
@@ -102,23 +102,23 @@ class FootballBot(commands.Bot):
         try:
             async with db.pool.acquire() as conn:
                 result = await conn.fetchrow("""
-                                             SELECT column_name
-                                             FROM information_schema.columns
-                                             WHERE table_name = 'players'
-                                               AND column_name = 'season_motm'
-                                             """)
+                    SELECT column_name
+                    FROM information_schema.columns
+                    WHERE table_name = 'players'
+                      AND column_name = 'season_motm'
+                """)
 
                 if not result:
                     logger.info("📋 Adding season_motm column...")
                     await conn.execute("""
-                                       ALTER TABLE players
-                                           ADD COLUMN season_motm INTEGER DEFAULT 0
-                                       """)
+                        ALTER TABLE players
+                        ADD COLUMN season_motm INTEGER DEFAULT 0
+                    """)
                     await conn.execute("""
-                                       UPDATE players
-                                       SET season_motm = 0
-                                       WHERE season_motm IS NULL
-                                       """)
+                        UPDATE players
+                        SET season_motm = 0
+                        WHERE season_motm IS NULL
+                    """)
                     logger.info("✅ season_motm column added")
                 else:
                     logger.info("✅ season_motm column already exists")
@@ -131,23 +131,23 @@ class FootballBot(commands.Bot):
         try:
             async with db.pool.acquire() as conn:
                 result = await conn.fetchrow("""
-                                             SELECT column_name
-                                             FROM information_schema.columns
-                                             WHERE table_name = 'players'
-                                               AND column_name = 'career_motm'
-                                             """)
+                    SELECT column_name
+                    FROM information_schema.columns
+                    WHERE table_name = 'players'
+                      AND column_name = 'career_motm'
+                """)
 
                 if not result:
                     logger.info("📋 Adding career_motm column...")
                     await conn.execute("""
-                                       ALTER TABLE players
-                                           ADD COLUMN career_motm INTEGER DEFAULT 0
-                                       """)
+                        ALTER TABLE players
+                        ADD COLUMN career_motm INTEGER DEFAULT 0
+                    """)
                     await conn.execute("""
-                                       UPDATE players
-                                       SET career_motm = 0
-                                       WHERE career_motm IS NULL
-                                       """)
+                        UPDATE players
+                        SET career_motm = 0
+                        WHERE career_motm IS NULL
+                    """)
                     logger.info("✅ career_motm column added")
                 else:
                     logger.info("✅ career_motm column already exists")
@@ -247,9 +247,9 @@ class FootballBot(commands.Bot):
                         wage_budget = 30000
 
                     await conn.execute('''
-                                       INSERT INTO teams (team_id, team_name, league, budget, wage_budget)
-                                       VALUES ($1, $2, $3, $4, $5)
-                                       ''', team['team_id'], team['team_name'], team['league'], budget, wage_budget)
+                        INSERT INTO teams (team_id, team_name, league, budget, wage_budget)
+                        VALUES ($1, $2, $3, $4, $5)
+                    ''', team['team_id'], team['team_name'], team['league'], budget, wage_budget)
             logger.info(f"✅ Added {len(ALL_TEAMS)} teams")
 
         async with db.pool.acquire() as conn:
@@ -293,11 +293,11 @@ class FootballBot(commands.Bot):
             for p in pl_players:
                 stats = self.calculate_player_stats(p['overall_rating'], p['position'])
                 await conn.execute('''
-                                   INSERT INTO npc_players (player_name, team_id, position, age, overall_rating,
-                                                            pace, shooting, passing, dribbling, defending, physical,
-                                                            is_regen)
-                                   VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, FALSE)
-                                   ''', p['player_name'], p['team_id'], p['position'], p['age'], p['overall_rating'],
+                    INSERT INTO npc_players (player_name, team_id, position, age, overall_rating,
+                                            pace, shooting, passing, dribbling, defending, physical,
+                                            is_regen)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, FALSE)
+                ''', p['player_name'], p['team_id'], p['position'], p['age'], p['overall_rating'],
                                    stats['pace'], stats['shooting'], stats['passing'], stats['dribbling'],
                                    stats['defending'], stats['physical'])
 
@@ -308,11 +308,11 @@ class FootballBot(commands.Bot):
             for p in champ_players:
                 stats = self.calculate_player_stats(p['overall_rating'], p['position'])
                 await conn.execute('''
-                                   INSERT INTO npc_players (player_name, team_id, position, age, overall_rating,
-                                                            pace, shooting, passing, dribbling, defending, physical,
-                                                            is_regen)
-                                   VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, FALSE)
-                                   ''', p['player_name'], p['team_id'], p['position'], p['age'], p['overall_rating'],
+                    INSERT INTO npc_players (player_name, team_id, position, age, overall_rating,
+                                            pace, shooting, passing, dribbling, defending, physical,
+                                            is_regen)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, FALSE)
+                ''', p['player_name'], p['team_id'], p['position'], p['age'], p['overall_rating'],
                                    stats['pace'], stats['shooting'], stats['passing'], stats['dribbling'],
                                    stats['defending'], stats['physical'])
 
@@ -323,11 +323,11 @@ class FootballBot(commands.Bot):
             for p in l1_players:
                 stats = self.calculate_player_stats(p['overall_rating'], p['position'])
                 await conn.execute('''
-                                   INSERT INTO npc_players (player_name, team_id, position, age, overall_rating,
-                                                            pace, shooting, passing, dribbling, defending, physical,
-                                                            is_regen)
-                                   VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, FALSE)
-                                   ''', p['player_name'], p['team_id'], p['position'], p['age'], p['overall_rating'],
+                    INSERT INTO npc_players (player_name, team_id, position, age, overall_rating,
+                                            pace, shooting, passing, dribbling, defending, physical,
+                                            is_regen)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, FALSE)
+                ''', p['player_name'], p['team_id'], p['position'], p['age'], p['overall_rating'],
                                    stats['pace'], stats['shooting'], stats['passing'], stats['dribbling'],
                                    stats['defending'], stats['physical'])
 
@@ -375,8 +375,7 @@ class FootballBot(commands.Bot):
             }
         elif position in ['CB', 'FB']:
             return {
-                'pace': min(99, base + random.randint(0, 5)) if position == 'FB' else max(50,
-                                                                                          base - random.randint(5, 10)),
+                'pace': min(99, base + random.randint(0, 5)) if position == 'FB' else max(50, base - random.randint(5, 10)),
                 'shooting': max(35, base - random.randint(20, 30)),
                 'passing': max(55, base - random.randint(5, 10)),
                 'dribbling': max(45, base - random.randint(10, 20)),
@@ -419,18 +418,18 @@ class FootballBot(commands.Bot):
 
                     async with db.pool.acquire() as conn:
                         players = await conn.fetch("""
-                                                   SELECT DISTINCT p.user_id, p.player_name, t.team_name
-                                                   FROM players p
-                                                            JOIN teams t ON p.team_id = t.team_id
-                                                   WHERE p.retired = FALSE
-                                                     AND p.team_id != 'free_agent'
+                            SELECT DISTINCT p.user_id, p.player_name, t.team_name
+                            FROM players p
+                            JOIN teams t ON p.team_id = t.team_id
+                            WHERE p.retired = FALSE
+                              AND p.team_id != 'free_agent'
                               AND EXISTS (
                                 SELECT 1 FROM fixtures f
                                 WHERE (f.home_team_id = p.team_id OR f.away_team_id = p.team_id)
                                 AND f.week_number = $1
-                                                     AND f.played = FALSE
-                                                       )
-                                                   """, state['current_week'])
+                                AND f.played = FALSE
+                              )
+                        """, state['current_week'])
 
                     player_mentions = []
                     for p in players:
@@ -517,8 +516,7 @@ class FootballBot(commands.Bot):
     @tasks.loop(minutes=5)
     async def check_match_windows(self):
         """
-        Simple 5-minute check: Is it time to open/close windows?
-        Checks: Mon/Wed/Sat 3-5 PM EST
+        Check match windows: Tue (European), Wed (Domestic+Advance)
         SELF-HEALING: Errors logged but task continues
         """
         try:
@@ -533,22 +531,26 @@ class FootballBot(commands.Bot):
             if not state['season_started']:
                 return
 
-            is_window_time, is_start_time, is_end_time = is_match_window_time()
+            # ✅ NOW RETURNS 4 VALUES
+            is_window_time, is_start_time, is_end_time, window_type = is_match_window_time()
             window_open = state['match_window_open']
 
-            if is_start_time and not window_open:
-                logger.info("🟢 Opening match window (fixed schedule)")
-                await open_match_window()
-                await self.notify_match_window_open()
+            if is_start_time and not window_open and window_type:
+                logger.info(f"🟢 Opening {window_type} window")
+                await open_match_window(window_type=window_type)
+                
+                # Only notify for domestic windows
+                if window_type == 'domestic':
+                    await self.notify_match_window_open()
 
                 await self.change_presence(
-                    activity=discord.Game(name=f"🟢 WINDOW OPEN | Week {state['current_week']}"),
+                    activity=discord.Game(name=f"🟢 {window_type.upper()} | Week {state['current_week']}"),
                     status=discord.Status.online
                 )
 
-            elif is_end_time and window_open:
-                logger.info("🔴 Closing match window (fixed schedule)")
-                await close_match_window(bot=self)
+            elif is_end_time and window_open and window_type:
+                logger.info(f"🔴 Closing {window_type} window")
+                await close_match_window(window_type=window_type, bot=self)
 
                 state = await db.get_game_state()
                 from utils.season_manager import get_next_match_window
@@ -567,7 +569,7 @@ class FootballBot(commands.Bot):
 
             elif window_open and not is_window_time:
                 logger.warning("⚠️ Window is open outside of match hours - auto-closing")
-                await close_match_window(bot=self)
+                await close_match_window(window_type='domestic', bot=self)
 
                 state = await db.get_game_state()
                 await self.change_presence(
@@ -631,10 +633,8 @@ class FootballBot(commands.Bot):
         Check for players whose training is ready and send reminders
         """
         try:
-            # Calculate when training becomes available
             cooldown_threshold = datetime.now() - timedelta(hours=config.TRAINING_COOLDOWN_HOURS)
         
-            # DEBUG LOGGING - ADD THIS
             logger.info(f"🔍 Checking training reminders at {datetime.now()}")
             logger.info(f"   Cooldown threshold: {cooldown_threshold}")
         
@@ -649,17 +649,14 @@ class FootballBot(commands.Bot):
                            OR last_reminded::timestamp <= last_training::timestamp)
                 """, cooldown_threshold)
             
-                # DEBUG LOGGING - ADD THIS
                 logger.info(f"   Found {len(rows)} players ready for reminder")
                 for row in rows:
                     logger.info(f"   - {row['player_name']}: last_training={row['last_training']}, last_reminded={row.get('last_reminded', 'NULL')}")
             
                 for row in rows:
-                    # Send notification
                     success = await self.send_training_reminder(row['user_id'])
                 
                     if success:
-                        # Mark as reminded
                         await conn.execute("""
                             UPDATE players
                             SET last_reminded = $1
