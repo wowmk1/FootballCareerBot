@@ -132,7 +132,7 @@ EUROPEAN_TEAM_CRESTS = {
     'ajax': 'https://r2.thesportsdb.com/images/media/team/badge/rwuruu1448807780.png/tiny',
     'psv': 'https://r2.thesportsdb.com/images/media/team/badge/vqvqxs1448811091.png/tiny',
     'feyenoord': 'https://r2.thesportsdb.com/images/media/team/badge/vyxyvt1448809925.png/tiny',
-    'az_alkmaar': 'https://r2.thesportsdb.com/images/media/team/badge/xuywtu1448807836.png/tiny',
+    'az_alkmaar': 'https://r2.thesportsdb.com/images/media/team/badge/wtqwvv1473534757.png/tiny',
     
     # Portugal - Primeira Liga
     'porto': 'https://r2.thesportsdb.com/images/media/team/badge/vrssrq1448810987.png/tiny',
