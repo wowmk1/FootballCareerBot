@@ -187,7 +187,7 @@ COMPETITION_LOGOS = {
     'League One': 'https://media.api-sports.io/football/leagues/41.png',
     'FA Cup': 'https://media.api-sports.io/football/leagues/45.png',
     'EFL Cup': 'https://media.api-sports.io/football/leagues/48.png',
-    'Champions League': 'https://r2.thesportsdb.com/images/media/league/badge/i6o0kh1549879062.png/tiny',
+    'Champions League': 'https://r2.thesportsdb.com/images/media/league/badge/facv1u1742998896.png/tiny',
     'Europa League': 'https://r2.thesportsdb.com/images/media/league/badge/7onmyv1534768460.png/tiny',
 }
 
