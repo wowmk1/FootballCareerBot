@@ -3,6 +3,7 @@ European Competition Management System
 Groups, Knockout Stages, Fixtures, Standings
 
 ✅ UPDATED: Now adds match results to news database
+✅ FIXED: Creates 12 fixtures per group (full round-robin)
 """
 
 import random
@@ -76,28 +77,35 @@ async def create_groups(conn, competition, teams, season):
         await create_group_fixtures(conn, competition, group_name, group_teams, season)
 
 async def create_group_fixtures(conn, competition, group_name, teams, season):
-    """Create all fixtures for a group"""
+    """
+    Create all fixtures for a group (FULL ROUND-ROBIN)
+    
+    ✅ FIXED: Now creates 12 fixtures per group (each team plays all others home & away)
+    """
     match_weeks = config.GROUP_STAGE_WEEKS
     
-    # Create all possible home/away fixtures
+    # Create FULL round-robin: each team plays every other team HOME and AWAY
     fixtures = []
     for i in range(len(teams)):
-        for j in range(i+1, len(teams)):
-            fixtures.append((teams[i], teams[j]))
+        for j in range(len(teams)):
+            if i != j:  # Don't play yourself
+                fixtures.append((teams[i], teams[j]))
     
+    # Now we have 12 fixtures (4 teams: each plays 3 others × 2 = 12 total)
     random.shuffle(fixtures)
     
-    # Assign fixtures to match days (1-6 for group stage)
+    # Distribute 12 fixtures across 6 matchdays (2 matches per matchday)
     for idx, (home, away) in enumerate(fixtures):
-        week = match_weeks[idx % 6]
-        match_day = (idx % 6) + 1  # ✅ FIX: Match days 1-6
+        match_day_num = (idx // 2) + 1  # Matchdays 1-6 (2 matches per day)
+        week_idx = (idx // 2) % 6  # Cycle through 6 weeks
+        week = match_weeks[week_idx]
         
         await conn.execute("""
             INSERT INTO european_fixtures
             (competition, stage, group_name, home_team_id, away_team_id, 
              week_number, season, match_day)
             VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-        """, competition, 'group', group_name, home, away, week, season, match_day)
+        """, competition, 'group', group_name, home, away, week, season, match_day_num)
 
 async def generate_knockout_draw(competition, stage, season):
     """Generate knockout stage draw"""
