@@ -43,6 +43,12 @@ class MatchEngine:
         self.pinned_messages: Dict[int, discord.Message] = {}
         self._last_cleanup = datetime.now()
         self._match_timestamps: Dict[int, datetime] = {}
+        
+        # NEW: Track yellow cards per match (match_id -> {user_id: yellow_count})
+        self.match_yellow_cards: Dict[int, Dict[int, int]] = {}
+        
+        # NEW: Track match statistics (match_id -> stats)
+        self.match_stats: Dict[int, dict] = {}
 
     async def cleanup_old_matches(self):
         """Remove matches older than 6 hours from memory"""
@@ -57,6 +63,11 @@ class MatchEngine:
                 removed_matches += 1
                 if match_id in self._match_timestamps:
                     del self._match_timestamps[match_id]
+                # Clean up match-specific tracking
+                if match_id in self.match_yellow_cards:
+                    del self.match_yellow_cards[match_id]
+                if match_id in self.match_stats:
+                    del self.match_stats[match_id]
 
         for match_id in list(self.pinned_messages.keys()):
             if match_id not in self.active_matches:
@@ -77,6 +88,308 @@ class MatchEngine:
         """Cleanup every hour"""
         if datetime.now() - self._last_cleanup > timedelta(hours=1):
             await self.cleanup_old_matches()
+
+    # ═══════════════════════════════════════════════════════════════
+    # NEW FEATURES: HOME ADVANTAGE, STATS, CARDS, SET PIECES
+    # ═══════════════════════════════════════════════════════════════
+    
+    def initialize_match_stats(self, match_id, home_participants, away_participants):
+        """Initialize match statistics tracking"""
+        self.match_stats[match_id] = {
+            'home': {
+                'shots': 0, 'shots_on_target': 0, 'possession': 50,
+                'passes_completed': 0, 'passes_attempted': 0,
+                'tackles_won': 0, 'tackles_attempted': 0,
+                'actions': 0
+            },
+            'away': {
+                'shots': 0, 'shots_on_target': 0, 'possession': 50,
+                'passes_completed': 0, 'passes_attempted': 0,
+                'tackles_won': 0, 'tackles_attempted': 0,
+                'actions': 0
+            }
+        }
+        self.match_yellow_cards[match_id] = {}
+    
+    def update_match_stats(self, match_id, team_side, action, success):
+        """Update match statistics based on action"""
+        if match_id not in self.match_stats:
+            return
+        
+        stats = self.match_stats[match_id][team_side]
+        stats['actions'] += 1
+        
+        # Track specific actions
+        if action in ['shoot', 'header']:
+            stats['shots'] += 1
+            if success:
+                stats['shots_on_target'] += 1
+        
+        elif action in ['pass', 'through_ball', 'key_pass', 'cross', 'long_ball']:
+            stats['passes_attempted'] += 1
+            if success:
+                stats['passes_completed'] += 1
+        
+        elif action == 'tackle':
+            stats['tackles_attempted'] += 1
+            if success:
+                stats['tackles_won'] += 1
+        
+        # Update possession based on action success (simple approximation)
+        if success:
+            stats['possession'] = min(70, stats['possession'] + 1)
+            opponent = 'away' if team_side == 'home' else 'home'
+            self.match_stats[match_id][opponent]['possession'] = max(30, self.match_stats[match_id][opponent]['possession'] - 1)
+    
+    def get_home_advantage_bonus(self, is_home, player_position):
+        """Calculate home advantage bonus"""
+        if not is_home:
+            return 0
+        
+        # Home advantage: +2 to most actions, +3 for attacking actions
+        attacking_positions = ['ST', 'W', 'CAM']
+        if player_position in attacking_positions:
+            return 3
+        return 2
+    
+    async def give_yellow_card(self, player, match_id, channel, reason="dangerous play"):
+        """Give yellow card to player"""
+        if match_id not in self.match_yellow_cards:
+            self.match_yellow_cards[match_id] = {}
+        
+        user_id = player['user_id']
+        current_yellows = self.match_yellow_cards[match_id].get(user_id, 0)
+        
+        embed = discord.Embed(
+            title="🟨 YELLOW CARD!",
+            description=f"**{player['player_name']}** booked for {reason}!",
+            color=discord.Color.gold()
+        )
+        
+        # Check for second yellow = red card
+        if current_yellows >= 1:
+            embed.title = "🟥 SECOND YELLOW = RED CARD!"
+            embed.description = f"**{player['player_name']}** sent off!\n\n⚠️ **SUSPENDED FOR NEXT MATCH**"
+            embed.color = discord.Color.red()
+            
+            # Penalize rating heavily
+            async with db.pool.acquire() as conn:
+                await conn.execute("""
+                    UPDATE match_participants
+                    SET match_rating = GREATEST(0.0, LEAST(10.0, match_rating - 1.0))
+                    WHERE match_id = $1 AND user_id = $2
+                """, match_id, user_id)
+            
+            # Send DM notification
+            await self.send_red_card_notification(player, {'team_name': 'Team'}, {'team_name': 'Opposition'})
+        else:
+            self.match_yellow_cards[match_id][user_id] = current_yellows + 1
+            
+            # Small rating penalty
+            async with db.pool.acquire() as conn:
+                await conn.execute("""
+                    UPDATE match_participants
+                    SET match_rating = GREATEST(0.0, LEAST(10.0, match_rating - 0.3))
+                    WHERE match_id = $1 AND user_id = $2
+                """, match_id, user_id)
+        
+        await channel.send(embed=embed)
+        print(f"🟨 Yellow card given to {player['player_name']}")
+    
+    async def handle_set_piece(self, channel, attacking_team, defending_team, minute, match_id, is_european=False):
+        """Handle corner kick or free kick"""
+        set_piece_type = random.choice(['corner', 'free_kick'])
+        
+        # Get best taker
+        async with db.pool.acquire() as conn:
+            if is_european:
+                if set_piece_type == 'corner':
+                    taker = await conn.fetchrow("""
+                        SELECT * FROM npc_players WHERE team_id = $1 AND retired = FALSE
+                        ORDER BY passing DESC LIMIT 1
+                        UNION ALL
+                        SELECT * FROM european_npc_players WHERE team_id = $1 AND retired = FALSE
+                        ORDER BY passing DESC LIMIT 1
+                    """, attacking_team['team_id'])
+                else:
+                    taker = await conn.fetchrow("""
+                        SELECT * FROM npc_players WHERE team_id = $1 AND retired = FALSE
+                        ORDER BY shooting DESC LIMIT 1
+                        UNION ALL
+                        SELECT * FROM european_npc_players WHERE team_id = $1 AND retired = FALSE
+                        ORDER BY shooting DESC LIMIT 1
+                    """, attacking_team['team_id'])
+            else:
+                if set_piece_type == 'corner':
+                    taker = await conn.fetchrow("""
+                        SELECT * FROM npc_players WHERE team_id = $1 AND retired = FALSE
+                        ORDER BY passing DESC LIMIT 1
+                    """, attacking_team['team_id'])
+                else:
+                    taker = await conn.fetchrow("""
+                        SELECT * FROM npc_players WHERE team_id = $1 AND retired = FALSE
+                        ORDER BY shooting DESC LIMIT 1
+                    """, attacking_team['team_id'])
+        
+        if not taker:
+            return None
+        
+        embed = discord.Embed(
+            title=f"{'⚽ CORNER KICK' if set_piece_type == 'corner' else '🎯 FREE KICK'} — {minute}'",
+            description=f"**{taker['player_name']}** steps up for {attacking_team['team_name']}...",
+            color=discord.Color.gold()
+        )
+        await channel.send(embed=embed)
+        await asyncio.sleep(2)
+        
+        # Set piece calculation
+        if set_piece_type == 'free_kick':
+            # Direct free kick: 12% goal chance (realistic)
+            roll = random.randint(1, 100)
+            success_threshold = min(95, 12 + (taker['shooting'] - 70) // 2)
+            
+            if roll <= success_threshold:
+                result_embed = discord.Embed(
+                    title="⚽ FREE KICK GOAL!",
+                    description=f"**{taker['player_name']}** bends it into the top corner!",
+                    color=discord.Color.green()
+                )
+                await channel.send(embed=result_embed)
+                
+                # Update NPC stats
+                async with db.pool.acquire() as conn:
+                    if is_european and 'european_npc_id' in taker:
+                        await conn.execute("""
+                            UPDATE european_npc_players SET season_goals = season_goals + 1
+                            WHERE european_npc_id = $1
+                        """, taker['european_npc_id'])
+                    else:
+                        await conn.execute("""
+                            UPDATE npc_players SET season_goals = season_goals + 1
+                            WHERE npc_id = $1
+                        """, taker['npc_id'])
+                
+                return {'goal': True, 'scorer_name': taker['player_name'], 'set_piece': True}
+            else:
+                result_embed = discord.Embed(
+                    title="❌ FREE KICK SAVED!",
+                    description="Goalkeeper makes a brilliant save!",
+                    color=discord.Color.blue()
+                )
+                await channel.send(embed=result_embed)
+        
+        else:  # Corner kick
+            # Corner: 25% goal chance (realistic for corners)
+            roll = random.randint(1, 100)
+            success_threshold = min(95, 25 + (taker['passing'] - 70) // 2)
+            
+            if roll <= success_threshold:
+                # Get header specialist
+                async with db.pool.acquire() as conn:
+                    if is_european:
+                        header_player = await conn.fetchrow("""
+                            SELECT * FROM npc_players WHERE team_id = $1 AND position IN ('ST', 'CB') AND retired = FALSE
+                            ORDER BY physical DESC LIMIT 1
+                            UNION ALL
+                            SELECT * FROM european_npc_players WHERE team_id = $1 AND position IN ('ST', 'CB') AND retired = FALSE
+                            ORDER BY physical DESC LIMIT 1
+                        """, attacking_team['team_id'])
+                    else:
+                        header_player = await conn.fetchrow("""
+                            SELECT * FROM npc_players WHERE team_id = $1 AND position IN ('ST', 'CB') AND retired = FALSE
+                            ORDER BY physical DESC LIMIT 1
+                        """, attacking_team['team_id'])
+                
+                if header_player:
+                    result_embed = discord.Embed(
+                        title="⚽ CORNER GOAL!",
+                        description=f"**{header_player['player_name']}** powers the header home!\n🅰️ Assist: {taker['player_name']}",
+                        color=discord.Color.green()
+                    )
+                    await channel.send(embed=result_embed)
+                    
+                    # Update stats
+                    async with db.pool.acquire() as conn:
+                        if is_european and 'european_npc_id' in header_player:
+                            await conn.execute("""
+                                UPDATE european_npc_players SET season_goals = season_goals + 1
+                                WHERE european_npc_id = $1
+                            """, header_player['european_npc_id'])
+                        else:
+                            await conn.execute("""
+                                UPDATE npc_players SET season_goals = season_goals + 1
+                                WHERE npc_id = $1
+                            """, header_player['npc_id'])
+                    
+                    return {'goal': True, 'scorer_name': header_player['player_name'], 'set_piece': True}
+            else:
+                result_embed = discord.Embed(
+                    title="❌ CORNER CLEARED!",
+                    description="Defending team clears the danger!",
+                    color=discord.Color.blue()
+                )
+                await channel.send(embed=result_embed)
+        
+        return None
+    
+    async def display_match_stats(self, channel, match_id, home_team, away_team):
+        """Display match statistics"""
+        if match_id not in self.match_stats:
+            return
+        
+        home_stats = self.match_stats[match_id]['home']
+        away_stats = self.match_stats[match_id]['away']
+        
+        # Calculate percentages
+        home_pass_pct = int((home_stats['passes_completed'] / max(1, home_stats['passes_attempted'])) * 100)
+        away_pass_pct = int((away_stats['passes_completed'] / max(1, away_stats['passes_attempted'])) * 100)
+        
+        home_tackle_pct = int((home_stats['tackles_won'] / max(1, home_stats['tackles_attempted'])) * 100)
+        away_tackle_pct = int((away_stats['tackles_won'] / max(1, away_stats['tackles_attempted'])) * 100)
+        
+        embed = discord.Embed(
+            title="📊 MATCH STATISTICS",
+            description=f"**{home_team['team_name']}** vs **{away_team['team_name']}**",
+            color=discord.Color.blue()
+        )
+        
+        embed.add_field(
+            name="⚽ Shots",
+            value=f"{home_stats['shots']} — {away_stats['shots']}",
+            inline=True
+        )
+        
+        embed.add_field(
+            name="🎯 On Target",
+            value=f"{home_stats['shots_on_target']} — {away_stats['shots_on_target']}",
+            inline=True
+        )
+        
+        embed.add_field(
+            name="📊 Possession",
+            value=f"{home_stats['possession']}% — {away_stats['possession']}%",
+            inline=True
+        )
+        
+        embed.add_field(
+            name="🎪 Pass Accuracy",
+            value=f"{home_pass_pct}% — {away_pass_pct}%",
+            inline=True
+        )
+        
+        embed.add_field(
+            name="🛡️ Tackles Won",
+            value=f"{home_tackle_pct}% — {away_tackle_pct}%",
+            inline=True
+        )
+        
+        embed.add_field(
+            name="⚡ Total Actions",
+            value=f"{home_stats['actions']} — {away_stats['actions']}",
+            inline=True
+        )
+        
+        await channel.send(embed=embed)
 
     # ═══════════════════════════════════════════════════════════════
     # ENHANCED D20 SYSTEM - NEW FUNCTIONS
@@ -1061,6 +1374,17 @@ class MatchEngine:
             member = guild.get_member(user_id)
             if member:
                 overwrites[member] = discord.PermissionOverwrite(read_messages=True, send_messages=True)
+        
+        # NEW: Add SPECTATOR permissions for admins/users with specific role
+        # Admins can always watch
+        for member in guild.members:
+            if member.guild_permissions.administrator and member.id not in player_users:
+                overwrites[member] = discord.PermissionOverwrite(read_messages=True, send_messages=False)
+        
+        # Optional: Add role-based spectating (e.g., "Spectator" role)
+        spectator_role = discord.utils.get(guild.roles, name="Spectator")
+        if spectator_role:
+            overwrites[spectator_role] = discord.PermissionOverwrite(read_messages=True, send_messages=False)
 
         match_channel = await guild.create_text_channel(name=channel_name, category=category, overwrites=overwrites)
 
@@ -1196,6 +1520,9 @@ class MatchEngine:
         home_participants = [p for p in participants if p['team_id'] == fixture['home_team_id']]
         away_participants = [p for p in participants if p['team_id'] == fixture['away_team_id']]
 
+        # Initialize match stats
+        self.initialize_match_stats(match_id, home_participants, away_participants)
+
         possible_minutes = list(range(3, 91, 3))
         minutes = sorted(random.sample(possible_minutes, min(num_events, len(possible_minutes))))
 
@@ -1216,7 +1543,36 @@ class MatchEngine:
             if minute == 45:
                 await self.post_halftime_summary(channel, home_team, away_team, home_score, away_score, participants,
                                                  match_id)
+                # Display stats at halftime
+                await self.display_match_stats(channel, match_id, home_team, away_team)
 
+            # NEW: 10% chance of set piece instead of regular play
+            if random.random() < 0.10:
+                attacking_team_choice = random.choice(['home', 'away'])
+                if attacking_team_choice == 'home':
+                    set_piece_result = await self.handle_set_piece(channel, home_team, away_team, minute, match_id, is_european)
+                    if set_piece_result and set_piece_result.get('goal'):
+                        home_score += 1
+                        await self.post_goal_celebration(channel, set_piece_result['scorer_name'], home_team['team_name'],
+                                                        home_team['team_id'], home_score, away_score, set_piece_result.get('assister_name'))
+                        await self.update_pinned_score(channel, match_id, home_team, away_team, home_score, away_score, minute)
+                else:
+                    set_piece_result = await self.handle_set_piece(channel, away_team, home_team, minute, match_id, is_european)
+                    if set_piece_result and set_piece_result.get('goal'):
+                        away_score += 1
+                        await self.post_goal_celebration(channel, set_piece_result['scorer_name'], away_team['team_name'],
+                                                        away_team['team_id'], home_score, away_score, set_piece_result.get('assister_name'))
+                        await self.update_pinned_score(channel, match_id, home_team, away_team, home_score, away_score, minute)
+                
+                # Continue to next minute after set piece
+                async with db.pool.acquire() as conn:
+                    await conn.execute(
+                        'UPDATE active_matches SET home_score = $1, away_score = $2, current_minute = $3 WHERE match_id = $4',
+                        home_score, away_score, minute, match_id)
+                await asyncio.sleep(2)
+                continue
+
+            # Regular play
             attacking_team = random.choice(['home', 'away'])
             if attacking_team == 'home':
                 if home_participants:
@@ -1267,6 +1623,155 @@ class MatchEngine:
                     home_score, away_score, minute, match_id)
 
             await asyncio.sleep(2)
+        
+        # NEW: EXTRA TIME & PENALTIES for European knockout matches if tied
+        if is_european and home_score == away_score:
+            knockout_stages = ['R16', 'QF', 'SF', 'Final']
+            match_stage = fixture.get('stage', '')
+            
+            if match_stage in knockout_stages:
+                # Check aggregate score for two-legged ties
+                # For simplicity, if it's a single match or aggregate is tied, go to extra time
+                
+                embed = discord.Embed(
+                    title="⏱️ MATCH TIED - EXTRA TIME!",
+                    description=f"**{home_score} - {away_score}** after 90 minutes!\n\n🔥 30 minutes of extra time!",
+                    color=discord.Color.orange()
+                )
+                await channel.send(embed=embed)
+                await asyncio.sleep(3)
+                
+                # Extra time: 4-6 additional events (proportional to 30 mins)
+                extra_time_events = random.randint(4, 6)
+                et_minutes = sorted(random.sample(list(range(93, 121, 3)), min(extra_time_events, 9)))
+                
+                for minute in et_minutes:
+                    embed = discord.Embed(
+                        title=f"⚡ EXTRA TIME — {minute}'",
+                        description=f"## {home_team['team_name']} {home_score} - {away_score} {away_team['team_name']}",
+                        color=discord.Color.orange()
+                    )
+                    await channel.send(embed=embed)
+                    await asyncio.sleep(2)
+                    
+                    # Same logic as regular time (simplified for brevity)
+                    attacking_team = random.choice(['home', 'away'])
+                    if attacking_team == 'home' and home_participants:
+                        participant = random.choice(home_participants)
+                        player = await db.get_player(participant['user_id'])
+                        if player:
+                            result = await self.handle_player_moment(channel, player, participant, minute, home_team,
+                                                                     away_team, True, match_id, is_european)
+                            if result and result.get('goal'):
+                                home_score += 1
+                                await self.post_goal_celebration(channel, result['scorer_name'], home_team['team_name'],
+                                                                 home_team['team_id'], home_score, away_score,
+                                                                 result.get('assister_name'))
+                    elif attacking_team == 'away' and away_participants:
+                        participant = random.choice(away_participants)
+                        player = await db.get_player(participant['user_id'])
+                        if player:
+                            result = await self.handle_player_moment(channel, player, participant, minute, away_team,
+                                                                     home_team, False, match_id, is_european)
+                            if result and result.get('goal'):
+                                away_score += 1
+                                await self.post_goal_celebration(channel, result['scorer_name'], away_team['team_name'],
+                                                                 away_team['team_id'], home_score, away_score,
+                                                                 result.get('assister_name'))
+                    
+                    await asyncio.sleep(2)
+                
+                # If STILL tied after extra time, PENALTIES
+                if home_score == away_score:
+                    embed = discord.Embed(
+                        title="🎯 PENALTY SHOOTOUT!",
+                        description=f"Still **{home_score} - {away_score}** after extra time!\n\n⚽ Penalties to decide!",
+                        color=discord.Color.red()
+                    )
+                    await channel.send(embed=embed)
+                    await asyncio.sleep(3)
+                    
+                    # Simple penalty shootout (5 kicks each, sudden death if needed)
+                    home_pens = 0
+                    away_pens = 0
+                    
+                    for pen_round in range(1, 6):
+                        # Home penalty
+                        home_roll = random.randint(1, 100)
+                        home_success = home_roll <= 75  # 75% penalty success rate
+                        
+                        pen_embed = discord.Embed(
+                            title=f"🎯 PENALTY {pen_round} - {home_team['team_name']}",
+                            color=discord.Color.green() if home_success else discord.Color.red()
+                        )
+                        
+                        if home_success:
+                            home_pens += 1
+                            pen_embed.description = "⚽ **SCORED!**"
+                        else:
+                            pen_embed.description = "❌ **MISSED!**"
+                        
+                        await channel.send(embed=pen_embed)
+                        await asyncio.sleep(2)
+                        
+                        # Away penalty
+                        away_roll = random.randint(1, 100)
+                        away_success = away_roll <= 75
+                        
+                        pen_embed = discord.Embed(
+                            title=f"🎯 PENALTY {pen_round} - {away_team['team_name']}",
+                            color=discord.Color.green() if away_success else discord.Color.red()
+                        )
+                        
+                        if away_success:
+                            away_pens += 1
+                            pen_embed.description = "⚽ **SCORED!**"
+                        else:
+                            pen_embed.description = "❌ **MISSED!**"
+                        
+                        await channel.send(embed=pen_embed)
+                        await asyncio.sleep(2)
+                        
+                        # Check if winner is decided early
+                        pens_remaining = 5 - pen_round
+                        if home_pens > away_pens + pens_remaining or away_pens > home_pens + pens_remaining:
+                            break
+                    
+                    # Sudden death if still tied
+                    sudden_death_round = 6
+                    while home_pens == away_pens and sudden_death_round <= 10:
+                        embed = discord.Embed(
+                            title=f"💀 SUDDEN DEATH - Round {sudden_death_round}",
+                            description="Next goal wins!",
+                            color=discord.Color.gold()
+                        )
+                        await channel.send(embed=embed)
+                        await asyncio.sleep(2)
+                        
+                        home_success = random.randint(1, 100) <= 75
+                        away_success = random.randint(1, 100) <= 75
+                        
+                        if home_success:
+                            home_pens += 1
+                        if away_success:
+                            away_pens += 1
+                        
+                        sudden_death_round += 1
+                        await asyncio.sleep(2)
+                    
+                    # Determine penalty winner
+                    if home_pens > away_pens:
+                        home_score = 999  # Signal penalty win
+                    elif away_pens > home_pens:
+                        away_score = 999  # Signal penalty win
+                    
+                    pen_result_embed = discord.Embed(
+                        title="🎯 PENALTY SHOOTOUT RESULT",
+                        description=f"**{home_team['team_name']} {home_pens} - {away_pens} {away_team['team_name']}**",
+                        color=discord.Color.gold()
+                    )
+                    await channel.send(embed=pen_result_embed)
+                    await asyncio.sleep(2)
 
         await self.end_match(match_id, fixture, channel, home_score, away_score, participants, is_european)
 
@@ -1439,7 +1944,7 @@ class MatchEngine:
         return result
 
     async def execute_action_with_duel(self, channel, player, adjusted_stats, defender, action, minute,
-                                       match_id, member, attacking_team, is_european=False):
+                                       match_id, member, attacking_team, is_european=False, is_home=False):
         
         # Get stat configuration
         att_p, att_s, def_p, def_s = self.get_action_stats(action)
@@ -1450,9 +1955,12 @@ class MatchEngine:
         # Get position bonus
         position_bonus = self.get_position_bonus(player['position'], action)
         
+        # NEW: Get home advantage bonus
+        home_bonus = self.get_home_advantage_bonus(is_home, player['position'])
+        
         # D20 ROLL
         player_roll = random.randint(1, 20)
-        player_roll_with_bonus = player_roll + position_bonus
+        player_roll_with_bonus = player_roll + position_bonus + home_bonus
         player_total = player_stat + player_roll_with_bonus
         
         # Defender rolls
@@ -1471,6 +1979,10 @@ class MatchEngine:
         
         # SUCCESS CHECK
         success = player_total > defender_total if defender_total > 0 else player_roll_with_bonus >= 10
+        
+        # NEW: Track stats
+        team_side = 'home' if is_home else 'away'
+        self.update_match_stats(match_id, team_side, action, success)
         
         # CRITICAL SUCCESS/FAILURE
         critical_success = player_roll == 20
@@ -1498,6 +2010,8 @@ class MatchEngine:
             duel_text += f"🎲 **{player_roll}**"
             if position_bonus > 0:
                 duel_text += f" +{position_bonus} ({player['position']})"
+            if home_bonus > 0:
+                duel_text += f" +{home_bonus} (🏠)"
             duel_text += f" = **{player_roll_with_bonus}**\n"
             duel_text += f"Total: **{player_total}**\n\n"
             
@@ -1527,6 +2041,13 @@ class MatchEngine:
         scorer_name = None
         assister_name = None
         rating_change = 0
+        
+        # NEW: YELLOW CARD LOGIC
+        if action in ['tackle', 'block'] and not success:
+            # Failed tackle with big stat difference = potential card
+            if defender and player_total < defender_total - 12:
+                if random.random() < 0.20:  # 20% chance of yellow for bad tackle
+                    await self.give_yellow_card(player, match_id, channel, "dangerous tackle")
         
         # ═══ CRITICAL HIT ═══
         if critical_success:
@@ -1574,6 +2095,10 @@ class MatchEngine:
             )
             rating_change = -0.5
             success = False
+            
+            # Natural 1 on tackle = automatic yellow card
+            if action in ['tackle', 'block']:
+                await self.give_yellow_card(player, match_id, channel, "reckless challenge")
         
         # ═══ NORMAL OUTCOMES ═══
         if not is_goal and not critical_failure:
