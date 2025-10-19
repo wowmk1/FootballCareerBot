@@ -19,13 +19,13 @@ PREMIER_LEAGUE_CRESTS = {
     'man_city': 'https://r2.thesportsdb.com/images/media/team/badge/vwpvry1467462651.png/tiny',
     'man_united': 'https://r2.thesportsdb.com/images/media/team/badge/xzqdr11517660252.png/tiny',
     'newcastle': 'https://r2.thesportsdb.com/images/media/team/badge/lhwuiz1621593302.png/tiny',
-    'nottm_forest': 'https://resources.premierleague.com/premierleague/badges/100/t17@2x.png',
-    'tottenham': 'https://resources.premierleague.com/premierleague/badges/100/t6@2x.png',
+    'nottm_forest': 'https://r2.thesportsdb.com/images/media/team/badge/bk4qjs1546440351.png/tiny',
+    'tottenham': 'https://r2.thesportsdb.com/images/media/team/badge/dfyfhl1604094109.png/tiny',
     'west_ham': 'https://r2.thesportsdb.com/images/media/team/badge/yutyxs1467459956.png/tiny',
-    'wolves': 'https://resources.premierleague.com/premierleague/badges/100/t39@2x.png',
-    'leicester': 'https://resources.premierleague.com/premierleague/badges/100/t13@2x.png',
-    'southampton': 'https://resources.premierleague.com/premierleague/badges/100/t20@2x.png',
-    'ipswich': 'https://resources.premierleague.com/premierleague/badges/100/t40@2x.png',
+    'wolves': 'https://r2.thesportsdb.com/images/media/team/badge/u9qr031621593327.png/tiny',
+    'leicester': 'https://r2.thesportsdb.com/images/media/team/badge/xtxwtu1448813356.png/tiny',
+    'southampton': 'https://r2.thesportsdb.com/images/media/team/badge/ggqtd01621593274.png/tiny',
+    'ipswich': 'https://r2.thesportsdb.com/images/media/team/badge/mdj1ey1634670785.png/tiny',
 }
 
 # Championship - Using API-Football CDN (reliable, used by many Discord bots)
@@ -89,25 +89,25 @@ LEAGUE_ONE_CRESTS = {
 # ============================================
 EUROPEAN_TEAM_CRESTS = {
     # Spain - Champions League & Europa League
-    'real_madrid': 'https://r2.thesportsdb.com/images/media/team/badge/a7zqh51646070832.png/tiny',
-    'barcelona': 'https://r2.thesportsdb.com/images/media/team/badge/9p3f4u1673717812.png/tiny',
-    'atletico_madrid': 'https://r2.thesportsdb.com/images/media/team/badge/hqo2bq1674040360.png/tiny',
-    'sevilla': 'https://r2.thesportsdb.com/images/media/team/badge/xwxqrq1448811040.png/tiny',
-    'real_sociedad': 'https://r2.thesportsdb.com/images/media/team/badge/xqpqst1448811015.png/tiny',
-    'villarreal': 'https://r2.thesportsdb.com/images/media/team/badge/00w79f1635960506.png/tiny',
-    'real_betis': 'https://r2.thesportsdb.com/images/media/team/badge/ytyxqt1448811042.png/tiny',
-    'athletic_bilbao': 'https://r2.thesportsdb.com/images/media/team/badge/ptqssu1448807850.png/tiny',
+    'real_madrid': 'https://r2.thesportsdb.com/images/media/team/badge/vwvwrw1473502969.png/tiny',
+    'barcelona': 'https://r2.thesportsdb.com/images/media/team/badge/wq9sir1639406443.png/tiny',
+    'atletico_madrid': 'https://r2.thesportsdb.com/images/media/team/badge/0ulh3q1719984315.png/tiny',
+    'sevilla': 'https://r2.thesportsdb.com/images/media/team/badge/vpsqqx1473502977.png/tiny',
+    'real_sociedad': 'https://r2.thesportsdb.com/images/media/team/badge/vptvpr1473502986.png/tiny',
+    'villarreal': 'https://r2.thesportsdb.com/images/media/team/badge/vrypqy1473503073.png/tiny',
+    'real_betis': 'https://r2.thesportsdb.com/images/media/team/badge/2oqulv1663245386.png/tiny',
+    'athletic_bilbao': 'https://r2.thesportsdb.com/images/media/team/badge/68w7fe1639408210.png/tiny',
     
     # Germany - Champions League & Europa League
-    'bayern_munich': 'https://r2.thesportsdb.com/images/media/team/badge/adfbhq1635959353.png/tiny',
-    'borussia_dortmund': 'https://r2.thesportsdb.com/images/media/team/badge/04l72i1668073911.png/tiny',
-    'rb_leipzig': 'https://r2.thesportsdb.com/images/media/team/badge/1jh0661592831104.png/tiny',
-    'bayer_leverkusen': 'https://r2.thesportsdb.com/images/media/team/badge/yw90pa1635959410.png/tiny',
-    'eintracht_frankfurt': 'https://r2.thesportsdb.com/images/media/team/badge/67y2o91601723906.png/tiny',
-    'union_berlin': 'https://r2.thesportsdb.com/images/media/team/badge/rqwutw1472720276.png/tiny',
-    'freiburg': 'https://r2.thesportsdb.com/images/media/team/badge/tqvtvt1448809920.png/tiny',
-    'hoffenheim': 'https://r2.thesportsdb.com/images/media/team/badge/suttpy1448810466.png/tiny',
-    
+    'bayern_munich': 'https://r2.thesportsdb.com/images/media/team/badge/01ogkh1716960412.png/tiny',
+    'borussia_dortmund': 'https://r2.thesportsdb.com/images/media/team/badge/tqo8ge1716960353.png/tiny',
+    'rb_leipzig': 'https://r2.thesportsdb.com/images/media/team/badge/zjgapo1594244951.png/tiny',
+    'bayer_leverkusen': 'https://r2.thesportsdb.com/images/media/team/badge/3x9k851726760113.png/tiny',
+    'eintracht_frankfurt': 'https://r2.thesportsdb.com/images/media/team/badge/rurwpy1473453269.png/tiny',
+    'union_berlin': 'https://r2.thesportsdb.com/images/media/team/badge/q0o5001599679795.png/tiny',
+    'freiburg': 'https://r2.thesportsdb.com/images/media/team/badge/urwtup1473453288.png/tiny',
+    'hoffenheim': 'https://r2.thesportsdb.com/images/media/team/badge/9hwvb21621593919.png/tiny',
+    #ovde#
     # Italy - Champions League & Europa League
     'juventus': 'https://r2.thesportsdb.com/images/media/team/badge/0ydz5w1635958873.png/tiny',
     'inter_milan': 'https://r2.thesportsdb.com/images/media/team/badge/ckvj6o1668506587.png/tiny',
