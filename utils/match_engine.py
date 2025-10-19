@@ -1939,7 +1939,7 @@ class MatchEngine:
             await channel.send(f"⏰ {member.mention} **AUTO-SELECTED**: {action.upper()}")
 
         result = await self.execute_action_with_duel(channel, player, adjusted_stats, defender, action, minute,
-                                                     match_id, member, attacking_team, is_european)
+                                                     match_id, member, attacking_team, is_european, is_home)
 
         return result
 
