@@ -288,7 +288,7 @@ class European(commands.Cog):
         table += "───┼─────────────────┼───┼────────┼────────┼───\n"
         
         for idx, team in enumerate(standings, 1):
-            pos_emoji = "🟢" if idx <= 2 else "🟡" if idx == 3 else "🔴"
+            pos_emoji = "🟢" if idx <= 2 else "🔴"
             team_name = team['team_name'][:16].ljust(16)
             gd = team['goal_difference']
             gd_str = f"{gd:+3}"
@@ -297,7 +297,7 @@ class European(commands.Cog):
             table += f" {team['won']}  {team['drawn']}  {team['lost']}│"
             table += f"{team['goals_for']:2} {team['goals_against']:2} {gd_str}│{team['points']:2}\n"
         
-        table += "```\n🟢 Qualified for R16  │  🟡 Europa League  │  🔴 Eliminated"
+        table += "```\n🟢 Qualified for R16  │  🔴 Eliminated"
         embed.add_field(name="📊 Group Standings", value=table, inline=False)
         
         crest_display = ""
