@@ -109,86 +109,86 @@ EUROPEAN_TEAM_CRESTS = {
     'hoffenheim': 'https://r2.thesportsdb.com/images/media/team/badge/9hwvb21621593919.png/tiny',
     #ovde#
     # Italy - Champions League & Europa League
-    'juventus': 'https://r2.thesportsdb.com/images/media/team/badge/0ydz5w1635958873.png/tiny',
-    'inter_milan': 'https://r2.thesportsdb.com/images/media/team/badge/ckvj6o1668506587.png/tiny',
-    'ac_milan': 'https://r2.thesportsdb.com/images/media/team/badge/buwuwf1676545673.png/tiny',
-    'napoli': 'https://r2.thesportsdb.com/images/media/team/badge/e1gpko1635958945.png/tiny',
-    'as_roma': 'https://r2.thesportsdb.com/images/media/team/badge/qswrtu1448810659.png/tiny',
-    'lazio': 'https://r2.thesportsdb.com/images/media/team/badge/cihthm1601724057.png/tiny',
-    'atalanta': 'https://r2.thesportsdb.com/images/media/team/badge/yqwqqs1448807801.png/tiny',
-    'fiorentina': 'https://r2.thesportsdb.com/images/media/team/badge/qsqpsx1448809932.png/tiny',
+    'juventus': 'https://r2.thesportsdb.com/images/media/team/badge/uxf0gr1742983727.png/tiny',
+    'inter_milan': 'https://r2.thesportsdb.com/images/media/team/badge/ryhu6d1617113103.png/tiny',
+    'ac_milan': 'https://r2.thesportsdb.com/images/media/team/badge/wvspur1448806617.png/tiny',
+    'napoli': 'https://r2.thesportsdb.com/images/media/team/badge/l8qyxv1742982541.png/tiny',
+    'as_roma': 'https://www.thesportsdb.com/images/media/team/badge/jwro2s1760820674.png/tiny',
+    'lazio': 'https://r2.thesportsdb.com/images/media/team/badge/rwqyvs1448806608.png/tiny',
+    'atalanta': 'https://r2.thesportsdb.com/images/media/team/badge/lrvxg71534873930.png/tiny',
+    'fiorentina': 'https://r2.thesportsdb.com/images/media/team/badge/hc8nhu1656098030.png/tiny',
     
     # France - Champions League & Europa League
-    'paris_saint_germain': 'https://r2.thesportsdb.com/images/media/team/badge/sqwqvt1448811008.png/tiny',
-    'marseille': 'https://r2.thesportsdb.com/images/media/team/badge/ol4bv11682508086.png/tiny',
-    'lyon': 'https://r2.thesportsdb.com/images/media/team/badge/q5yxvu1448811140.png/tiny',
-    'monaco': 'https://r2.thesportsdb.com/images/media/team/badge/qrwytu1448810956.png/tiny',
-    'lille': 'https://r2.thesportsdb.com/images/media/team/badge/tvqwyq1448810927.png/tiny',
-    'nice': 'https://r2.thesportsdb.com/images/media/team/badge/t4x7h91659542748.png/tiny',
-    'rennes': 'https://r2.thesportsdb.com/images/media/team/badge/rxyrvq1448811033.png/tiny',
-    'lens': 'https://r2.thesportsdb.com/images/media/team/badge/0xtrkh1601724004.png/tiny',
+    'paris_saint_germain': 'https://r2.thesportsdb.com/images/media/team/badge/vvj6uh1560677525.png/tiny',
+    'marseille': 'https://r2.thesportsdb.com/images/media/team/badge/uutsyt1473504764.png/tiny',
+    'lyon': 'https://r2.thesportsdb.com/images/media/team/badge/blk9771656932845.png/tiny',
+    'monaco': 'https://r2.thesportsdb.com/images/media/team/badge/exjf5l1678808044.png/tiny',
+    'lille': 'https://r2.thesportsdb.com/images/media/team/badge/2giize1534005340.png/tiny',
+    'nice': 'https://r2.thesportsdb.com/images/media/team/badge/msy7ly1621593859.png/tiny',
+    'rennes': 'https://r2.thesportsdb.com/images/media/team/badge/ypturx1473504818.png/tiny',
+    'lens': 'https://r2.thesportsdb.com/images/media/team/badge/3pxoum1598797195.png/tiny',
     
     # Netherlands - Champions League & Europa League
-    'ajax': 'https://r2.thesportsdb.com/images/media/team/badge/rwuruu1448807780.png/tiny',
-    'psv_eindhoven': 'https://r2.thesportsdb.com/images/media/team/badge/vqvqxs1448811091.png/tiny',
-    'feyenoord': 'https://r2.thesportsdb.com/images/media/team/badge/vyxyvt1448809925.png/tiny',
+    'ajax': 'https://r2.thesportsdb.com/images/media/team/badge/zg9tii1755495289.png/tiny',
+    'psv_eindhoven': 'https://r2.thesportsdb.com/images/media/team/badge/xfsz6i1721297428.png/tiny',
+    'feyenoord': 'https://r2.thesportsdb.com/images/media/team/badge/uturtx1473534803.png/tiny',
     'az_alkmaar': 'https://r2.thesportsdb.com/images/media/team/badge/wtqwvv1473534757.png/tiny',
-    'fc_twente': 'https://r2.thesportsdb.com/images/media/team/badge/xuwtvs1448809633.png/tiny',
-    'fc_utrecht': 'https://r2.thesportsdb.com/images/media/team/badge/ytwvvu1448809849.png/tiny',
+    'fc_twente': 'https://r2.thesportsdb.com/images/media/team/badge/rsrxrt1473534783.png/tiny',
+    'fc_utrecht': 'https://r2.thesportsdb.com/images/media/team/badge/yuhha71625167104.png/tiny',
     
     # Portugal - Champions League & Europa League
-    'porto': 'https://r2.thesportsdb.com/images/media/team/badge/vrssrq1448810987.png/tiny',
-    'benfica': 'https://r2.thesportsdb.com/images/media/team/badge/qrqyvs1448808300.png/tiny',
-    'sporting_cp': 'https://r2.thesportsdb.com/images/media/team/badge/xxrtqy1448813464.png/tiny',
-    'braga': 'https://r2.thesportsdb.com/images/media/team/badge/s7w18o1634913854.png/tiny',
-    'vitoria_guimaraes': 'https://r2.thesportsdb.com/images/media/team/badge/usryvw1448813510.png/tiny',
-    'rio_ave': 'https://r2.thesportsdb.com/images/media/team/badge/qwwqyv1448811069.png/tiny',
+    'porto': 'https://r2.thesportsdb.com/images/media/team/badge/xu47rb1628855600.png/tiny',
+    'benfica': 'https://r2.thesportsdb.com/images/media/team/badge/0pywy21662316682.png/tiny',
+    'sporting_cp': 'https://r2.thesportsdb.com/images/media/team/badge/ohj6ih1628855978.png/tiny',
+    'braga': 'https://r2.thesportsdb.com/images/media/team/badge/8g4aod1678717261.png/tiny',
+    'vitoria_guimaraes': 'https://r2.thesportsdb.com/images/media/team/badge/af52z61628855707.png/tiny',
+    'rio_ave': 'https://r2.thesportsdb.com/images/media/team/badge/ngbklq1628851239.png/tiny',
     
     # Belgium - Champions League & Europa League
-    'club_brugge': 'https://r2.thesportsdb.com/images/media/team/badge/qqwwut1448808472.png/tiny',
-    'anderlecht': 'https://r2.thesportsdb.com/images/media/team/badge/urvwst1448807751.png/tiny',
-    'genk': 'https://r2.thesportsdb.com/images/media/team/badge/tpsuxv1448809957.png/tiny',
-    'royal_antwerp': 'https://r2.thesportsdb.com/images/media/team/badge/5f0a4d1536057944.png/tiny',
+    'club_brugge': 'https://r2.thesportsdb.com/images/media/team/badge/ov3w9j1536001717.png/tiny',
+    'anderlecht': 'https://r2.thesportsdb.com/images/media/team/badge/blk65s1691182512.png/tiny',
+    'genk': 'https://r2.thesportsdb.com/images/media/team/badge/tp06te1534875918.png/tiny',
+    'royal_antwerp': 'https://r2.thesportsdb.com/images/media/team/badge/gawwcf1691182178.png/tiny',
     
     # Scotland - Champions League
-    'celtic': 'https://r2.thesportsdb.com/images/media/team/badge/xuywvu1448808487.png/tiny',
-    'rangers': 'https://r2.thesportsdb.com/images/media/team/badge/srxqvu1448811026.png/tiny',
+    'celtic': 'https://www.thesportsdb.com/images/media/team/badge/3uv1641758780002.png/tiny',
+    'rangers': 'https://r2.thesportsdb.com/images/media/team/badge/ti24j61614290048.png/tiny',
     
     # Austria - Champions League
-    'rb_salzburg': 'https://r2.thesportsdb.com/images/media/team/badge/zq46t01620236149.png/tiny',
+    'rb_salzburg': 'https://r2.thesportsdb.com/images/media/team/badge/xy1m6m1576416143.png/tiny',
     
     # Turkey - Champions League
-    'galatasaray': 'https://r2.thesportsdb.com/images/media/team/badge/usxxwu1448809937.png/tiny',
-    'fenerbahce': 'https://r2.thesportsdb.com/images/media/team/badge/sxvsxw1448809904.png/tiny',
+    'galatasaray': 'https://r2.thesportsdb.com/images/media/team/badge/75fphr1537381190.png/tiny',
+    'fenerbahce': 'https://r2.thesportsdb.com/images/media/team/badge/twxxvs1448199691.png/tiny',
     
     # Ukraine - Champions League & Europa League
-    'shakhtar_donetsk': 'https://r2.thesportsdb.com/images/media/team/badge/yqywvt1448813089.png/tiny',
-    'dynamo_kyiv': 'https://r2.thesportsdb.com/images/media/team/badge/svvqys1448808804.png/tiny',
+    'shakhtar_donetsk': 'https://r2.thesportsdb.com/images/media/team/badge/sqrxsr1421791799.png/tiny',
+    'dynamo_kyiv': 'https://r2.thesportsdb.com/images/media/team/badge/stxrpx1447696362.png/tiny',
     
     # Switzerland - Champions League
-    'young_boys': 'https://r2.thesportsdb.com/images/media/team/badge/quyxvu1448811168.png/tiny',
+    'young_boys': 'https://r2.thesportsdb.com/images/media/team/badge/9mxdoo1534784569.png/tiny',
     
     # Serbia - Champions League
-    'red_star_belgrade': 'https://r2.thesportsdb.com/images/media/team/badge/wxquvu1448811050.png/tiny',
+    'red_star_belgrade': 'https://r2.thesportsdb.com/images/media/team/badge/gz650v1567023440.png/tiny',
     
     # Denmark - Europa League
-    'copenhagen': 'https://r2.thesportsdb.com/images/media/team/badge/xspqxr1448808479.png/tiny',
+    'copenhagen': 'https://r2.thesportsdb.com/images/media/team/badge/styqtr1473535513.png/tiny',
     
     # Norway - Europa League
-    'bodo_glimt': 'https://r2.thesportsdb.com/images/media/team/badge/vsqyut1448808247.png/tiny',
+    'bodo_glimt': 'https://r2.thesportsdb.com/images/media/team/badge/uqpwwx1449165943.png/tiny',
     
     # Greece - Europa League
-    'olympiacos': 'https://r2.thesportsdb.com/images/media/team/badge/xvvtuu1448810975.png/tiny',
-    'panathinaikos': 'https://r2.thesportsdb.com/images/media/team/badge/tqvywr1448810982.png/tiny',
+    'olympiacos': 'https://r2.thesportsdb.com/images/media/team/badge/xckasq1721291508.png/tiny',
+    'panathinaikos': 'https://r2.thesportsdb.com/images/media/team/badge/vtpwwt1448208397.png/tiny',
     
     # Czech Republic - Europa League
-    'slavia_prague': 'https://r2.thesportsdb.com/images/media/team/badge/30c04o1601724117.png/tiny',
+    'slavia_prague': 'https://www.thesportsdb.com/images/media/team/badge/l7kl4n1759252139.png/tiny',
     
     # Israel - Europa League
-    'maccabi_haifa': 'https://r2.thesportsdb.com/images/media/team/badge/ytuwus1448810937.png/tiny',
+    'maccabi_haifa': 'https://r2.thesportsdb.com/images/media/team/badge/t73b501639433206.png/tiny',
     
     # Cyprus - Europa League
-    'apoel': 'https://r2.thesportsdb.com/images/media/team/badge/syvtvx1448807768.png/tiny',
+    'apoel': 'https://r2.thesportsdb.com/images/media/team/badge/ccra6l1579035947.png/tiny',
 }
 
 # Combine all crests - UPDATED TO INCLUDE EUROPEAN
