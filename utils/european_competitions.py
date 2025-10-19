@@ -3,7 +3,7 @@ European Competition Management System
 Groups, Knockout Stages, Fixtures, Standings
 
 ✅ UPDATED: Now adds match results to news database
-✅ FIXED: Creates 12 fixtures per group (full round-robin)
+✅ FIXED v2: Balanced fixture scheduling - each team plays once per week
 """
 
 import random
@@ -78,34 +78,54 @@ async def create_groups(conn, competition, teams, season):
 
 async def create_group_fixtures(conn, competition, group_name, teams, season):
     """
-    Create all fixtures for a group (FULL ROUND-ROBIN)
+    Create balanced fixtures using round-robin algorithm
     
-    ✅ FIXED: Now creates 12 fixtures per group (each team plays all others home & away)
+    ✅ FIXED v2: Each team plays exactly once per matchday
+    - 4 teams = 6 matchdays (full home & away round-robin)
+    - Each matchday has 2 matches
+    - Each team plays once per matchday
     """
     match_weeks = config.GROUP_STAGE_WEEKS
     
-    # Create FULL round-robin: each team plays every other team HOME and AWAY
-    fixtures = []
-    for i in range(len(teams)):
-        for j in range(len(teams)):
-            if i != j:  # Don't play yourself
-                fixtures.append((teams[i], teams[j]))
+    # Round-robin scheduling algorithm for 4 teams
+    # We'll create 6 matchdays, each team plays once per matchday
     
-    # Now we have 12 fixtures (4 teams: each plays 3 others × 2 = 12 total)
-    random.shuffle(fixtures)
+    matchdays = []
+    team_list = teams.copy()
     
-    # Distribute 12 fixtures across 6 matchdays (2 matches per matchday)
-    for idx, (home, away) in enumerate(fixtures):
-        match_day_num = (idx // 2) + 1  # Matchdays 1-6 (2 matches per day)
-        week_idx = (idx // 2) % 6  # Cycle through 6 weeks
-        week = match_weeks[week_idx]
+    # Generate 3 rounds (each team plays each other once)
+    for round_num in range(3):
+        # Rotate teams (keep first team fixed, rotate others)
+        if round_num > 0:
+            # Rotate: [A, B, C, D] -> [A, D, B, C] -> [A, C, D, B]
+            team_list = [team_list[0]] + [team_list[-1]] + team_list[1:-1]
         
-        await conn.execute("""
-            INSERT INTO european_fixtures
-            (competition, stage, group_name, home_team_id, away_team_id, 
-             week_number, season, match_day)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-        """, competition, 'group', group_name, home, away, week, season, match_day_num)
+        # Create 2 matches for this round
+        match1 = (team_list[0], team_list[1])
+        match2 = (team_list[2], team_list[3])
+        matchdays.append([match1, match2])
+    
+    # Now create reverse fixtures (away becomes home)
+    for round_num in range(3):
+        reverse_matches = [
+            (matchdays[round_num][0][1], matchdays[round_num][0][0]),  # Reverse match 1
+            (matchdays[round_num][1][1], matchdays[round_num][1][0])   # Reverse match 2
+        ]
+        matchdays.append(reverse_matches)
+    
+    # Now we have 6 matchdays with 2 matches each (12 total fixtures)
+    # Assign to weeks
+    for matchday_idx, matches in enumerate(matchdays):
+        week = match_weeks[matchday_idx]
+        match_day = matchday_idx + 1
+        
+        for home, away in matches:
+            await conn.execute("""
+                INSERT INTO european_fixtures
+                (competition, stage, group_name, home_team_id, away_team_id, 
+                 week_number, season, match_day)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+            """, competition, 'group', group_name, home, away, week, season, match_day)
 
 async def generate_knockout_draw(competition, stage, season):
     """Generate knockout stage draw"""
