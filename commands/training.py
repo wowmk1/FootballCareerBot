@@ -268,6 +268,10 @@ class TrainingCommands(commands.Cog):
         from utils.form_morale_system import update_player_morale
         await update_player_morale(interaction.user.id, 'training')
 
+        # ✅ CHECK FOR TRAIT UNLOCKS
+        from utils.traits_system import check_trait_unlocks
+        newly_unlocked_traits = await check_trait_unlocks(interaction.user.id, self.bot)
+
         # FIX #18: Enhanced Training Feedback
         from utils.form_morale_system import get_morale_description
         morale_desc = get_morale_description(player['morale'])
@@ -317,6 +321,18 @@ class TrainingCommands(commands.Cog):
             gains_text = "Tough session! Keep working - gains will come."
 
         embed.add_field(name="📈 Stat Gains", value=gains_text, inline=False)
+
+        # 🆕 SHOW TRAIT UNLOCKS IF ANY
+        if newly_unlocked_traits:
+            traits_text = ""
+            for trait_id, trait_data in newly_unlocked_traits:
+                traits_text += f"{trait_data['emoji']} **{trait_data['name']}** unlocked!\n"
+            
+            embed.add_field(
+                name="🎯 NEW TRAITS UNLOCKED!",
+                value=traits_text,
+                inline=False
+            )
 
         # 🆕 PROGRESS BAR TO 30-DAY STREAK
         if new_streak < 30:
