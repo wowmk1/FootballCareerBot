@@ -502,9 +502,7 @@ async def post_weekly_news_digest(bot, week_number: int):
                 if not news_channel:
                     continue
                 
-                # ═══════════════════════════════════════════════════════
-                # 📰 HEADER MESSAGE
-                # ═══════════════════════════════════════════════════════
+                # Header message
                 header_msg = (
                     f"# 📰 WEEK {week_number} REVIEW\n"
                     f"**Season {state['current_season']} • {config.SEASON_TOTAL_WEEKS - week_number} weeks remaining**\n"
@@ -515,9 +513,7 @@ async def post_weekly_news_digest(bot, week_number: int):
                 embeds_to_send = []
                 files_to_send = []
                 
-                # ═══════════════════════════════════════════════════════
-                # 1️⃣ MATCH OF THE WEEK (Biggest upset or highest scoring)
-                # ═══════════════════════════════════════════════════════
+                # 1️⃣ MATCH OF THE WEEK
                 async with db.pool.acquire() as conn:
                     motw = await conn.fetchrow("""
                         SELECT f.*,
@@ -543,11 +539,9 @@ async def post_weekly_news_digest(bot, week_number: int):
                             color=discord.Color.gold()
                         )
                         
-                        # Home crest as author
                         if home_crest:
                             motw_embed.set_author(name=motw['home_name'], icon_url=home_crest)
                         
-                        # Get goal scorers from match_events if available
                         goal_scorers = await conn.fetch("""
                             SELECT player_name, team_id, event_type
                             FROM match_events
@@ -573,7 +567,6 @@ async def post_weekly_news_digest(bot, week_number: int):
                                     inline=False
                                 )
                         
-                        # Add context
                         if motw['total_goals'] >= 5:
                             motw_embed.add_field(
                                 name="🔥 Goal Fest!",
@@ -581,7 +574,6 @@ async def post_weekly_news_digest(bot, week_number: int):
                                 inline=True
                             )
                         
-                        # Check for MOTM
                         motm = await conn.fetchrow("""
                             SELECT player_name, rating
                             FROM match_participants
@@ -612,7 +604,6 @@ async def post_weekly_news_digest(bot, week_number: int):
                             inline=False
                         )
                         
-                        # Generate combined crests image
                         if home_crest or away_crest:
                             crests_buffer = await generate_crests_image(home_crest, away_crest)
                             if crests_buffer:
@@ -620,15 +611,12 @@ async def post_weekly_news_digest(bot, week_number: int):
                                 motw_embed.set_image(url="attachment://motw_crests.png")
                                 files_to_send.append(file)
                         
-                        # Away crest as footer
                         if away_crest:
                             motw_embed.set_footer(text=motw['away_name'], icon_url=away_crest)
                         
                         embeds_to_send.append(motw_embed)
                 
-                # ═══════════════════════════════════════════════════════
-                # 2️⃣ PREMIER LEAGUE TABLE WATCH
-                # ═══════════════════════════════════════════════════════
+                # 2️⃣ PREMIER LEAGUE TABLE
                 async with db.pool.acquire() as conn:
                     pl_standings = await conn.fetch("""
                         SELECT team_name, points, played, won, drawn, lost,
@@ -646,7 +634,6 @@ async def post_weekly_news_digest(bot, week_number: int):
                             color=discord.Color.purple()
                         )
                         
-                        # Top 4 (Champions League)
                         top4_text = ""
                         for i, team in enumerate(pl_standings[:4], 1):
                             emoji = ["🥇", "🥈", "🥉", "4️⃣"][i-1]
@@ -659,11 +646,21 @@ async def post_weekly_news_digest(bot, week_number: int):
                             inline=False
                         )
                         
-                        # 5th-6th (Europa League)
                         if len(pl_standings) >= 6:
                             europa_text = ""
                             for i, team in enumerate(pl_standings[4:6], 5):
                                 europa_text += f"{i}. **{team['team_name']}** - {team['points']} pts\n"
+                            
+                            table_embed.add_field(
+                                name="🌟 Europa League Zone",
+                                value=europa_text,
+                                inline=False
+                            )
+                        
+                        if len(pl_standings) >= 20:
+                            rel_text = ""
+                            for i, team in enumerate(pl_standings[-3:], len(pl_standings)-2):
+                                rel_text += f"{i}. **{team['team_name']}** - {team['points']} pts ⚠️\n"
                             
                             table_embed.add_field(
                                 name="🔴 Relegation Zone",
@@ -674,9 +671,7 @@ async def post_weekly_news_digest(bot, week_number: int):
                         table_embed.set_footer(text=f"Week {week_number} Standings")
                         embeds_to_send.append(table_embed)
                 
-                # ═══════════════════════════════════════════════════════
-                # 3️⃣ PLAYER SPOTLIGHT (Top scorers + assists)
-                # ═══════════════════════════════════════════════════════
+                # 3️⃣ PLAYER SPOTLIGHT
                 async with db.pool.acquire() as conn:
                     top_players = await conn.fetch("""
                         SELECT p.player_name, p.season_goals, p.season_assists, 
@@ -715,11 +710,8 @@ async def post_weekly_news_digest(bot, week_number: int):
                         
                         embeds_to_send.append(player_embed)
                 
-                # ═══════════════════════════════════════════════════════
-                # 4️⃣ HOT & COLD (Form guide)
-                # ═══════════════════════════════════════════════════════
+                # 4️⃣ HOT & COLD
                 async with db.pool.acquire() as conn:
-                    # Teams with 3+ wins in last 5 weeks (if tracked)
                     hot_teams = await conn.fetch("""
                         SELECT team_name, points, won
                         FROM teams
@@ -767,9 +759,7 @@ async def post_weekly_news_digest(bot, week_number: int):
                         
                         embeds_to_send.append(form_embed)
                 
-                # ═══════════════════════════════════════════════════════
-                # 5️⃣ EUROPEAN SPOTLIGHT (if European week)
-                # ═══════════════════════════════════════════════════════
+                # 5️⃣ EUROPEAN SPOTLIGHT
                 if week_number in config.EUROPEAN_MATCH_WEEKS:
                     async with db.pool.acquire() as conn:
                         euro_count = await conn.fetchval("""
@@ -784,7 +774,6 @@ async def post_weekly_news_digest(bot, week_number: int):
                                 color=discord.Color.blue()
                             )
                             
-                            # Get English teams in Europe
                             english_results = await conn.fetch("""
                                 SELECT f.*, 
                                        COALESCE(ht.team_name, eht.team_name) as home_name,
@@ -824,9 +813,7 @@ async def post_weekly_news_digest(bot, week_number: int):
                             
                             embeds_to_send.append(euro_embed)
                 
-                # ═══════════════════════════════════════════════════════
-                # 6️⃣ TRANSFER WINDOW STATUS
-                # ═══════════════════════════════════════════════════════
+                # 6️⃣ TRANSFER WINDOW
                 if state['current_week'] in config.TRANSFER_WINDOW_WEEKS:
                     transfer_embed = discord.Embed(
                         title="💼 TRANSFER WINDOW OPEN",
@@ -863,9 +850,7 @@ async def post_weekly_news_digest(bot, week_number: int):
                     
                     embeds_to_send.append(transfer_embed)
                 
-                # ═══════════════════════════════════════════════════════
                 # 7️⃣ UPCOMING FIXTURES
-                # ═══════════════════════════════════════════════════════
                 from utils.season_manager import get_next_match_window
                 try:
                     next_window = get_next_match_window()
@@ -884,7 +869,6 @@ async def post_weekly_news_digest(bot, week_number: int):
                         inline=True
                     )
                     
-                    # European check
                     if state['current_week'] in config.EUROPEAN_MATCH_WEEKS:
                         fixtures_embed.add_field(
                             name="🏆 European Week",
@@ -903,11 +887,8 @@ async def post_weekly_news_digest(bot, week_number: int):
                 except Exception as e:
                     print(f"  ⚠️ Could not get next window: {e}")
                 
-                # ═══════════════════════════════════════════════════════
-                # SEND ALL EMBEDS WITH FILES
-                # ═══════════════════════════════════════════════════════
+                # SEND ALL EMBEDS
                 if embeds_to_send:
-                    # Send embeds one by one with their corresponding files
                     for i, embed in enumerate(embeds_to_send):
                         if i < len(files_to_send):
                             await news_channel.send(embed=embed, file=files_to_send[i])
@@ -931,12 +912,10 @@ async def post_weekly_news_digest(bot, week_number: int):
 
 async def post_european_champions(bot, season):
     """
-    🏆 POST EUROPEAN CHAMPIONS ANNOUNCEMENT WITH CRESTS
-    Called at end of season when CL/EL finals are complete
+    🏆 POST EUROPEAN CHAMPIONS ANNOUNCEMENT
     """
     try:
         async with db.pool.acquire() as conn:
-            # Get CL winner
             cl_winner = await conn.fetchrow("""
                 SELECT k.winner_team_id,
                        COALESCE(t.team_name, et.team_name) as team_name
@@ -947,7 +926,6 @@ async def post_european_champions(bot, season):
                   AND k.season = $1 AND k.winner_team_id IS NOT NULL
             """, season)
             
-            # Get EL winner
             el_winner = await conn.fetchrow("""
                 SELECT k.winner_team_id,
                        COALESCE(t.team_name, et.team_name) as team_name
@@ -964,7 +942,6 @@ async def post_european_champions(bot, season):
         
         from utils.football_data_api import get_team_crest_url, get_competition_logo
         
-        # Post to all guilds
         for guild in bot.guilds:
             try:
                 news_channel = discord.utils.get(guild.text_channels, name='european-news')
@@ -978,7 +955,6 @@ async def post_european_champions(bot, season):
                 
                 embeds = []
                 
-                # Champions League Winner
                 if cl_winner:
                     cl_logo = get_competition_logo('Champions League')
                     winner_crest = get_team_crest_url(cl_winner['winner_team_id'])
@@ -1004,7 +980,6 @@ async def post_european_champions(bot, season):
                     cl_embed.set_footer(text=f"Season {season} • The pinnacle of European football")
                     embeds.append(cl_embed)
                 
-                # Europa League Winner
                 if el_winner:
                     el_logo = get_competition_logo('Europa League')
                     winner_crest = get_team_crest_url(el_winner['winner_team_id'])
@@ -1049,13 +1024,11 @@ async def post_european_champions(bot, season):
 async def post_match_day_preview(bot, week_number):
     """
     📋 POST MATCH DAY PREVIEW
-    Called when match window opens - shows key fixtures
     """
     try:
         state = await db.get_game_state()
         
         async with db.pool.acquire() as conn:
-            # Get most exciting fixtures (involving top teams)
             key_fixtures = await conn.fetch("""
                 SELECT f.*, 
                        ht.team_name as home_name,
@@ -1103,7 +1076,6 @@ async def post_match_day_preview(bot, week_number):
                     inline=False
                 )
                 
-                # European check
                 if week_number in config.EUROPEAN_MATCH_WEEKS:
                     preview_embed.add_field(
                         name="🏆 European Action",
@@ -1134,7 +1106,6 @@ async def post_match_day_preview(bot, week_number):
 async def post_season_finale_preview(bot):
     """
     🎬 POST SEASON FINALE PREVIEW
-    Called before final week - shows title race, relegation battle, European race
     """
     try:
         state = await db.get_game_state()
@@ -1160,7 +1131,6 @@ async def post_season_finale_preview(bot):
                 if not news_channel:
                     continue
                 
-                # Header
                 header = (
                     f"# 🎬 SEASON FINALE PREVIEW\n"
                     f"**The final day approaches...**\n"
@@ -1170,7 +1140,6 @@ async def post_season_finale_preview(bot):
                 
                 embeds = []
                 
-                # Title Race
                 title_race_embed = discord.Embed(
                     title="🏆 TITLE RACE",
                     description="**Who will be crowned champions?**",
@@ -1190,7 +1159,6 @@ async def post_season_finale_preview(bot):
                 
                 embeds.append(title_race_embed)
                 
-                # European Race
                 euro_embed = discord.Embed(
                     title="🌟 EUROPEAN RACE",
                     description="**Battle for Europe**",
@@ -1213,7 +1181,6 @@ async def post_season_finale_preview(bot):
                 
                 embeds.append(euro_embed)
                 
-                # Relegation Battle
                 rel_embed = discord.Embed(
                     title="🔴 RELEGATION BATTLE",
                     description="**Who will go down?**",
@@ -1244,15 +1211,3 @@ async def post_season_finale_preview(bot):
         print(f"❌ Error posting season finale: {e}")
         import traceback
         traceback.print_exc()
-                                name="🌟 Europa League Zone",
-                                value=europa_text,
-                                inline=False
-                            )
-                        
-                        # Bottom 3 (Relegation)
-                        if len(pl_standings) >= 20:
-                            rel_text = ""
-                            for i, team in enumerate(pl_standings[-3:], len(pl_standings)-2):
-                                rel_text += f"{i}. **{team['team_name']}** - {team['points']} pts ⚠️\n"
-                            
-                            table_embed.add_field(
