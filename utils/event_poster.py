@@ -298,12 +298,9 @@ async def post_match_result_to_channel(bot, guild, fixture, home_score, away_sco
                     )
             
             # Check for MOTM - FIXED: match_participants uses match_id, not fixture_id
-            # First get the match_id from active_matches or played_matches
+            # First get the match_id from active_matches
             match_id = await conn.fetchval("""
                 SELECT match_id FROM active_matches WHERE fixture_id = $1
-                UNION ALL
-                SELECT match_id FROM played_matches WHERE fixture_id = $1
-                LIMIT 1
             """, fixture.get('fixture_id'))
             
             if match_id:
@@ -590,9 +587,6 @@ async def post_weekly_news_digest(bot, week_number: int):
                         # FIXED: Get match_id first, then get MOTM
                         match_id = await conn.fetchval("""
                             SELECT match_id FROM active_matches WHERE fixture_id = $1
-                            UNION ALL
-                            SELECT match_id FROM played_matches WHERE fixture_id = $1
-                            LIMIT 1
                         """, motw['fixture_id'])
                         
                         if match_id:
