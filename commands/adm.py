@@ -995,3 +995,4 @@ async def setup(bot):
         except Exception as e:
             await interaction.followup.send(f"❌ Error: {e}", ephemeral=True)
             import traceback
+            traceback.print_exc()
