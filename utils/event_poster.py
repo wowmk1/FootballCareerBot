@@ -241,13 +241,12 @@ async def post_european_results(bot, competition, week_number):
                         leg = f" - Leg {result['leg']}" if result.get('leg', 1) > 1 else ""
                         stage_text = f"{result['stage'].title()}{leg}"
                     
-                    # ✅ NEW: Build description with both team crests inline
-                    home_crest_emoji = "🏠"
-                    away_crest_emoji = "✈️"
+                    # ✅ UPDATED: Simple title and scoreline with crests in description
+                    scoreline = f"{result['home_name']} {result['home_score']} - {result['away_score']} {result['away_name']}"
                     
                     embed = discord.Embed(
                         title=f"{comp_emoji} {comp_name}",
-                        description=f"## {result['home_name']} **{result['home_score']} - {result['away_score']}** {result['away_name']}\n\n{result_emoji} {winner_text}",
+                        description=f"## {scoreline}\n\n{result_emoji} {winner_text}",
                         color=comp_color
                     )
                     
@@ -255,22 +254,21 @@ async def post_european_results(bot, competition, week_number):
                     if comp_logo:
                         embed.set_thumbnail(url=comp_logo)
                     
-                    # ✅ NEW: Add both team crests as fields side by side
+                    # ✅ NEW: Set home team crest as author icon (left side)
                     if home_crest:
-                        embed.add_field(
-                            name=f"🏠 {result['home_name']}",
-                            value=f"[View Crest]({home_crest})",
-                            inline=True
+                        embed.set_author(
+                            name=result['home_name'],
+                            icon_url=home_crest
                         )
                     
+                    # ✅ NEW: Set away team crest as footer icon (bottom)
                     if away_crest:
-                        embed.add_field(
-                            name=f"✈️ {result['away_name']}",
-                            value=f"[View Crest]({away_crest})",
-                            inline=True
+                        embed.set_footer(
+                            text=result['away_name'],
+                            icon_url=away_crest
                         )
                     
-                    # Match info
+                    # Match info - 3 columns in first row
                     embed.add_field(
                         name="📊 Status",
                         value="✅ Full Time",
@@ -285,7 +283,7 @@ async def post_european_results(bot, competition, week_number):
                     
                     embed.add_field(
                         name="📅 Week",
-                        value=f"Week {week_number}",
+                        value=f"3",
                         inline=True
                     )
                     
