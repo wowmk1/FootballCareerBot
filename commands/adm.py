@@ -4,6 +4,7 @@ FIXED VERSION - Now passes bot instance to season manager functions
 ENHANCED VERSION - Added European competition admin controls
 SAFEGUARDED VERSION - Prevents duplicate starts and allows clean restarts
 DIAGNOSTIC VERSION - Added NPC stats diagnostic
+MATCH ENGINE TEST - Added sandbox match engine testing
 """
 import discord
 from discord import app_commands
@@ -45,6 +46,7 @@ class AdminCommands(commands.Cog):
         app_commands.Choice(name="🏆 Simulate European to End", value="simulate_european_to_end"),
         app_commands.Choice(name="🗑️ Wipe & Restart European", value="wipe_european"),
         app_commands.Choice(name="🔍 Diagnose NPC Stats", value="diagnose_npcs"),
+        app_commands.Choice(name="🎮 Test Match Engine", value="test_match_engine"),
         app_commands.Choice(name="🔄 Restart Bot", value="restart"),
     ])
     @app_commands.checks.has_permissions(administrator=True)
@@ -98,6 +100,8 @@ class AdminCommands(commands.Cog):
             await self._wipe_european(interaction)
         elif action == "diagnose_npcs":
             await self._diagnose_npcs(interaction)
+        elif action == "test_match_engine":
+            await self._test_match_engine(interaction)
         elif action == "restart":
             await self._restart(interaction)
     
@@ -561,6 +565,274 @@ class AdminCommands(commands.Cog):
             import traceback
             traceback.print_exc()
     
+    async def _diagnose_npcs(self, interaction: discord.Interaction):
+        """Diagnose NPC stat issues"""
+        await interaction.response.defer(ephemeral=True)
+        
+        # Sample Championship NPCs
+        async with db.pool.acquire() as conn:
+            npcs = await conn.fetch("""
+                SELECT 
+                    n.player_name,
+                    n.position,
+                    n.overall_rating,
+                    n.pace,
+                    n.shooting,
+                    n.passing,
+                    n.dribbling,
+                    n.defending,
+                    n.physical,
+                    t.team_name
+                FROM npc_players n
+                JOIN teams t ON n.team_id = t.team_id
+                WHERE t.league = 'Championship' 
+                AND n.retired = FALSE
+                LIMIT 5
+            """)
+        
+        if not npcs:
+            await interaction.followup.send("❌ No Championship NPCs found!", ephemeral=True)
+            return
+        
+        embed = discord.Embed(
+            title="🔍 NPC Stats Diagnostic",
+            description=f"Checking {len(npcs)} sample Championship NPCs",
+            color=discord.Color.blue()
+        )
+        
+        all_good = True
+        issues = []
+        
+        for npc in npcs:
+            stat_text = ""
+            has_issue = False
+            
+            # Check each stat
+            stats_to_check = {
+                'Pace': npc['pace'],
+                'Shooting': npc['shooting'],
+                'Passing': npc['passing'],
+                'Dribbling': npc['dribbling'],
+                'Defending': npc['defending'],
+                'Physical': npc['physical']
+            }
+            
+            for stat_name, value in stats_to_check.items():
+                if value is None:
+                    stat_text += f"❌ {stat_name}: MISSING\n"
+                    has_issue = True
+                    all_good = False
+                else:
+                    stat_text += f"✅ {stat_name[:3]}: {value} "
+            
+            if has_issue:
+                issues.append(npc['player_name'])
+            
+            embed.add_field(
+                name=f"{npc['player_name']} ({npc['position']}) - OVR {npc['overall_rating']}",
+                value=stat_text.strip(),
+                inline=False
+            )
+        
+        # Summary
+        if all_good:
+            embed.color = discord.Color.green()
+            embed.set_footer(text="✅ All NPCs have complete stats!")
+        else:
+            embed.color = discord.Color.red()
+            embed.set_footer(text=f"❌ {len(issues)} NPCs missing stats - need to run fix script!")
+        
+        await interaction.followup.send(embed=embed, ephemeral=True)
+    
+    async def _test_match_engine(self, interaction: discord.Interaction):
+        """Test match engine with sandbox data (no DB impact)"""
+        await interaction.response.defer()
+        
+        try:
+            import random
+            
+            # Create sandbox teams with random players
+            home_team = self._create_sandbox_team("Test United", "Premier League")
+            away_team = self._create_sandbox_team("Sandbox City", "Championship")
+            away_team['home_advantage'] = False
+            
+            embed = discord.Embed(
+                title="🎮 Match Engine Test",
+                description=f"{home_team['name']} vs {away_team['name']}",
+                color=discord.Color.blue()
+            )
+            
+            embed.add_field(
+                name="📋 Teams",
+                value=f"🏠 {home_team['name']} (OVR: {home_team['overall']})\n"
+                      f"🛣️ {away_team['name']} (OVR: {away_team['overall']})",
+                inline=False
+            )
+            
+            await interaction.followup.send(embed=embed)
+            await interaction.followup.send("⚙️ Simulating match... (sandbox - no DB changes)")
+            
+            # Import your match engine
+            from utils.match_engine import simulate_match
+            
+            # Create match object (adjust based on your match_engine function signature)
+            sandbox_match = {
+                'home_team': home_team,
+                'away_team': away_team,
+                'week': 1,
+                'season': 2024,
+                'competition': 'Premier League',
+            }
+            
+            # Run the simulation (this is a sandbox - no DB writes)
+            match_result = await simulate_match(sandbox_match)
+            
+            # Display results
+            result_embed = discord.Embed(
+                title="⚽ Match Result",
+                description=f"**{match_result['home_goals']} - {match_result['away_goals']}**",
+                color=discord.Color.gold()
+            )
+            
+            result_embed.add_field(
+                name="🏠 Home Team",
+                value=f"{home_team['name']}\n"
+                      f"Shots: {match_result.get('home_shots', 'N/A')}\n"
+                      f"Possession: {match_result.get('home_possession', 'N/A')}%",
+                inline=True
+            )
+            
+            result_embed.add_field(
+                name="🛣️ Away Team",
+                value=f"{away_team['name']}\n"
+                      f"Shots: {match_result.get('away_shots', 'N/A')}\n"
+                      f"Possession: {match_result.get('away_possession', 'N/A')}%",
+                inline=True
+            )
+            
+            # Show goalscorers if available
+            if match_result.get('events'):
+                goals = [e for e in match_result['events'] if e['type'] == 'goal']
+                if goals:
+                    goals_text = "\n".join([f"⚽ {g['player']} ({g['minute']}')" for g in goals[:5]])
+                    result_embed.add_field(name="⚽ Goalscorers", value=goals_text, inline=False)
+            
+            result_embed.set_footer(text="✅ Test completed - No database changes made")
+            
+            await interaction.followup.send(embed=result_embed)
+            
+            # Optional: Show detailed stats
+            if match_result.get('detailed_stats'):
+                stats_embed = discord.Embed(
+                    title="📊 Detailed Match Stats",
+                    color=discord.Color.blurple()
+                )
+                
+                for stat_key, stat_value in list(match_result['detailed_stats'].items())[:12]:
+                    stats_embed.add_field(
+                        name=stat_key,
+                        value=stat_value,
+                        inline=True
+                    )
+                
+                await interaction.followup.send(embed=stats_embed)
+            
+            print(f"✅ Match engine test completed successfully")
+            
+        except Exception as e:
+            await interaction.followup.send(f"❌ Error: {e}", ephemeral=True)
+            import traceback
+            traceback.print_exc()
+    
+    def _create_sandbox_team(self, team_name: str, league: str) -> dict:
+        """
+        Create a sandbox team with random players for testing
+        Does NOT interact with database
+        """
+        import random
+        
+        positions = ['GK', 'CB', 'CB', 'LB', 'RB', 'CM', 'CM', 'CAM', 'LW', 'RW', 'ST']
+        
+        players = []
+        for i, pos in enumerate(positions):
+            base_rating = random.randint(72, 87) if league == "Premier League" else random.randint(68, 82)
+            
+            player = {
+                'id': f'sandbox_{i}',
+                'name': f'Player {i+1}',
+                'position': pos,
+                'overall_rating': base_rating,
+                'pace': base_rating + random.randint(-3, 3),
+                'shooting': base_rating + random.randint(-3, 3),
+                'passing': base_rating + random.randint(-3, 3),
+                'dribbling': base_rating + random.randint(-3, 3),
+                'defending': base_rating + random.randint(-3, 3),
+                'physical': base_rating + random.randint(-3, 3),
+                'form': random.randint(6, 10) / 10,  # 0.6 to 1.0
+                'fitness': random.randint(85, 100),
+            }
+            players.append(player)
+        
+        team_overall = sum(p['overall_rating'] for p in players) / len(players)
+        
+        return {
+            'id': f'sandbox_{team_name.lower().replace(" ", "_")}',
+            'name': team_name,
+            'league': league,
+            'overall': round(team_overall, 1),
+            'players': players,
+            'formation': '4-3-3',
+            'style': random.choice(['Attacking', 'Balanced', 'Defensive']),
+            'home_advantage': True,
+        }
+    
+    async def _restart(self, interaction: discord.Interaction):
+        """Restart the bot"""
+        await interaction.response.send_message("🔄 Restarting bot...", ephemeral=True)
+        await self.bot.close()
+
+
+class ConfirmWipeView(discord.ui.View):
+    def __init__(self):
+        super().__init__(timeout=30)
+        self.confirmed = False
+    
+    @discord.ui.button(label="⚠️ YES, WIPE EVERYTHING", style=discord.ButtonStyle.danger)
+    async def confirm_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        self.confirmed = True
+        self.stop()
+        await interaction.response.defer()
+    
+    @discord.ui.button(label="❌ Cancel", style=discord.ButtonStyle.secondary)
+    async def cancel_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        self.confirmed = False
+        self.stop()
+        await interaction.response.defer()
+
+
+class ConfirmEuropeanWipeView(discord.ui.View):
+    """Separate confirmation for European data wipe"""
+    def __init__(self):
+        super().__init__(timeout=30)
+        self.confirmed = False
+    
+    @discord.ui.button(label="⚠️ YES, WIPE EUROPEAN DATA", style=discord.ButtonStyle.danger)
+    async def confirm_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        self.confirmed = True
+        self.stop()
+        await interaction.response.defer()
+    
+    @discord.ui.button(label="❌ Cancel", style=discord.ButtonStyle.secondary)
+    async def cancel_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        self.confirmed = False
+        self.stop()
+        await interaction.response.defer()
+
+
+async def setup(bot):
+    await bot.add_cog(AdminCommands(bot))
+            traceback.print_exc()
+    
     async def _simulate_european_to_end(self, interaction: discord.Interaction):
         """SIMULATE ENTIRE EUROPEAN SEASON TO COMPLETION"""
         await interaction.response.defer()
@@ -723,129 +995,3 @@ class AdminCommands(commands.Cog):
         except Exception as e:
             await interaction.followup.send(f"❌ Error: {e}", ephemeral=True)
             import traceback
-            traceback.print_exc()
-    
-    async def _diagnose_npcs(self, interaction: discord.Interaction):
-        """Diagnose NPC stat issues"""
-        await interaction.response.defer(ephemeral=True)
-        
-        # Sample Championship NPCs
-        async with db.pool.acquire() as conn:
-            npcs = await conn.fetch("""
-                SELECT 
-                    n.player_name,
-                    n.position,
-                    n.overall_rating,
-                    n.pace,
-                    n.shooting,
-                    n.passing,
-                    n.dribbling,
-                    n.defending,
-                    n.physical,
-                    t.team_name
-                FROM npc_players n
-                JOIN teams t ON n.team_id = t.team_id
-                WHERE t.league = 'Championship' 
-                AND n.retired = FALSE
-                LIMIT 5
-            """)
-        
-        if not npcs:
-            await interaction.followup.send("❌ No Championship NPCs found!", ephemeral=True)
-            return
-        
-        embed = discord.Embed(
-            title="🔍 NPC Stats Diagnostic",
-            description=f"Checking {len(npcs)} sample Championship NPCs",
-            color=discord.Color.blue()
-        )
-        
-        all_good = True
-        issues = []
-        
-        for npc in npcs:
-            stat_text = ""
-            has_issue = False
-            
-            # Check each stat
-            stats_to_check = {
-                'Pace': npc['pace'],
-                'Shooting': npc['shooting'],
-                'Passing': npc['passing'],
-                'Dribbling': npc['dribbling'],
-                'Defending': npc['defending'],
-                'Physical': npc['physical']
-            }
-            
-            for stat_name, value in stats_to_check.items():
-                if value is None:
-                    stat_text += f"❌ {stat_name}: MISSING\n"
-                    has_issue = True
-                    all_good = False
-                else:
-                    stat_text += f"✅ {stat_name[:3]}: {value} "
-            
-            if has_issue:
-                issues.append(npc['player_name'])
-            
-            embed.add_field(
-                name=f"{npc['player_name']} ({npc['position']}) - OVR {npc['overall_rating']}",
-                value=stat_text.strip(),
-                inline=False
-            )
-        
-        # Summary
-        if all_good:
-            embed.color = discord.Color.green()
-            embed.set_footer(text="✅ All NPCs have complete stats!")
-        else:
-            embed.color = discord.Color.red()
-            embed.set_footer(text=f"❌ {len(issues)} NPCs missing stats - need to run fix script!")
-        
-        await interaction.followup.send(embed=embed, ephemeral=True)
-    
-    async def _restart(self, interaction: discord.Interaction):
-        """Restart the bot"""
-        await interaction.response.send_message("🔄 Restarting bot...", ephemeral=True)
-        await self.bot.close()
-
-
-class ConfirmWipeView(discord.ui.View):
-    def __init__(self):
-        super().__init__(timeout=30)
-        self.confirmed = False
-    
-    @discord.ui.button(label="⚠️ YES, WIPE EVERYTHING", style=discord.ButtonStyle.danger)
-    async def confirm_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        self.confirmed = True
-        self.stop()
-        await interaction.response.defer()
-    
-    @discord.ui.button(label="❌ Cancel", style=discord.ButtonStyle.secondary)
-    async def cancel_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        self.confirmed = False
-        self.stop()
-        await interaction.response.defer()
-
-
-class ConfirmEuropeanWipeView(discord.ui.View):
-    """Separate confirmation for European data wipe"""
-    def __init__(self):
-        super().__init__(timeout=30)
-        self.confirmed = False
-    
-    @discord.ui.button(label="⚠️ YES, WIPE EUROPEAN DATA", style=discord.ButtonStyle.danger)
-    async def confirm_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        self.confirmed = True
-        self.stop()
-        await interaction.response.defer()
-    
-    @discord.ui.button(label="❌ Cancel", style=discord.ButtonStyle.secondary)
-    async def cancel_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        self.confirmed = False
-        self.stop()
-        await interaction.response.defer()
-
-
-async def setup(bot):
-    await bot.add_cog(AdminCommands(bot))
