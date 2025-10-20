@@ -170,6 +170,7 @@ async def post_match_result_to_channel(bot, guild, fixture, home_score, away_sco
 async def post_european_results(bot, competition, week_number):
     """
     Post BEAUTIFUL European match results with rich embeds
+    ✅ UPDATED: Removed top single club section, added crests to both teams in scoreline
     """
     comp_name = "Champions League" if competition == 'CL' else "Europa League"
     comp_emoji = "⭐" if competition == 'CL' else "🌟"
@@ -240,28 +241,51 @@ async def post_european_results(bot, competition, week_number):
                         leg = f" - Leg {result['leg']}" if result.get('leg', 1) > 1 else ""
                         stage_text = f"{result['stage'].title()}{leg}"
                     
+                    # ✅ NEW: Build description with both team crests inline
+                    home_crest_emoji = "🏠"
+                    away_crest_emoji = "✈️"
+                    
                     embed = discord.Embed(
-                        title=f"{comp_emoji} {comp_name} - {stage_text}",
+                        title=f"{comp_emoji} {comp_name}",
                         description=f"## {result['home_name']} **{result['home_score']} - {result['away_score']}** {result['away_name']}\n\n{result_emoji} {winner_text}",
                         color=comp_color
                     )
                     
-                    # Competition logo
+                    # Competition logo as thumbnail
                     if comp_logo:
                         embed.set_thumbnail(url=comp_logo)
                     
-                    # Home team crest as author
+                    # ✅ NEW: Add both team crests as fields side by side
                     if home_crest:
-                        embed.set_author(name=result['home_name'], icon_url=home_crest)
+                        embed.add_field(
+                            name=f"🏠 {result['home_name']}",
+                            value=f"[View Crest]({home_crest})",
+                            inline=True
+                        )
                     
-                    # Away team crest as footer
                     if away_crest:
-                        embed.set_footer(text=result['away_name'], icon_url=away_crest)
+                        embed.add_field(
+                            name=f"✈️ {result['away_name']}",
+                            value=f"[View Crest]({away_crest})",
+                            inline=True
+                        )
                     
-                    # Match stats
+                    # Match info
                     embed.add_field(
-                        name="📊 Match Info",
-                        value=f"**Week:** {week_number}\n**Stage:** {stage_text}",
+                        name="📊 Status",
+                        value="✅ Full Time",
+                        inline=True
+                    )
+                    
+                    embed.add_field(
+                        name="🎭 Stage",
+                        value=stage_text,
+                        inline=True
+                    )
+                    
+                    embed.add_field(
+                        name="📅 Week",
+                        value=f"Week {week_number}",
                         inline=True
                     )
                     
@@ -271,7 +295,7 @@ async def post_european_results(bot, competition, week_number):
                         embed.add_field(
                             name="⚽ Goals",
                             value=f"🔥 **{total_goals} goal thriller!**",
-                            inline=True
+                            inline=False
                         )
                     
                     embeds.append(embed)
@@ -427,241 +451,7 @@ async def post_weekly_news_digest(bot, week_number: int):
                         if away_crest:
                             motw_embed.set_footer(text=motw['away_name'], icon_url=away_crest)
                         
-                        embeds_to_send.append(motw_embed)
-                
-                # ═══════════════════════════════════════════════════════
-                # 2️⃣ PREMIER LEAGUE TABLE WATCH
-                # ═══════════════════════════════════════════════════════
-                async with db.pool.acquire() as conn:
-                    pl_standings = await conn.fetch("""
-                        SELECT team_name, points, played, won, drawn, lost,
-                               goals_for, goals_against,
-                               (goals_for - goals_against) as gd
-                        FROM teams
-                        WHERE league = 'Premier League'
-                        ORDER BY points DESC, gd DESC, goals_for DESC
-                    """)
-                    
-                    if pl_standings:
-                        table_embed = discord.Embed(
-                            title="📊 PREMIER LEAGUE TABLE",
-                            description="**Current Standings**",
-                            color=discord.Color.purple()
-                        )
-                        
-                        # Top 4 (Champions League)
-                        top4_text = ""
-                        for i, team in enumerate(pl_standings[:4], 1):
-                            emoji = ["🥇", "🥈", "🥉", "4️⃣"][i-1]
-                            top4_text += f"{emoji} **{team['team_name']}** - {team['points']} pts\n"
-                            top4_text += f"   {team['won']}W {team['drawn']}D {team['lost']}L • GD {team['gd']:+d}\n"
-                        
-                        table_embed.add_field(
-                            name="🏆 Champions League Zone",
-                            value=top4_text,
-                            inline=False
-                        )
-                        
-                        # 5th-6th (Europa League)
-                        if len(pl_standings) >= 6:
-                            europa_text = ""
-                            for i, team in enumerate(pl_standings[4:6], 5):
-                                europa_text += f"{i}. **{team['team_name']}** - {team['points']} pts\n"
-                            
-                            table_embed.add_field(
-                                name="🌟 Europa League Zone",
-                                value=europa_text,
-                                inline=False
-                            )
-                        
-                        # Bottom 3 (Relegation)
-                        if len(pl_standings) >= 20:
-                            rel_text = ""
-                            for i, team in enumerate(pl_standings[-3:], len(pl_standings)-2):
-                                rel_text += f"{i}. **{team['team_name']}** - {team['points']} pts ⚠️\n"
-                            
-                            table_embed.add_field(
-                                name="🔴 Relegation Zone",
-                                value=rel_text,
-                                inline=False
-                            )
-                        
-                        table_embed.set_footer(text=f"Week {week_number} Standings")
-                        embeds_to_send.append(table_embed)
-                
-                # ═══════════════════════════════════════════════════════
-                # 3️⃣ PLAYER SPOTLIGHT (Top scorers + assists)
-                # ═══════════════════════════════════════════════════════
-                async with db.pool.acquire() as conn:
-                    top_players = await conn.fetch("""
-                        SELECT p.player_name, p.season_goals, p.season_assists, 
-                               p.season_motm, t.team_name
-                        FROM players p
-                        LEFT JOIN teams t ON p.team_id = t.team_id
-                        WHERE p.retired = FALSE AND p.team_id != 'free_agent'
-                          AND (p.season_goals > 0 OR p.season_assists > 0 OR p.season_motm > 0)
-                        ORDER BY p.season_goals DESC, p.season_assists DESC
-                        LIMIT 5
-                    """)
-                    
-                    if top_players:
-                        player_embed = discord.Embed(
-                            title="⭐ PLAYER SPOTLIGHT",
-                            description="**Season Leaders**",
-                            color=discord.Color.orange()
-                        )
-                        
-                        scorers_text = ""
-                        for i, player in enumerate(top_players, 1):
-                            medal = ["🥇", "🥈", "🥉"][i-1] if i <= 3 else f"{i}."
-                            scorers_text += (
-                                f"{medal} **{player['player_name']}** ({player['team_name']})\n"
-                                f"   ⚽ {player['season_goals']}G • 🎯 {player['season_assists']}A"
-                            )
-                            if player['season_motm'] > 0:
-                                scorers_text += f" • 🏅 {player['season_motm']} MOTM"
-                            scorers_text += "\n"
-                        
-                        player_embed.add_field(
-                            name="👟 Top Performers",
-                            value=scorers_text,
-                            inline=False
-                        )
-                        
-                        embeds_to_send.append(player_embed)
-                
-                # ═══════════════════════════════════════════════════════
-                # 4️⃣ HOT & COLD (Form guide)
-                # ═══════════════════════════════════════════════════════
-                async with db.pool.acquire() as conn:
-                    # Teams with 3+ wins in last 5 weeks (if tracked)
-                    hot_teams = await conn.fetch("""
-                        SELECT team_name, points, won
-                        FROM teams
-                        WHERE league = 'Premier League' AND won >= 3
-                        ORDER BY points DESC
-                        LIMIT 3
-                    """)
-                    
-                    cold_teams = await conn.fetch("""
-                        SELECT team_name, points, lost
-                        FROM teams
-                        WHERE league = 'Premier League' AND lost >= 3
-                        ORDER BY points ASC
-                        LIMIT 3
-                    """)
-                    
-                    if hot_teams or cold_teams:
-                        form_embed = discord.Embed(
-                            title="🔥 FORM GUIDE",
-                            description="**Hot & Cold Teams**",
-                            color=discord.Color.red()
-                        )
-                        
-                        if hot_teams:
-                            hot_text = ""
-                            for team in hot_teams:
-                                hot_text += f"🔥 **{team['team_name']}** - {team['won']} wins\n"
-                            
-                            form_embed.add_field(
-                                name="📈 On Fire",
-                                value=hot_text,
-                                inline=True
-                            )
-                        
-                        if cold_teams:
-                            cold_text = ""
-                            for team in cold_teams:
-                                cold_text += f"❄️ **{team['team_name']}** - {team['lost']} losses\n"
-                            
-                            form_embed.add_field(
-                                name="📉 Struggling",
-                                value=cold_text,
-                                inline=True
-                            )
-                        
-                        embeds_to_send.append(form_embed)
-                
-                # ═══════════════════════════════════════════════════════
-                # 5️⃣ EUROPEAN SPOTLIGHT (if European week)
-                # ═══════════════════════════════════════════════════════
-                if week_number in config.EUROPEAN_MATCH_WEEKS:
-                    async with db.pool.acquire() as conn:
-                        euro_count = await conn.fetchval("""
-                            SELECT COUNT(*) FROM european_fixtures
-                            WHERE week_number = $1 AND played = TRUE
-                        """, week_number)
-                        
-                        if euro_count and euro_count > 0:
-                            euro_embed = discord.Embed(
-                                title="🏆 EUROPEAN SPOTLIGHT",
-                                description=f"**Week {week_number} European Action**",
-                                color=discord.Color.blue()
-                            )
-                            
-                            # Get English teams in Europe
-                            english_results = await conn.fetch("""
-                                SELECT f.*, 
-                                       COALESCE(ht.team_name, eht.team_name) as home_name,
-                                       COALESCE(at.team_name, eat.team_name) as away_name,
-                                       t.team_name as english_team
-                                FROM european_fixtures f
-                                LEFT JOIN teams ht ON f.home_team_id = ht.team_id
-                                LEFT JOIN teams at ON f.away_team_id = at.team_id
-                                LEFT JOIN european_teams eht ON f.home_team_id = eht.team_id
-                                LEFT JOIN european_teams eat ON f.away_team_id = eat.team_id
-                                LEFT JOIN teams t ON (f.home_team_id = t.team_id OR f.away_team_id = t.team_id)
-                                WHERE f.week_number = $1 AND f.played = TRUE
-                                  AND t.league = 'Premier League'
-                                LIMIT 5
-                            """, week_number)
-                            
-                            if english_results:
-                                results_text = ""
-                                for match in english_results:
-                                    comp = "⭐" if match['competition'] == 'CL' else "🌟"
-                                    results_text += (
-                                        f"{comp} **{match['home_name']}** {match['home_score']}-{match['away_score']} "
-                                        f"**{match['away_name']}**\n"
-                                    )
-                                
-                                euro_embed.add_field(
-                                    name="🏴󠁧󠁢󠁥󠁮󠁧󠁿 English Clubs",
-                                    value=results_text,
-                                    inline=False
-                                )
-                            
-                            euro_embed.add_field(
-                                name="📊 European Matches",
-                                value=f"**{euro_count}** matches played across CL & EL",
-                                inline=False
-                            )
-                            
-                            embeds_to_send.append(euro_embed)
-                
-                # ═══════════════════════════════════════════════════════
-                # 6️⃣ TRANSFER WINDOW STATUS
-                # ═══════════════════════════════════════════════════════
-                if state['current_week'] in config.TRANSFER_WINDOW_WEEKS:
-                    transfer_embed = discord.Embed(
-                        title="💼 TRANSFER WINDOW OPEN",
-                        description="**The market is active!**",
-                        color=discord.Color.green()
-                    )
-                    
-                    transfer_embed.add_field(
-                        name="🟢 Status",
-                        value="Transfer window is **OPEN**\nClubs are making moves!",
-                        inline=False
-                    )
-                    
-                    transfer_embed.add_field(
-                        name="📋 For Players",
-                        value="Use `/offers` to see which clubs want to sign you!",
-                        inline=False
-                    )
-                    
-                    embeds_to_send.append(transfer_embed)
+                        embeds_to_send.append(transfer_embed)
                 
                 elif state['current_week'] + 1 in config.TRANSFER_WINDOW_WEEKS:
                     transfer_embed = discord.Embed(
@@ -1052,4 +842,238 @@ async def post_season_finale_preview(bot):
     except Exception as e:
         print(f"❌ Error posting season finale: {e}")
         import traceback
-        traceback.print_exc()
+        traceback.print_exc()d.append(motw_embed)
+                
+                # ═══════════════════════════════════════════════════════
+                # 2️⃣ PREMIER LEAGUE TABLE WATCH
+                # ═══════════════════════════════════════════════════════
+                async with db.pool.acquire() as conn:
+                    pl_standings = await conn.fetch("""
+                        SELECT team_name, points, played, won, drawn, lost,
+                               goals_for, goals_against,
+                               (goals_for - goals_against) as gd
+                        FROM teams
+                        WHERE league = 'Premier League'
+                        ORDER BY points DESC, gd DESC, goals_for DESC
+                    """)
+                    
+                    if pl_standings:
+                        table_embed = discord.Embed(
+                            title="📊 PREMIER LEAGUE TABLE",
+                            description="**Current Standings**",
+                            color=discord.Color.purple()
+                        )
+                        
+                        # Top 4 (Champions League)
+                        top4_text = ""
+                        for i, team in enumerate(pl_standings[:4], 1):
+                            emoji = ["🥇", "🥈", "🥉", "4️⃣"][i-1]
+                            top4_text += f"{emoji} **{team['team_name']}** - {team['points']} pts\n"
+                            top4_text += f"   {team['won']}W {team['drawn']}D {team['lost']}L • GD {team['gd']:+d}\n"
+                        
+                        table_embed.add_field(
+                            name="🏆 Champions League Zone",
+                            value=top4_text,
+                            inline=False
+                        )
+                        
+                        # 5th-6th (Europa League)
+                        if len(pl_standings) >= 6:
+                            europa_text = ""
+                            for i, team in enumerate(pl_standings[4:6], 5):
+                                europa_text += f"{i}. **{team['team_name']}** - {team['points']} pts\n"
+                            
+                            table_embed.add_field(
+                                name="🌟 Europa League Zone",
+                                value=europa_text,
+                                inline=False
+                            )
+                        
+                        # Bottom 3 (Relegation)
+                        if len(pl_standings) >= 20:
+                            rel_text = ""
+                            for i, team in enumerate(pl_standings[-3:], len(pl_standings)-2):
+                                rel_text += f"{i}. **{team['team_name']}** - {team['points']} pts ⚠️\n"
+                            
+                            table_embed.add_field(
+                                name="🔴 Relegation Zone",
+                                value=rel_text,
+                                inline=False
+                            )
+                        
+                        table_embed.set_footer(text=f"Week {week_number} Standings")
+                        embeds_to_send.append(table_embed)
+                
+                # ═══════════════════════════════════════════════════════
+                # 3️⃣ PLAYER SPOTLIGHT (Top scorers + assists)
+                # ═══════════════════════════════════════════════════════
+                async with db.pool.acquire() as conn:
+                    top_players = await conn.fetch("""
+                        SELECT p.player_name, p.season_goals, p.season_assists, 
+                               p.season_motm, t.team_name
+                        FROM players p
+                        LEFT JOIN teams t ON p.team_id = t.team_id
+                        WHERE p.retired = FALSE AND p.team_id != 'free_agent'
+                          AND (p.season_goals > 0 OR p.season_assists > 0 OR p.season_motm > 0)
+                        ORDER BY p.season_goals DESC, p.season_assists DESC
+                        LIMIT 5
+                    """)
+                    
+                    if top_players:
+                        player_embed = discord.Embed(
+                            title="⭐ PLAYER SPOTLIGHT",
+                            description="**Season Leaders**",
+                            color=discord.Color.orange()
+                        )
+                        
+                        scorers_text = ""
+                        for i, player in enumerate(top_players, 1):
+                            medal = ["🥇", "🥈", "🥉"][i-1] if i <= 3 else f"{i}."
+                            scorers_text += (
+                                f"{medal} **{player['player_name']}** ({player['team_name']})\n"
+                                f"   ⚽ {player['season_goals']}G • 🎯 {player['season_assists']}A"
+                            )
+                            if player['season_motm'] > 0:
+                                scorers_text += f" • 🏅 {player['season_motm']} MOTM"
+                            scorers_text += "\n"
+                        
+                        player_embed.add_field(
+                            name="👟 Top Performers",
+                            value=scorers_text,
+                            inline=False
+                        )
+                        
+                        embeds_to_send.append(player_embed)
+                
+                # ═══════════════════════════════════════════════════════
+                # 4️⃣ HOT & COLD (Form guide)
+                # ═══════════════════════════════════════════════════════
+                async with db.pool.acquire() as conn:
+                    # Teams with 3+ wins in last 5 weeks (if tracked)
+                    hot_teams = await conn.fetch("""
+                        SELECT team_name, points, won
+                        FROM teams
+                        WHERE league = 'Premier League' AND won >= 3
+                        ORDER BY points DESC
+                        LIMIT 3
+                    """)
+                    
+                    cold_teams = await conn.fetch("""
+                        SELECT team_name, points, lost
+                        FROM teams
+                        WHERE league = 'Premier League' AND lost >= 3
+                        ORDER BY points ASC
+                        LIMIT 3
+                    """)
+                    
+                    if hot_teams or cold_teams:
+                        form_embed = discord.Embed(
+                            title="🔥 FORM GUIDE",
+                            description="**Hot & Cold Teams**",
+                            color=discord.Color.red()
+                        )
+                        
+                        if hot_teams:
+                            hot_text = ""
+                            for team in hot_teams:
+                                hot_text += f"🔥 **{team['team_name']}** - {team['won']} wins\n"
+                            
+                            form_embed.add_field(
+                                name="📈 On Fire",
+                                value=hot_text,
+                                inline=True
+                            )
+                        
+                        if cold_teams:
+                            cold_text = ""
+                            for team in cold_teams:
+                                cold_text += f"❄️ **{team['team_name']}** - {team['lost']} losses\n"
+                            
+                            form_embed.add_field(
+                                name="📉 Struggling",
+                                value=cold_text,
+                                inline=True
+                            )
+                        
+                        embeds_to_send.append(form_embed)
+                
+                # ═══════════════════════════════════════════════════════
+                # 5️⃣ EUROPEAN SPOTLIGHT (if European week)
+                # ═══════════════════════════════════════════════════════
+                if week_number in config.EUROPEAN_MATCH_WEEKS:
+                    async with db.pool.acquire() as conn:
+                        euro_count = await conn.fetchval("""
+                            SELECT COUNT(*) FROM european_fixtures
+                            WHERE week_number = $1 AND played = TRUE
+                        """, week_number)
+                        
+                        if euro_count and euro_count > 0:
+                            euro_embed = discord.Embed(
+                                title="🏆 EUROPEAN SPOTLIGHT",
+                                description=f"**Week {week_number} European Action**",
+                                color=discord.Color.blue()
+                            )
+                            
+                            # Get English teams in Europe
+                            english_results = await conn.fetch("""
+                                SELECT f.*, 
+                                       COALESCE(ht.team_name, eht.team_name) as home_name,
+                                       COALESCE(at.team_name, eat.team_name) as away_name,
+                                       t.team_name as english_team
+                                FROM european_fixtures f
+                                LEFT JOIN teams ht ON f.home_team_id = ht.team_id
+                                LEFT JOIN teams at ON f.away_team_id = at.team_id
+                                LEFT JOIN european_teams eht ON f.home_team_id = eht.team_id
+                                LEFT JOIN european_teams eat ON f.away_team_id = eat.team_id
+                                LEFT JOIN teams t ON (f.home_team_id = t.team_id OR f.away_team_id = t.team_id)
+                                WHERE f.week_number = $1 AND f.played = TRUE
+                                  AND t.league = 'Premier League'
+                                LIMIT 5
+                            """, week_number)
+                            
+                            if english_results:
+                                results_text = ""
+                                for match in english_results:
+                                    comp = "⭐" if match['competition'] == 'CL' else "🌟"
+                                    results_text += (
+                                        f"{comp} **{match['home_name']}** {match['home_score']}-{match['away_score']} "
+                                        f"**{match['away_name']}**\n"
+                                    )
+                                
+                                euro_embed.add_field(
+                                    name="🏴󠁧󠁢󠁥󠁮󠁧󠁿 English Clubs",
+                                    value=results_text,
+                                    inline=False
+                                )
+                            
+                            euro_embed.add_field(
+                                name="📊 European Matches",
+                                value=f"**{euro_count}** matches played across CL & EL",
+                                inline=False
+                            )
+                            
+                            embeds_to_send.append(euro_embed)
+                
+                # ═══════════════════════════════════════════════════════
+                # 6️⃣ TRANSFER WINDOW STATUS
+                # ═══════════════════════════════════════════════════════
+                if state['current_week'] in config.TRANSFER_WINDOW_WEEKS:
+                    transfer_embed = discord.Embed(
+                        title="💼 TRANSFER WINDOW OPEN",
+                        description="**The market is active!**",
+                        color=discord.Color.green()
+                    )
+                    
+                    transfer_embed.add_field(
+                        name="🟢 Status",
+                        value="Transfer window is **OPEN**\nClubs are making moves!",
+                        inline=False
+                    )
+                    
+                    transfer_embed.add_field(
+                        name="📋 For Players",
+                        value="Use `/offers` to see which clubs want to sign you!",
+                        inline=False
+                    )
+                    
+                    embeds_to_sen
