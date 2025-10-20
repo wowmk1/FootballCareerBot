@@ -6,6 +6,7 @@ Season Management - Two Windows on Same Days
 ✅ FIXED: Proper timezone handling and end detection
 ✅ FIXED: Window closes at EXACT time (2:00 PM, 5:00 PM)
 ✅ FIXED: Python 3.8+ compatibility
+✅ FIXED: No syntax errors
 """
 import asyncio
 from datetime import datetime, timedelta, timezone
@@ -475,7 +476,6 @@ async def end_season(bot=None):
 
 
 # ===== WARNING NOTIFICATION FUNCTIONS =====
-# (All warning functions from your code - they're fine, keeping them as-is)
 
 async def send_european_1h_warning(bot):
     """Send 1 hour warning for European (11 AM)"""
@@ -507,78 +507,6 @@ async def send_european_1h_warning(bot):
               AND f.played = FALSE
         """, current_week)
     
-    for player_info in players_with_matches:
-        try:
-            user = await bot.fetch_user(player_info['user_id'])
-            
-            comp_name = "🏆 Champions League" if player_info['competition'] == 'CL' else "🏆 Europa League"
-            
-            stage_info = f"{player_info['stage'].title()}"
-            if player_info['leg'] and player_info['leg'] > 1:
-                stage_info += f" (Leg {player_info['leg']})"
-            
-            embed = discord.Embed(
-                title=f"⏰ {comp_name} - 1 HOUR WARNING",
-                description=f"Your European match starts in **1 hour** (12:00 PM EST)!",
-                color=discord.Color.blue()
-            )
-            
-            embed.add_field(
-                name="⚽ Your Match",
-                value=f"**{player_info['home_name']}** vs **{player_info['away_name']}**\n"
-                      f"{stage_info} • Week {current_week}",
-                inline=False
-            )
-            
-            embed.add_field(
-                name="🕐 Window (EST)",
-                value="**12:00 PM - 2:00 PM EST**\n2 hour window",
-                inline=True
-            )
-            
-            embed.add_field(
-                name="🎮 Ready to Play",
-                value="`/play_match` when window opens",
-                inline=True
-            )
-            
-            embed.set_footer(text=f"🏆 {comp_name} • Times shown in EST")
-            
-            await user.send(embed=embed)
-            logger.info(f"  ✅ Sent European 1h warning to {player_info['player_name']}")
-        except Exception as e:
-            logger.warning(f"  ⚠️ Could not send warning: {e}")
-
-
-async def send_european_30m_warning(bot):
-    """Send 30m warning for European (11:30 AM)"""
-    state = await db.get_game_state()
-    current_week = state['current_week']
-    
-    if current_week not in config.EUROPEAN_MATCH_WEEKS:
-        return
-    
-    logger.info("📢 Sending European 30m warning...")
-    
-    async with db.pool.acquire() as conn:
-        players_with_matches = await conn.fetch("""
-            SELECT DISTINCT p.user_id, p.player_name,
-                   f.competition,
-                   COALESCE(ht.team_name, eht.team_name) as home_name,
-                   COALESCE(at.team_name, eat.team_name) as away_name
-            FROM players p
-            JOIN teams t ON p.team_id = t.team_id
-            JOIN european_fixtures f ON (f.home_team_id = p.team_id OR f.away_team_id = p.team_id)
-            LEFT JOIN teams ht ON f.home_team_id = ht.team_id
-            LEFT JOIN teams at ON f.away_team_id = at.team_id
-            LEFT JOIN european_teams eht ON f.home_team_id = eht.team_id
-            LEFT JOIN european_teams eat ON f.away_team_id = eat.team_id
-            WHERE p.retired = FALSE
-              AND p.team_id != 'free_agent'
-              AND f.week_number = $1
-              AND f.played = FALSE
-        """, current_week)
-
     for player_info in players_with_matches:
         try:
             user = await bot.fetch_user(player_info['user_id'])
@@ -823,7 +751,60 @@ async def send_closing_warning(bot):
             await user.send(embed=embed)
             logger.info(f"  ✅ Sent closing warning to {player_info['player_name']}")
         except Exception as e:
+            logger.warning(f"  ⚠️ Could not send warning: {e}")🏆 Europa League"
+            
+            stage_info = f"{player_info['stage'].title()}"
+            if player_info['leg'] and player_info['leg'] > 1:
+                stage_info += f" (Leg {player_info['leg']})"
+            
+            embed = discord.Embed(
+                title=f"⏰ {comp_name} - 1 HOUR WARNING",
+                description=f"Your European match starts in **1 hour** (12:00 PM EST)!",
+                color=discord.Color.blue()
+            )
+            
+            embed.add_field(
+                name="⚽ Your Match",
+                value=f"**{player_info['home_name']}** vs **{player_info['away_name']}**\n"
+                      f"{stage_info} • Week {current_week}",
+                inline=False
+            )
+            
+            embed.add_field(
+                name="🕐 Window (EST)",
+                value="**12:00 PM - 2:00 PM EST**\n2 hour window",
+                inline=True
+            )
+            
+            embed.add_field(
+                name="🎮 Ready to Play",
+                value="`/play_match` when window opens",
+                inline=True
+            )
+            
+            embed.set_footer(text=f"🏆 {comp_name} • Times shown in EST")
+            
+            await user.send(embed=embed)
+            logger.info(f"  ✅ Sent European 1h warning to {player_info['player_name']}")
+        except Exception as e:
             logger.warning(f"  ⚠️ Could not send warning: {e}")
+
+
+async def send_european_30m_warning(bot):
+    """Send 30m warning for European (11:30 AM)"""
+    state = await db.get_game_state()
+    current_week = state['current_week']
+    
+    if current_week not in config.EUROPEAN_MATCH_WEEKS:
+        return
+    
+    logger.info("📢 Sending European 30m warning...")
+    
+    async with db.pool.acquire() as conn:
+        players_with_matches = await conn.fetch("""
+            SELECT DISTINCT p.user_id, p.player_name,
+                   f.competition,
+                   COALESCE(ht.team_name, eht.team_name) as home_name,
                    COALESCE(at.team_name, eat.team_name) as away_name
             FROM players p
             JOIN teams t ON p.team_id = t.team_id
@@ -885,3 +866,22 @@ async def send_european_15m_warning(bot):
             SELECT DISTINCT p.user_id, p.player_name,
                    f.competition,
                    COALESCE(ht.team_name, eht.team_name) as home_name,
+                   COALESCE(at.team_name, eat.team_name) as away_name
+            FROM players p
+            JOIN teams t ON p.team_id = t.team_id
+            JOIN european_fixtures f ON (f.home_team_id = p.team_id OR f.away_team_id = p.team_id)
+            LEFT JOIN teams ht ON f.home_team_id = ht.team_id
+            LEFT JOIN teams at ON f.away_team_id = at.team_id
+            LEFT JOIN european_teams eht ON f.home_team_id = eht.team_id
+            LEFT JOIN european_teams eat ON f.away_team_id = eat.team_id
+            WHERE p.retired = FALSE
+              AND p.team_id != 'free_agent'
+              AND f.week_number = $1
+              AND f.played = FALSE
+        """, current_week)
+    
+    for player_info in players_with_matches:
+        try:
+            user = await bot.fetch_user(player_info['user_id'])
+            
+            comp_name = "🏆 Champions League" if player_info['competition'] == 'CL' else "
