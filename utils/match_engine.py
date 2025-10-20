@@ -539,6 +539,13 @@ class MatchEngine:
             'press': "Success: Win ball | Fail: Bypassed",
             'track_back': "Success: Stop attack | Fail: Too slow",
             'cover': "Success: Stop attack | Fail: Exposed",
+            'long_ball': "Success: Switch play/create chance | Fail: Intercepted",
+            'overlap': "Success: Crossing opportunity | Fail: Tracked back",
+            'track_runner': "Success: Deny space | Fail: Lost them",
+            'claim_cross': "Success: Command box | Fail: Drop/spill danger",
+            'sweep': "Success: Clear danger | Fail: Caught out",
+            'distribution': "Success: Launch counter | Fail: Poor pass",
+            'press_defender': "Success: Win ball high | Fail: Bypassed"
         }
         return followup_info.get(action, "No follow-up")
 
@@ -1478,6 +1485,164 @@ class MatchEngine:
 
         await self.end_match(match_id, fixture, channel, home_score, away_score, participants, is_european)
 
+    def get_position_scenario(self, position):
+        """
+        Get weighted scenario type based on position
+        Returns: (scenario_type, defender_positions, scenario_description_template)
+        """
+        scenarios = {
+            'ST': [
+                # Format: (weight, scenario_type, defender_positions, description)
+                (40, 'clear_chance', ['GK'], "Through ball! You're clean through on goal vs {defender}!"),
+                (25, 'marked_tight', ['CB'], "You receive the ball with {defender} marking you tight!"),
+                (20, 'box_battle', ['CB', 'FB'], "Cross comes in! {defender} challenging you for the header!"),
+                (15, 'drop_deep', ['CDM', 'CM'], "You drop deep, {defender} following you out!")
+            ],
+            'W': [
+                (50, '1v1_wing', ['FB'], "Ball at your feet! {defender} closing you down on the wing!"),
+                (25, 'space_wing', ['FB', 'W'], "Space opens up! {defender} tracking back!"),
+                (15, 'cut_inside', ['CB', 'CDM'], "You cut inside, {defender} shifts across to cover!"),
+                (10, 'counter', ['FB', 'CB'], "Counter attack! {defender} scrambling back!")
+            ],
+            'CAM': [
+                (40, 'pocket_space', ['CDM', 'CM'], "Space in the hole! {defender} steps up to close you!"),
+                (30, 'creative_moment', ['CDM', 'CB'], "You find space between the lines, {defender} pressing!"),
+                (20, 'edge_box', ['CB', 'CDM'], "Edge of the box! {defender} closing you down!"),
+                (10, 'transition', ['CM', 'CDM'], "Transition moment! {defender} in your way!")
+            ],
+            'CM': [
+                (50, 'midfield_duel', ['CM', 'CDM'], "50-50 challenge with {defender} in midfield!"),
+                (25, 'progressive', ['CM', 'CDM'], "You look to break the lines, {defender} reading it!"),
+                (15, 'switch_play', ['CM'], "Space to switch play, {defender} closing!"),
+                (10, 'late_run', ['CB', 'CDM'], "Late run into the box! {defender} tracking you!")
+            ],
+            'CDM': [
+                (50, 'defensive_duel', ['CAM', 'CM', 'ST'], "Opposition attack! {defender} trying to turn you!"),
+                (25, 'screen_defense', ['CAM', 'ST'], "{defender} dropping deep! You need to cut them off!"),
+                (15, 'intercept', ['CM', 'CAM'], "{defender} on the ball! Intercept opportunity!"),
+                (10, 'recycle', ['CM'], "Recycle possession, {defender} pressing high!")
+            ],
+            'FB': [
+                (45, 'defensive_1v1', ['W', 'ST'], "Winger {defender} running at you with pace!"),
+                (30, 'cover_wide', ['W', 'CAM'], "{defender} attacks the flank! Track them!"),
+                (15, 'overlap', ['FB', 'W'], "You push forward! {defender} tracking your run!"),
+                (10, 'back_post', ['ST', 'W'], "Cross coming in! {defender} at the back post!")
+            ],
+            'CB': [
+                (50, 'defend_striker', ['ST'], "Striker {defender} making a run! Can you stop them?"),
+                (25, 'aerial_duel', ['ST', 'W'], "Ball in the air! {defender} challenging you!"),
+                (15, 'cover_space', ['CAM', 'ST'], "{defender} found space! Close them down!"),
+                (10, 'build_up', ['ST', 'CAM'], "Building from the back, {defender} pressing high!")
+            ],
+            'GK': [
+                (60, 'shot_save', ['ST', 'W', 'CAM'], "Shot incoming from {defender}! React fast!"),
+                (20, 'claim_aerial', ['ST', 'W'], "Cross into your box! {defender} attacking it!"),
+                (15, 'sweep', ['ST', 'W'], "{defender} through on goal! Rush out!"),
+                (5, 'distribution', ['ST'], "Time to distribute, {defender} pressing!")
+            ]
+        }
+        
+        position_scenarios = scenarios.get(position, scenarios['CM'])
+        
+        # Weighted random selection
+        total_weight = sum(s[0] for s in position_scenarios)
+        roll = random.randint(1, total_weight)
+        
+        cumulative = 0
+        for weight, scenario_type, defender_pos, description in position_scenarios:
+            cumulative += weight
+            if roll <= cumulative:
+                return scenario_type, defender_pos, description
+        
+        # Fallback
+        return position_scenarios[0][1], position_scenarios[0][2], position_scenarios[0][3]
+
+    def get_actions_for_scenario(self, position, scenario_type):
+        """
+        Get relevant actions for this specific scenario
+        Always returns 5 actions: priority actions first, then position defaults to fill
+        """
+        # Priority actions for each scenario (most relevant options)
+        scenario_priority = {
+            # Striker scenarios
+            'clear_chance': ['shoot', 'pass', 'dribble'],  # vs GK
+            'marked_tight': ['hold_up_play', 'pass', 'shoot', 'dribble'],
+            'box_battle': ['header', 'shoot', 'hold_up_play'],
+            'drop_deep': ['pass', 'through_ball', 'dribble'],
+            
+            # Winger scenarios
+            '1v1_wing': ['dribble', 'cut_inside', 'cross', 'shoot'],
+            'space_wing': ['cross', 'dribble', 'cut_inside'],
+            'cut_inside': ['shoot', 'cut_inside', 'dribble'],
+            'counter': ['dribble', 'pass', 'shoot'],
+            
+            # CAM scenarios
+            'pocket_space': ['through_ball', 'key_pass', 'shoot', 'dribble'],
+            'creative_moment': ['key_pass', 'through_ball', 'pass'],
+            'edge_box': ['shoot', 'dribble', 'pass'],
+            'transition': ['pass', 'through_ball', 'dribble'],
+            
+            # CM scenarios
+            'midfield_duel': ['tackle', 'pass', 'dribble'],
+            'progressive': ['through_ball', 'pass', 'dribble'],
+            'switch_play': ['long_ball', 'pass', 'cross'],
+            'late_run': ['shoot', 'pass', 'tackle'],
+            
+            # CDM scenarios
+            'defensive_duel': ['tackle', 'interception', 'block'],
+            'screen_defense': ['tackle', 'block', 'cover'],
+            'intercept': ['interception', 'tackle', 'press'],
+            'recycle': ['pass', 'long_ball', 'tackle'],
+            
+            # FB scenarios
+            'defensive_1v1': ['tackle', 'clearance', 'track_runner'],
+            'cover_wide': ['tackle', 'track_runner', 'clearance'],
+            'overlap': ['cross', 'overlap', 'pass'],
+            'back_post': ['clearance', 'header', 'tackle'],
+            
+            # CB scenarios
+            'defend_striker': ['tackle', 'block', 'clearance'],
+            'aerial_duel': ['header', 'clearance', 'tackle'],
+            'cover_space': ['tackle', 'interception', 'block'],
+            'build_up': ['pass', 'long_ball', 'clearance'],
+            
+            # GK scenarios
+            'shot_save': ['save', 'sweep', 'clearance'],
+            'claim_aerial': ['claim_cross', 'save', 'sweep'],
+            'sweep': ['sweep', 'save', 'clearance'],
+            'distribution': ['distribution', 'long_ball', 'pass']
+        }
+        
+        # Get priority actions for this scenario
+        priority_actions = scenario_priority.get(scenario_type, [])
+        
+        # Get all position-appropriate actions
+        all_position_actions = self.get_position_events(position)
+        
+        # Build final action list: priority first, then fill with others
+        final_actions = []
+        
+        # Add priority actions first
+        for action in priority_actions:
+            if action not in final_actions and action in all_position_actions:
+                final_actions.append(action)
+        
+        # Fill remaining slots with other position actions
+        for action in all_position_actions:
+            if action not in final_actions:
+                final_actions.append(action)
+            if len(final_actions) >= 5:
+                break
+        
+        # Ensure we have exactly 5 actions
+        while len(final_actions) < 5 and len(all_position_actions) > len(final_actions):
+            for action in all_position_actions:
+                if action not in final_actions:
+                    final_actions.append(action)
+                    break
+        
+        return final_actions[:5]  # Always return exactly 5
+
     async def handle_player_moment(self, channel, player, participant, minute, attacking_team, defending_team,
                                    is_home, match_id, is_european=False):
         member = channel.guild.get_member(player['user_id'])
@@ -1485,24 +1650,32 @@ class MatchEngine:
             return None
 
         adjusted_stats = self.apply_form_to_stats(player)
-        available_actions = self.get_position_events(player['position'])
-
-        sample_action = random.choice(available_actions)
-        defender_positions = self.get_contextual_defender_positions(player['position'], sample_action)
         
-        position_filter = ', '.join([f"'{pos}'" for pos in defender_positions])
+        # ✅ GET SCENARIO FIRST - This determines everything
+        scenario_type, defender_positions, scenario_description = self.get_position_scenario(player['position'])
+        
+        # ✅ GET ACTIONS APPROPRIATE FOR THIS SCENARIO
+        available_actions = self.get_actions_for_scenario(player['position'], scenario_type)
 
+        from utils.form_morale_system import get_form_description
+        form_desc = get_form_description(player['form'])
+
+        # ✅ GET CORRECT DEFENDER FOR THIS SCENARIO
+        position_filter = ', '.join([f"'{pos}'" for pos in defender_positions])
+        
         async with db.pool.acquire() as conn:
             if is_european:
                 result = await conn.fetchrow(f"""
                     SELECT * FROM npc_players
                     WHERE team_id = $1 AND position IN ({position_filter}) AND retired = FALSE
                     ORDER BY RANDOM() LIMIT 1
-                    UNION ALL
-                    SELECT * FROM european_npc_players
-                    WHERE team_id = $1 AND position IN ({position_filter}) AND retired = FALSE
-                    ORDER BY RANDOM() LIMIT 1
                 """, defending_team['team_id'])
+                if not result:
+                    result = await conn.fetchrow(f"""
+                        SELECT * FROM european_npc_players
+                        WHERE team_id = $1 AND position IN ({position_filter}) AND retired = FALSE
+                        ORDER BY RANDOM() LIMIT 1
+                    """, defending_team['team_id'])
             else:
                 result = await conn.fetchrow(f"""
                     SELECT * FROM npc_players 
@@ -1511,53 +1684,34 @@ class MatchEngine:
                 """, defending_team['team_id'])
             defender = dict(result) if result else None
         
+        # Fallback if no defender found
         if not defender:
             async with db.pool.acquire() as conn:
                 if is_european:
                     result = await conn.fetchrow("""
                         SELECT * FROM npc_players
-                        WHERE team_id = $1 AND position IN ('CB', 'FB', 'CDM', 'GK') AND retired = FALSE
-                        ORDER BY RANDOM() LIMIT 1
-                        UNION ALL
-                        SELECT * FROM european_npc_players
-                        WHERE team_id = $1 AND position IN ('CB', 'FB', 'CDM', 'GK') AND retired = FALSE
+                        WHERE team_id = $1 AND retired = FALSE
                         ORDER BY RANDOM() LIMIT 1
                     """, defending_team['team_id'])
+                    if not result:
+                        result = await conn.fetchrow("""
+                            SELECT * FROM european_npc_players
+                            WHERE team_id = $1 AND retired = FALSE
+                            ORDER BY RANDOM() LIMIT 1
+                        """, defending_team['team_id'])
                 else:
                     result = await conn.fetchrow("""
                         SELECT * FROM npc_players 
-                        WHERE team_id = $1 AND position IN ('CB', 'FB', 'CDM', 'GK') AND retired = FALSE
+                        WHERE team_id = $1 AND retired = FALSE
                         ORDER BY RANDOM() LIMIT 1
                     """, defending_team['team_id'])
                 defender = dict(result) if result else None
 
-        from utils.form_morale_system import get_form_description
-        form_desc = get_form_description(player['form'])
-
+        # ✅ CREATE CONTEXTUAL SCENARIO TEXT
         if defender:
-            defender_pos = defender.get('position', 'DEF')
-            
-            scenarios = {
-                ('ST', 'CB'): f"You receive the ball with {defender['player_name']} marking you tight!",
-                ('ST', 'GK'): f"Through ball! Just you and keeper {defender['player_name']}!",
-                ('W', 'FB'): f"Ball at your feet, {defender['player_name']} closing you down!",
-                ('W', 'CB'): f"You cut inside, {defender['player_name']} shifts across to cover!",
-                ('CAM', 'CDM'): f"Space in the hole! {defender['player_name']} steps up to close you!",
-                ('CAM', 'CM'): f"Midfield battle! {defender['player_name']} pressing hard!",
-                ('CM', 'CM'): f"50-50 challenge with {defender['player_name']} in midfield!",
-                ('CM', 'CDM'): f"You look to break the lines, {defender['player_name']} reads it!",
-                ('CDM', 'CAM'): f"Opposition playmaker incoming! {defender['player_name']} on the ball!",
-                ('CDM', 'ST'): f"Striker dropping deep! {defender['player_name']} trying to turn you!",
-                ('FB', 'W'): f"Winger {defender['player_name']} running at you with pace!",
-                ('CB', 'ST'): f"Striker {defender['player_name']} making a run! Can you stop them?",
-                ('GK', 'ST'): f"Shot incoming from {defender['player_name']}! React fast!"
-            }
-            
-            matchup_key = (player['position'], defender_pos)
-            scenario_text = scenarios.get(matchup_key, 
-                f"Ball comes to you! {defender['player_name']} ({defender_pos}) closing in!")
+            scenario_text = scenario_description.format(defender=f"**{defender['player_name']}** ({defender['position']})")
         else:
-            scenario_text = f"Ball comes to you in a dangerous area!\n{defending_team['team_name']}'s defense scrambling!"
+            scenario_text = f"Key moment in the match! {defending_team['team_name']}'s defense reacting..."
 
         # ═══ CREATE EMBED WITH COMBINED CRESTS ═══
         embed = discord.Embed(
@@ -1577,9 +1731,9 @@ class MatchEngine:
                 crests_file = discord.File(fp=crests_buffer, filename=f"crests_{minute}.png")
                 embed.set_image(url=f"attachment://crests_{minute}.png")
 
-        # ═══ ENHANCED ACTION DISPLAY WITH RECOMMENDATIONS ═══
+        # ═══ CALCULATE PROBABILITIES FOR EACH ACTION ═══
         actions_data = []
-        for action in available_actions[:5]:
+        for action in available_actions:
             att_p, att_s, def_p, def_s = self.get_action_stats(action)
             player_weighted = self.calculate_weighted_stat(adjusted_stats, att_p, att_s)
             player_pos_bonus = self.get_position_bonus(player['position'], action)
@@ -1600,7 +1754,7 @@ class MatchEngine:
                 'chance': chance,
                 'player_stat': player_weighted,
                 'player_bonus': player_pos_bonus,
-                'defender_stat': defender_weighted,
+                'defender_stat': defender_weighted if defender else 0,
                 'primary': att_p[:3].upper(),
                 'secondary': att_s[:3].upper()
             })
@@ -1632,7 +1786,7 @@ class MatchEngine:
             if data['player_bonus'] > 0:
                 actions_text += f" (+{data['player_bonus']})"
             
-            if defender:
+            if defender and data['defender_stat'] > 0:
                 actions_text += f" vs {data['defender_stat']}"
             actions_text += "\n"
             
@@ -1660,7 +1814,7 @@ class MatchEngine:
         if not view.chosen_action:
             await channel.send(f"⏰ {member.mention} **AUTO-SELECTED**: {action.upper()}")
 
-        # ✅ FIXED: Pass defending_team parameter
+        # ✅ EXECUTE WITH CORRECT DEFENDER FOR THIS SCENARIO
         result = await self.execute_action_with_duel(channel, player, adjusted_stats, defender, action, minute,
                                                      match_id, member, attacking_team, defending_team, is_european, is_home)
 
