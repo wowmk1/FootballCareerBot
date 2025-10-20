@@ -3,6 +3,7 @@ Admin Command - Single command with all admin actions in dropdown
 FIXED VERSION - Now passes bot instance to season manager functions
 ENHANCED VERSION - Added European competition admin controls
 SAFEGUARDED VERSION - Prevents duplicate starts and allows clean restarts
+DIAGNOSTIC VERSION - Added NPC stats diagnostic
 """
 import discord
 from discord import app_commands
@@ -43,6 +44,7 @@ class AdminCommands(commands.Cog):
         app_commands.Choice(name="🏆 Start European Now", value="start_european_now"),
         app_commands.Choice(name="🏆 Simulate European to End", value="simulate_european_to_end"),
         app_commands.Choice(name="🗑️ Wipe & Restart European", value="wipe_european"),
+        app_commands.Choice(name="🔍 Diagnose NPC Stats", value="diagnose_npcs"),
         app_commands.Choice(name="🔄 Restart Bot", value="restart"),
     ])
     @app_commands.checks.has_permissions(administrator=True)
@@ -94,6 +96,8 @@ class AdminCommands(commands.Cog):
             await self._simulate_european_to_end(interaction)
         elif action == "wipe_european":
             await self._wipe_european(interaction)
+        elif action == "diagnose_npcs":
+            await self._diagnose_npcs(interaction)
         elif action == "restart":
             await self._restart(interaction)
     
@@ -720,6 +724,85 @@ class AdminCommands(commands.Cog):
             await interaction.followup.send(f"❌ Error: {e}", ephemeral=True)
             import traceback
             traceback.print_exc()
+    
+    async def _diagnose_npcs(self, interaction: discord.Interaction):
+        """Diagnose NPC stat issues"""
+        await interaction.response.defer(ephemeral=True)
+        
+        # Sample Championship NPCs
+        async with db.pool.acquire() as conn:
+            npcs = await conn.fetch("""
+                SELECT 
+                    n.player_name,
+                    n.position,
+                    n.overall_rating,
+                    n.pace,
+                    n.shooting,
+                    n.passing,
+                    n.dribbling,
+                    n.defending,
+                    n.physical,
+                    t.team_name
+                FROM npc_players n
+                JOIN teams t ON n.team_id = t.team_id
+                WHERE t.league = 'Championship' 
+                AND n.retired = FALSE
+                LIMIT 5
+            """)
+        
+        if not npcs:
+            await interaction.followup.send("❌ No Championship NPCs found!", ephemeral=True)
+            return
+        
+        embed = discord.Embed(
+            title="🔍 NPC Stats Diagnostic",
+            description=f"Checking {len(npcs)} sample Championship NPCs",
+            color=discord.Color.blue()
+        )
+        
+        all_good = True
+        issues = []
+        
+        for npc in npcs:
+            stat_text = ""
+            has_issue = False
+            
+            # Check each stat
+            stats_to_check = {
+                'Pace': npc['pace'],
+                'Shooting': npc['shooting'],
+                'Passing': npc['passing'],
+                'Dribbling': npc['dribbling'],
+                'Defending': npc['defending'],
+                'Physical': npc['physical']
+            }
+            
+            for stat_name, value in stats_to_check.items():
+                if value is None:
+                    stat_text += f"❌ {stat_name}: MISSING\n"
+                    has_issue = True
+                    all_good = False
+                else:
+                    stat_text += f"✅ {stat_name[:3]}: {value} "
+            
+            if has_issue:
+                issues.append(npc['player_name'])
+            
+            embed.add_field(
+                name=f"{npc['player_name']} ({npc['position']}) - OVR {npc['overall_rating']}",
+                value=stat_text.strip(),
+                inline=False
+            )
+        
+        # Summary
+        if all_good:
+            embed.color = discord.Color.green()
+            embed.set_footer(text="✅ All NPCs have complete stats!")
+        else:
+            embed.color = discord.Color.red()
+            embed.set_footer(text=f"❌ {len(issues)} NPCs missing stats - need to run fix script!")
+        
+        await interaction.followup.send(embed=embed, ephemeral=True)
     
     async def _restart(self, interaction: discord.Interaction):
         """Restart the bot"""
