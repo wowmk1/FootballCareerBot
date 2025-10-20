@@ -854,6 +854,8 @@ class AdminCommands(commands.Cog):
     
     async def _run_sandbox_match(self, channel, home_team, away_team, player_user):
         """Run a fully sandboxed interactive match with no database writes"""
+        import random
+        
         home_score = 0
         away_score = 0
         num_events = 3
