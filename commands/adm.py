@@ -790,6 +790,7 @@ class AdminCommands(commands.Cog):
         
         try:
             import random
+            from utils.match_engine import MatchEngine as RealMatchEngine
             
             home_team = self._create_sandbox_team("Test United", "Premier League")
             away_team = self._create_sandbox_team("Sandbox City", "Championship")
@@ -811,17 +812,15 @@ class AdminCommands(commands.Cog):
             await interaction.followup.send(embed=embed)
             await interaction.followup.send("⚙️ Simulating match... (sandbox - no DB changes)")
             
-            from utils.match_engine import simulate_match
+            # Create match engine and simulate
+            engine = RealMatchEngine(self.bot)
             
-            sandbox_match = {
-                'home_team': home_team,
-                'away_team': away_team,
-                'week': 1,
-                'season': 2024,
-                'competition': 'Premier League',
-            }
-            
-            match_result = await simulate_match(sandbox_match)
+            # Simulate NPC match (uses the actual simulation logic)
+            match_result = await engine.simulate_npc_match(
+                home_team['id'],
+                away_team['id'],
+                is_european=False
+            )
             
             result_embed = discord.Embed(
                 title="⚽ Match Result",
