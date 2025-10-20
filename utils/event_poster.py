@@ -204,62 +204,6 @@ async def post_european_results(bot, competition, week_number):
         from utils.football_data_api import get_team_crest_url, get_competition_logo
         comp_logo = get_competition_logo(comp_name)
         
-        # Helper function to generate combined crest image
-        async def generate_crests_image(home_url, away_url, idx):
-            """Generate combined image with both crests side by side"""
-            try:
-                from io import BytesIO
-                from PIL import Image
-                import aiohttp
-                
-                async with aiohttp.ClientSession() as session:
-                    home_img_bytes = None
-                    away_img_bytes = None
-                    
-                    if home_url:
-                        try:
-                            async with session.get(home_url, timeout=aiohttp.ClientTimeout(total=5)) as r:
-                                if r.status == 200:
-                                    home_img_bytes = await r.read()
-                        except:
-                            pass
-                    
-                    if away_url:
-                        try:
-                            async with session.get(away_url, timeout=aiohttp.ClientTimeout(total=5)) as r:
-                                if r.status == 200:
-                                    away_img_bytes = await r.read()
-                        except:
-                            pass
-                
-                size = (100, 100)
-                padding = 40
-                width = size[0] * 2 + padding
-                height = size[1]
-                img = Image.new("RGBA", (width, height), (255, 255, 255, 0))
-                
-                if home_img_bytes:
-                    try:
-                        home = Image.open(BytesIO(home_img_bytes)).convert("RGBA").resize(size)
-                        img.paste(home, (0, 0), home)
-                    except:
-                        pass
-                
-                if away_img_bytes:
-                    try:
-                        away = Image.open(BytesIO(away_img_bytes)).convert("RGBA").resize(size)
-                        img.paste(away, (size[0] + padding, 0), away)
-                    except:
-                        pass
-                
-                buffer = BytesIO()
-                img.save(buffer, format="PNG")
-                buffer.seek(0)
-                return buffer
-            except Exception as e:
-                print(f"Error generating crests image: {e}")
-                return None
-        
         # Post to all guilds
         for guild in bot.guilds:
             try:
@@ -315,10 +259,10 @@ async def post_european_results(bot, competition, week_number):
                     if comp_logo:
                         embed.set_thumbnail(url=comp_logo)
                     
-                    # Generate combined crests image
+                    # Generate combined crests image using imported helper
                     file = None
                     if home_crest or away_crest:
-                        crests_buffer = await generate_crests_image(home_crest, away_crest, idx)
+                        crests_buffer = await generate_combined_crests(home_crest, away_crest)
                         if crests_buffer:
                             file = discord.File(fp=crests_buffer, filename=f"crests_{idx}.png")
                             embed.set_image(url=f"attachment://crests_{idx}.png")
@@ -361,6 +305,15 @@ async def post_european_results(bot, competition, week_number):
                     await asyncio.sleep(0.5)
                 
                 print(f"  ✅ Posted beautiful {comp_name} results to {guild.name}")
+                
+            except Exception as e:
+                print(f"  ❌ Could not post to {guild.name}: {e}")
+    
+    except Exception as e:
+        print(f"❌ Error in post_european_results: {e}")
+        import traceback
+        traceback.print_exc()
+
                 
             except Exception as e:
                 print(f"  ❌ Could not post to {guild.name}: {e}")
