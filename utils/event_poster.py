@@ -272,7 +272,7 @@ async def post_match_result_to_channel(bot, guild, fixture, home_score, away_sco
         # Get goal scorers if available - FIXED: JOIN with players table
         async with db.pool.acquire() as conn:
             goal_scorers = await conn.fetch("""
-                SELECT p.player_name, me.team_id, me.event_type, me.minute
+                SELECT p.player_name, p.team_id, me.event_type, me.minute
                 FROM match_events me
                 JOIN players p ON me.user_id = p.user_id
                 WHERE me.fixture_id = $1 
@@ -552,7 +552,7 @@ async def post_weekly_news_digest(bot, week_number: int):
                         
                         # FIXED: JOIN with players table for goal scorers
                         goal_scorers = await conn.fetch("""
-                            SELECT p.player_name, me.team_id, me.event_type
+                            SELECT p.player_name, p.team_id, me.event_type
                             FROM match_events me
                             JOIN players p ON me.user_id = p.user_id
                             WHERE me.fixture_id = $1 
