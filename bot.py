@@ -277,7 +277,7 @@ class FootballBot(commands.Bot):
         # Initialize European teams
         async with db.pool.acquire() as conn:
             euro_count = await conn.fetchval("SELECT COUNT(*) FROM european_teams")
-        
+
         if euro_count == 0:
             logger.info("🌍 Populating European teams...")
             from utils.european_npc_populator import populate_european_teams
@@ -519,8 +519,9 @@ class FootballBot(commands.Bot):
         Check BOTH windows:
         - 12-2 PM: European (on European weeks)
         - 3-5 PM: Domestic (always, advances week)
-        
-        ✅ FIXED: Now properly handles 4-value return from is_match_window_time()
+
+        ✅ FIXED: Enhanced logging to debug window issues
+        ✅ FIXED: Proper handling of 4-value return from is_match_window_time()
         """
         try:
             from utils.season_manager import (
@@ -532,16 +533,21 @@ class FootballBot(commands.Bot):
             state = await db.get_game_state()
 
             if not state['season_started']:
+                logger.debug("⏸️ Season not started, skipping window check")
                 return
 
-            # ✅ FIXED: Unpack all 4 values from is_match_window_time()
+            # ✅ Get window status (returns 4 values)
             is_window_time, is_start_time, is_end_time, window_type = is_match_window_time()
             window_open = state['match_window_open']
 
+            logger.info(
+                f"🔍 WINDOW CHECK: window_time={is_window_time}, start={is_start_time}, end={is_end_time}, type={window_type}, db_open={window_open}")
+
+            # ===== OPEN WINDOW =====
             if is_start_time and not window_open and window_type:
-                logger.info(f"🟢 Opening {window_type} window")
+                logger.info(f"🟢 OPENING {window_type.upper()} WINDOW NOW")
                 await open_match_window(window_type=window_type)
-                
+
                 # Only notify for domestic windows
                 if window_type == 'domestic':
                     await self.notify_match_window_open()
@@ -552,10 +558,12 @@ class FootballBot(commands.Bot):
                     status=discord.Status.online
                 )
 
+            # ===== CLOSE WINDOW =====
             elif is_end_time and window_open and window_type:
-                logger.info(f"🔴 Closing {window_type} window")
+                logger.info(f"🔴 CLOSING {window_type.upper()} WINDOW NOW")
                 await close_match_window(window_type=window_type, bot=self)
 
+                # Update status after closing
                 state = await db.get_game_state()
                 from utils.season_manager import get_next_match_window
                 try:
@@ -572,8 +580,9 @@ class FootballBot(commands.Bot):
                         status=discord.Status.online
                     )
 
+            # ===== SAFETY CHECK: Window open but shouldn't be =====
             elif window_open and not is_window_time:
-                logger.warning("⚠️ Window is open outside of match hours - auto-closing")
+                logger.warning("⚠️ SAFETY: Window is open outside of match hours - FORCE CLOSING")
                 await close_match_window(window_type='domestic', bot=self)
 
                 state = await db.get_game_state()
@@ -582,14 +591,17 @@ class FootballBot(commands.Bot):
                     status=discord.Status.online
                 )
 
+            else:
+                logger.debug(f"✅ Window check OK - No action needed")
+
         except Exception as e:
-            logger.error(f"❌ ERROR in check_match_windows: {e}", exc_info=True)
+            logger.error(f"❌ CRITICAL ERROR in check_match_windows: {e}", exc_info=True)
 
     @tasks.loop(minutes=5)
     async def check_warnings(self):
         """
         Check if we should send warnings
-        Times: 
+        Times:
         - European: 11:00 AM, 11:30 AM, 11:45 AM (before 12 PM open)
         - Domestic: 2:00 PM, 2:30 PM, 2:45 PM (before 3 PM open), 4:45 PM (before close)
         SELF-HEALING: Errors logged but task continues
@@ -655,10 +667,10 @@ class FootballBot(commands.Bot):
         """
         try:
             cooldown_threshold = datetime.now() - timedelta(hours=config.TRAINING_COOLDOWN_HOURS)
-        
+
             logger.info(f"🔍 Checking training reminders at {datetime.now()}")
             logger.info(f"   Cooldown threshold: {cooldown_threshold}")
-        
+
             async with db.pool.acquire() as conn:
                 rows = await conn.fetch("""
                     SELECT user_id, player_name, last_training, last_reminded
@@ -669,23 +681,23 @@ class FootballBot(commands.Bot):
                       AND (last_reminded IS NULL 
                            OR last_reminded::timestamp <= last_training::timestamp)
                 """, cooldown_threshold)
-            
+
                 logger.info(f"   Found {len(rows)} players ready for reminder")
                 for row in rows:
                     logger.info(f"   - {row['player_name']}: last_training={row['last_training']}, last_reminded={row.get('last_reminded', 'NULL')}")
-            
+
                 for row in rows:
                     success = await self.send_training_reminder(row['user_id'])
-                
+
                     if success:
                         await conn.execute("""
                             UPDATE players
                             SET last_reminded = $1
                             WHERE user_id = $2
                         """, datetime.now().isoformat(), row['user_id'])
-                    
+
                         logger.info(f"✅ Sent training reminder to user {row['user_id']}")
-    
+
         except Exception as e:
             logger.error(f"❌ ERROR in check_training_reminders: {e}", exc_info=True)
 
