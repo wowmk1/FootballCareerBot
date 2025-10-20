@@ -269,14 +269,15 @@ async def post_match_result_to_channel(bot, guild, fixture, home_score, away_sco
         if home_crest:
             embed.set_author(name=home_team['team_name'], icon_url=home_crest)
         
-        # Get goal scorers if available
+        # Get goal scorers if available - FIXED: JOIN with players table
         async with db.pool.acquire() as conn:
             goal_scorers = await conn.fetch("""
-                SELECT player_name, team_id, event_type, minute
-                FROM match_events
-                WHERE fixture_id = $1 
-                  AND event_type IN ('goal', 'penalty_goal')
-                ORDER BY minute
+                SELECT p.player_name, me.team_id, me.event_type, me.minute
+                FROM match_events me
+                JOIN players p ON me.user_id = p.user_id
+                WHERE me.fixture_id = $1 
+                  AND me.event_type IN ('goal', 'penalty_goal')
+                ORDER BY me.minute
             """, fixture.get('fixture_id'))
             
             if goal_scorers:
@@ -296,20 +297,30 @@ async def post_match_result_to_channel(bot, guild, fixture, home_score, away_sco
                         inline=False
                     )
             
-            # Check for MOTM
-            motm = await conn.fetchrow("""
-                SELECT player_name, rating
-                FROM match_participants
-                WHERE fixture_id = $1 AND motm = TRUE
+            # Check for MOTM - FIXED: match_participants uses match_id, not fixture_id
+            # First get the match_id from active_matches or played_matches
+            match_id = await conn.fetchval("""
+                SELECT match_id FROM active_matches WHERE fixture_id = $1
+                UNION ALL
+                SELECT match_id FROM played_matches WHERE fixture_id = $1
                 LIMIT 1
             """, fixture.get('fixture_id'))
             
-            if motm:
-                embed.add_field(
-                    name="⭐ Man of the Match",
-                    value=f"**{motm['player_name']}** ({motm['rating']:.1f} rating)",
-                    inline=True
-                )
+            if match_id:
+                motm = await conn.fetchrow("""
+                    SELECT p.player_name, mp.rating
+                    FROM match_participants mp
+                    JOIN players p ON mp.user_id = p.user_id
+                    WHERE mp.match_id = $1 AND mp.motm = TRUE
+                    LIMIT 1
+                """, match_id)
+                
+                if motm:
+                    embed.add_field(
+                        name="⭐ Man of the Match",
+                        value=f"**{motm['player_name']}** ({motm['rating']:.1f} rating)",
+                        inline=True
+                    )
         
         embed.add_field(
             name="📊 Match Info",
@@ -542,12 +553,14 @@ async def post_weekly_news_digest(bot, week_number: int):
                         if home_crest:
                             motw_embed.set_author(name=motw['home_name'], icon_url=home_crest)
                         
+                        # FIXED: JOIN with players table for goal scorers
                         goal_scorers = await conn.fetch("""
-                            SELECT player_name, team_id, event_type
-                            FROM match_events
-                            WHERE fixture_id = $1 
-                              AND event_type IN ('goal', 'penalty_goal')
-                            ORDER BY minute
+                            SELECT p.player_name, me.team_id, me.event_type
+                            FROM match_events me
+                            JOIN players p ON me.user_id = p.user_id
+                            WHERE me.fixture_id = $1 
+                              AND me.event_type IN ('goal', 'penalty_goal')
+                            ORDER BY me.minute
                         """, motw['fixture_id'])
                         
                         if goal_scorers:
@@ -574,19 +587,29 @@ async def post_weekly_news_digest(bot, week_number: int):
                                 inline=True
                             )
                         
-                        motm = await conn.fetchrow("""
-                            SELECT player_name, rating
-                            FROM match_participants
-                            WHERE fixture_id = $1 AND motm = TRUE
+                        # FIXED: Get match_id first, then get MOTM
+                        match_id = await conn.fetchval("""
+                            SELECT match_id FROM active_matches WHERE fixture_id = $1
+                            UNION ALL
+                            SELECT match_id FROM played_matches WHERE fixture_id = $1
                             LIMIT 1
                         """, motw['fixture_id'])
                         
-                        if motm:
-                            motw_embed.add_field(
-                                name="⭐ Man of the Match",
-                                value=f"**{motm['player_name']}** ({motm['rating']:.1f} rating)",
-                                inline=True
-                            )
+                        if match_id:
+                            motm = await conn.fetchrow("""
+                                SELECT p.player_name, mp.rating
+                                FROM match_participants mp
+                                JOIN players p ON mp.user_id = p.user_id
+                                WHERE mp.match_id = $1 AND mp.motm = TRUE
+                                LIMIT 1
+                            """, match_id)
+                            
+                            if motm:
+                                motw_embed.add_field(
+                                    name="⭐ Man of the Match",
+                                    value=f"**{motm['player_name']}** ({motm['rating']:.1f} rating)",
+                                    inline=True
+                                )
                         
                         if motw['home_score'] > motw['away_score']:
                             winner = motw['home_name']
