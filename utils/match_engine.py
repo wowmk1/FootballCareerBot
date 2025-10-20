@@ -1839,24 +1839,79 @@ class MatchEngine:
 
         return final_actions[:5]  # Always return exactly 5
 
+    async def show_tutorial_if_needed(self, channel, user_id):
+        """Show tutorial embed if this is player's first match"""
+        async with db.pool.acquire() as conn:
+            played_before = await conn.fetchval("""
+                                                SELECT COUNT(*)
+                                                FROM match_participants
+                                                WHERE user_id = $1
+                                                """, user_id)
+
+            if played_before == 0:
+                embed = discord.Embed(
+                    title="📚 First Match? Here's How It Works!",
+                    description="Welcome to your first interactive match! Here's a quick guide:",
+                    color=discord.Color.blue()
+                )
+
+                embed.add_field(
+                    name="🎯 Reading Your Options",
+                    value="⭐ = **Recommended** (best chance of success)\n"
+                          "🟢 = Good chance (65%+)\n"
+                          "🟡 = Fair chance (50-64%)\n"
+                          "🔴 = Risky (below 50%)",
+                    inline=False
+                )
+
+                embed.add_field(
+                    name="📊 Understanding Stats",
+                    value="**Example:** `DRI/PAC: 81+3=84 vs 68+2=70`\n"
+                          "• `DRI/PAC` = Stats used (Dribbling + Pace)\n"
+                          "• `81` = Your base stat\n"
+                          "• `+3` = Your position bonus (Winger specialty!)\n"
+                          "• `=84` = Your total\n"
+                          "• `vs 68+2=70` = Defender's total",
+                    inline=False
+                )
+
+                embed.add_field(
+                    name="🎲 How Success Works",
+                    value="After you choose, both you and the defender roll a 20-sided die!\n"
+                          "**Your Total + Your Roll vs Their Total + Their Roll**\n\n"
+                          "Higher total wins! Even with 60% chance, you can lose on a bad roll.",
+                    inline=False
+                )
+
+                embed.add_field(
+                    name="⚡ Follow-Up Actions",
+                    value="Some actions trigger **bonus events**:\n"
+                          "• Successful dribble → 30% chance for a shot!\n"
+                          "• Good tackle → 40% chance for counter-attack!\n"
+                          "Check the `↪` line under each action to see what might happen next.",
+                    inline=False
+                )
+
+                embed.set_footer(text="⏱️ You have 30 seconds to choose • Pick the ⭐ star if unsure!")
+
+                await channel.send(embed=embed)
+                await asyncio.sleep(3)
+
     async def handle_player_moment(self, channel, player, participant, minute, attacking_team, defending_team,
                                    is_home, match_id, is_european=False):
         member = channel.guild.get_member(player['user_id'])
         if not member:
             return None
 
+        await self.show_tutorial_if_needed(channel, player['user_id'])
+
         adjusted_stats = self.apply_form_to_stats(player)
-
-        # ✅ GET SCENARIO FIRST - This determines everything
         scenario_type, defender_positions, scenario_description = self.get_position_scenario(player['position'])
-
-        # ✅ GET ACTIONS APPROPRIATE FOR THIS SCENARIO
         available_actions = self.get_actions_for_scenario(player['position'], scenario_type)
 
         from utils.form_morale_system import get_form_description
         form_desc = get_form_description(player['form'])
 
-        # ✅ GET CORRECT DEFENDER FOR THIS SCENARIO
         position_filter = ', '.join([f"'{pos}'" for pos in defender_positions])
 
         async with db.pool.acquire() as conn:
@@ -1880,7 +1935,6 @@ class MatchEngine:
                 """, defending_team['team_id'])
             defender = dict(result) if result else None
 
-        # Fallback if no defender found
         if not defender:
             async with db.pool.acquire() as conn:
                 if is_european:
@@ -1909,21 +1963,18 @@ class MatchEngine:
                                                  """, defending_team['team_id'])
                 defender = dict(result) if result else None
 
-        # ✅ CREATE CONTEXTUAL SCENARIO TEXT
         if defender:
             scenario_text = scenario_description.format(
                 defender=f"**{defender['player_name']}** ({defender['position']})")
         else:
             scenario_text = f"Key moment in the match! {defending_team['team_name']}'s defense reacting..."
 
-        # ═══ CREATE EMBED WITH COMBINED CRESTS ═══
         embed = discord.Embed(
             title=f"🎯 {member.display_name}'S MOMENT!",
             description=f"## {player['player_name']} ({player['position']})\n**{minute}'** | Form: {form_desc}\n\n{scenario_text}",
             color=discord.Color.gold()
         )
 
-        # Generate combined crests image
         home_crest = get_team_crest_url(attacking_team['team_id'])
         away_crest = get_team_crest_url(defending_team['team_id'])
 
@@ -1934,100 +1985,86 @@ class MatchEngine:
                 crests_file = discord.File(fp=crests_buffer, filename=f"crests_{minute}.png")
                 embed.set_image(url=f"attachment://crests_{minute}.png")
 
-        # ═══ CALCULATE PROBABILITIES FOR EACH ACTION (FIXED VERSION) ═══
         actions_data = []
         for action in available_actions:
             att_p, att_s, def_p, def_s = self.get_action_stats(action)
-
-            # Calculate base weighted stats (70% primary + 30% secondary)
             player_weighted = self.calculate_weighted_stat(adjusted_stats, att_p, att_s)
             player_pos_bonus = self.get_position_bonus(player['position'], action)
-
-            # ✅ FIX: Apply position bonus DIRECTLY to effective stat (not to probability later)
             player_effective = player_weighted + player_pos_bonus
 
             if defender:
                 defender_weighted = self.calculate_weighted_stat(defender, def_p, def_s)
                 defender_pos_bonus = self.get_position_bonus(defender.get('position', 'CB'), action)
-
-                # Apply defender bonus to effective stat
                 defender_effective = defender_weighted + defender_pos_bonus
-
-                # ✅ FIX: Calculate probability with bonuses ALREADY BAKED IN (no double-counting!)
                 chance = self.calculate_d20_success_probability(player_effective, defender_effective)
             else:
                 defender_weighted = 0
                 defender_pos_bonus = 0
                 defender_effective = 0
-                chance = 60  # No defender = slight advantage
+                chance = 60
 
-            # ✅ FIX: Home advantage as final small modifier (not double-counted)
             if is_home:
                 home_bonus = self.get_home_advantage_bonus(is_home, player['position'])
-                chance = min(90, chance + home_bonus)  # +2-3% max
+                chance = min(90, chance + home_bonus)
 
             actions_data.append({
-                'action': action,
-                'chance': int(chance),
-                'player_stat': player_weighted,
-                'player_bonus': player_pos_bonus,
-                'player_effective': player_effective,
+                'action': action, 'chance': int(chance), 'player_stat': player_weighted,
+                'player_bonus': player_pos_bonus, 'player_effective': player_effective,
                 'defender_stat': defender_weighted if defender else 0,
                 'defender_bonus': defender_pos_bonus if defender else 0,
                 'defender_effective': defender_effective if defender else 0,
-                'primary': att_p[:3].upper(),
-                'secondary': att_s[:3].upper()
+                'primary': att_p[:3].upper(), 'secondary': att_s[:3].upper()
             })
 
-        # Sort by chance to find recommended action
         actions_data.sort(key=lambda x: x['chance'], reverse=True)
         recommended_action = actions_data[0]['action']
 
-        # ✅ FIX: Improved display showing effective stats clearly
+        embed.add_field(
+            name="📖 Quick Guide",
+            value="⭐🟢 = **Recommended/Good** (65%+) | 🟡 = **Fair** (50-64%) | 🔴 = **Risky** (<50%)\n"
+                  "📊 = Your stats vs opponent | ↪️ = What might happen next",
+            inline=False
+        )
+
         actions_text = ""
         for data in actions_data:
             action = data['action']
             chance = data['chance']
 
-            # Emoji based on chance + star for recommended
             if chance >= 65:
-                emoji = "🟢"
+                emoji, difficulty = "🟢", "GOOD"
             elif chance >= 50:
-                emoji = "🟡"
+                emoji, difficulty = "🟡", "FAIR"
             else:
-                emoji = "🔴"
+                emoji, difficulty = "🔴", "RISKY"
 
-            # Add star for recommended action
             if action == recommended_action:
                 emoji = "⭐" + emoji
+                difficulty = "★ BEST"
 
             action_name = action.replace('_', ' ').title()
-            actions_text += f"{emoji} **{action_name}** — **{chance}%**\n"
+            actions_text += f"{emoji} **{action_name}** — **{chance}%** `[{difficulty}]`\n   📊 "
 
-            # ✅ FIX: Show base stat + bonus = effective stat clearly
-            actions_text += f"   {data['primary']}/{data['secondary']}: {data['player_stat']}"
             if data['player_bonus'] > 0:
-                actions_text += f"+{data['player_bonus']}={data['player_effective']}"
+                actions_text += f"{data['primary']}/{data['secondary']}: {data['player_stat']}+{data['player_bonus']}=**{data['player_effective']}**"
+            else:
+                actions_text += f"{data['primary']}/{data['secondary']}: **{data['player_effective']}**"
 
             if defender and data['defender_effective'] > 0:
-                actions_text += f" vs {data['defender_stat']}"
+                actions_text += f" vs "
                 if data['defender_bonus'] > 0:
-                    actions_text += f"+{data['defender_bonus']}={data['defender_effective']}"
+                    actions_text += f"{data['defender_stat']}+{data['defender_bonus']}=**{data['defender_effective']}**"
                 else:
-                    actions_text += f"={data['defender_effective']}"
-            actions_text += "\n"
+                    actions_text += f"**{data['defender_effective']}**"
+            actions_text += f"\n   ↪️ {self.get_followup_description(action)}\n\n"
 
-            # Add follow-up info
-            followup_desc = self.get_followup_description(action)
-            actions_text += f"   _↪ {followup_desc}_\n\n"
-
-        embed.add_field(name="⚡ CHOOSE ACTION", value=actions_text, inline=False)
+        embed.add_field(name="⚡ CHOOSE YOUR ACTION", value=actions_text, inline=False)
 
         if defender:
             embed.set_footer(
-                text=f"⚔️ vs {defender['player_name']} ({defender['position']}) • ⭐ = RECOMMENDED • 30 sec!")
+                text=f"⚔️ vs {defender['player_name']} ({defender['position']}) | ⭐ = Best Choice | 🎲 = Die Roll After | ⏱️ 30s")
         else:
-            embed.set_footer(text="⭐ = RECOMMENDED ACTION • ⏱️ 30 seconds!")
+            embed.set_footer(text="⭐ = Best Choice | 🎲 = Die Roll After Choice | ⏱️ 30 seconds")
 
         view = EnhancedActionView(available_actions, player['user_id'], timeout=30)
 
@@ -2042,11 +2079,9 @@ class MatchEngine:
         if not view.chosen_action:
             await channel.send(f"⏰ {member.mention} **AUTO-SELECTED**: {action.upper()}")
 
-        # ✅ EXECUTE WITH CORRECT DEFENDER FOR THIS SCENARIO
         result = await self.execute_action_with_duel(channel, player, adjusted_stats, defender, action, minute,
                                                      match_id, member, attacking_team, defending_team, is_european,
                                                      is_home)
-
         return result
 
     # ✅ FIXED: Added defending_team parameter
