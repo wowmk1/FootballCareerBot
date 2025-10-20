@@ -19,6 +19,8 @@ async def generate_combined_crests(home_url, away_url):
     Returns:
         BytesIO buffer with PNG image, or None if failed
     """
+    print(f"🖼️ Generating crests: home={home_url}, away={away_url}")
+    
     try:
         async with aiohttp.ClientSession() as session:
             home_img_bytes = None
@@ -27,20 +29,28 @@ async def generate_combined_crests(home_url, away_url):
             # Fetch home team crest
             if home_url:
                 try:
+                    print(f"  Fetching home crest...")
                     async with session.get(home_url, timeout=aiohttp.ClientTimeout(total=5)) as r:
                         if r.status == 200:
                             home_img_bytes = await r.read()
+                            print(f"  ✅ Home crest fetched: {len(home_img_bytes)} bytes")
+                        else:
+                            print(f"  ❌ Home crest failed: status {r.status}")
                 except Exception as e:
-                    print(f"Failed to fetch home crest: {e}")
+                    print(f"  ❌ Failed to fetch home crest: {e}")
             
             # Fetch away team crest
             if away_url:
                 try:
+                    print(f"  Fetching away crest...")
                     async with session.get(away_url, timeout=aiohttp.ClientTimeout(total=5)) as r:
                         if r.status == 200:
                             away_img_bytes = await r.read()
+                            print(f"  ✅ Away crest fetched: {len(away_img_bytes)} bytes")
+                        else:
+                            print(f"  ❌ Away crest failed: status {r.status}")
                 except Exception as e:
-                    print(f"Failed to fetch away crest: {e}")
+                    print(f"  ❌ Failed to fetch away crest: {e}")
         
         # Create canvas for both crests
         size = (100, 100)
@@ -54,23 +64,28 @@ async def generate_combined_crests(home_url, away_url):
             try:
                 home = Image.open(BytesIO(home_img_bytes)).convert("RGBA").resize(size)
                 img.paste(home, (0, 0), home)
+                print(f"  ✅ Home crest pasted")
             except Exception as e:
-                print(f"Failed to process home crest: {e}")
+                print(f"  ❌ Failed to process home crest: {e}")
         
         # Paste away team crest on right
         if away_img_bytes:
             try:
                 away = Image.open(BytesIO(away_img_bytes)).convert("RGBA").resize(size)
                 img.paste(away, (size[0] + padding, 0), away)
+                print(f"  ✅ Away crest pasted")
             except Exception as e:
-                print(f"Failed to process away crest: {e}")
+                print(f"  ❌ Failed to process away crest: {e}")
         
         # Save to buffer
         buffer = BytesIO()
         img.save(buffer, format="PNG")
         buffer.seek(0)
+        print(f"  ✅ Combined crests image created: {buffer.tell()} bytes")
         return buffer
         
     except Exception as e:
-        print(f"Error generating combined crests: {e}")
+        print(f"❌ Error generating combined crests: {e}")
+        import traceback
+        traceback.print_exc()
         return None
