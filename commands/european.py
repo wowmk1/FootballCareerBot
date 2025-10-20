@@ -184,30 +184,37 @@ class European(commands.Cog):
                 leg_text = f" - Leg {fixture['leg']}" if fixture.get('leg', 1) > 1 else ""
                 stage_display = f"{fixture['stage'].title()}{leg_text}"
             
-            # ✅ UPDATED: Both team crests displayed using author and footer
+            # ✅ FINAL SOLUTION: Use all available image slots for team crests
+            # - thumbnail: Competition logo (top right)
+            # - author icon: Home team crest (top left, circular)
+            # - footer icon: Away team crest (bottom left, circular)
+            # This shows both team crests as actual images!
+            
             embed = discord.Embed(
                 title=f"{comp_emoji} {comp_name}",
-                description=f"{fixture['home_name']} **{score_display}** {fixture['away_name']}",
+                description=f"**{fixture['home_name']} {score_display} {fixture['away_name']}**",
                 color=comp_color
             )
             
-            # Competition logo as thumbnail (top right)
+            # Competition logo in top right
             if comp_logo:
                 embed.set_thumbnail(url=comp_logo)
             
-            # ✅ Home team crest as author (left side with icon)
+            # Home team crest in top left (author position with icon)
             if home_crest:
-                embed.set_author(name=fixture['home_name'], icon_url=home_crest)
-            else:
-                embed.set_author(name=fixture['home_name'])
+                embed.set_author(
+                    name=f"🏠 {fixture['home_name']}",
+                    icon_url=home_crest
+                )
             
-            # ✅ Away team crest as footer (bottom with icon)
+            # Away team crest in bottom left (footer position with icon)
             if away_crest:
-                embed.set_footer(text=fixture['away_name'], icon_url=away_crest)
-            else:
-                embed.set_footer(text=fixture['away_name'])
+                embed.set_footer(
+                    text=f"✈️ {fixture['away_name']}",
+                    icon_url=away_crest
+                )
             
-            # Match info in clean row
+            # Match info fields - clean 3-column layout
             embed.add_field(name="📊 Status", value=f"{status_emoji} {status_text}", inline=True)
             embed.add_field(name="🎭 Stage", value=stage_display, inline=True)
             embed.add_field(name="📅 Week", value=f"{fixture['week_number']}", inline=True)
