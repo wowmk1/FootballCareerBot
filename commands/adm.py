@@ -110,7 +110,6 @@ class AdminCommands(commands.Cog):
         await interaction.response.defer()
         
         from utils.season_manager import advance_week as adv_week
-        # CRITICAL FIX: Pass bot instance so DMs can be sent
         await adv_week(bot=self.bot)
         
         state = await db.get_game_state()
@@ -133,7 +132,6 @@ class AdminCommands(commands.Cog):
         
         from utils.season_manager import advance_week as adv_week
         for i in range(weeks):
-            # CRITICAL FIX: Pass bot instance so DMs can be sent
             await adv_week(bot=self.bot)
             await asyncio.sleep(1)
             print(f"  Advanced week {i+1}/{weeks}")
@@ -154,10 +152,7 @@ class AdminCommands(commands.Cog):
         
         from utils.season_manager import open_match_window
         
-        # Open the window
         await open_match_window()
-        
-        # CRITICAL: Send notifications to all servers
         await self.bot.notify_match_window_open()
         
         state = await db.get_game_state()
@@ -317,7 +312,6 @@ class AdminCommands(commands.Cog):
         from utils.transfer_window_manager import generate_offers_for_player
         state = await db.get_game_state()
         
-        # CRITICAL FIX: Pass bot instance so notifications can be sent
         offers = await generate_offers_for_player(player, state['current_week'], num_offers=5, bot=self.bot)
         
         embed = discord.Embed(
@@ -484,7 +478,6 @@ class AdminCommands(commands.Cog):
         
         try:
             async with db.pool.acquire() as conn:
-                # Add MOTM columns if missing
                 await conn.execute("""
                     ALTER TABLE players 
                     ADD COLUMN IF NOT EXISTS season_motm INTEGER DEFAULT 0
@@ -499,7 +492,7 @@ class AdminCommands(commands.Cog):
             await interaction.followup.send(f"❌ Error: {e}", ephemeral=True)
     
     async def _start_european_now(self, interaction: discord.Interaction):
-        """START EUROPEAN COMPETITIONS MID-SEASON (with duplicate prevention)"""
+        """START EUROPEAN COMPETITIONS MID-SEASON"""
         await interaction.response.defer()
         
         try:
@@ -507,7 +500,6 @@ class AdminCommands(commands.Cog):
             current_week = state['current_week']
             season = state['current_season']
             
-            # ✅ CRITICAL: Check if already started
             async with db.pool.acquire() as conn:
                 existing_groups = await conn.fetchval(
                     "SELECT COUNT(*) FROM european_groups WHERE season = $1", 
@@ -534,10 +526,8 @@ class AdminCommands(commands.Cog):
             from utils.european_competitions import draw_groups
             from utils.european_mid_season import simulate_missed_european_weeks
             
-            # Draw groups
             await draw_groups(season=season)
             
-            # Simulate missed weeks
             missed_weeks = [w for w in config.GROUP_STAGE_WEEKS if w < current_week]
             
             if missed_weeks:
@@ -565,11 +555,163 @@ class AdminCommands(commands.Cog):
             import traceback
             traceback.print_exc()
     
+    async def _simulate_european_to_end(self, interaction: discord.Interaction):
+        """SIMULATE ENTIRE EUROPEAN SEASON"""
+        await interaction.response.defer()
+        
+        try:
+            state = await db.get_game_state()
+            current_week = state['current_week']
+            season = state['current_season']
+            
+            async with db.pool.acquire() as conn:
+                existing_groups = await conn.fetchval(
+                    "SELECT COUNT(*) FROM european_groups WHERE season = $1", 
+                    season
+                )
+                
+                if existing_groups == 0:
+                    await interaction.followup.send(
+                        f"❌ **European competitions haven't started yet for Season {season}!**\n\n"
+                        f"Use **🏆 Start European Now** first.",
+                        ephemeral=True
+                    )
+                    return
+            
+            await interaction.followup.send(
+                f"🏆 Simulating ENTIRE European season to completion!\n"
+                f"Current Week: {current_week}\n\n"
+                f"This will simulate:\n"
+                f"- All remaining group matches\n"
+                f"- All knockout rounds\n"
+                f"- Determine champions\n\n"
+                f"Processing... (may take 30-60 seconds)",
+                ephemeral=True
+            )
+            
+            from utils.european_mid_season import simulate_full_european_season
+            
+            results = await simulate_full_european_season(season, current_week)
+            
+            await interaction.followup.send(
+                f"✅ European season simulated to completion!\n\n"
+                f"**Results:**\n"
+                f"- Group matches: {results['group_matches']}\n"
+                f"- Knockout matches: {results['knockout_matches']}\n\n"
+                f"**Champions:**\n"
+                f"🏆 CL Winner: {results['cl_winner']}\n"
+                f"🏆 EL Winner: {results['el_winner']}\n\n"
+                f"Use `/knockout_bracket` to see full bracket!",
+                ephemeral=True
+            )
+                
+        except Exception as e:
+            await interaction.followup.send(f"❌ Error: {e}", ephemeral=True)
+            import traceback
+            traceback.print_exc()
+    
+    async def _wipe_european(self, interaction: discord.Interaction):
+        """WIPE ALL EUROPEAN DATA"""
+        
+        view = ConfirmEuropeanWipeView()
+        await interaction.response.send_message(
+            "⚠️ **WARNING: WIPE ALL EUROPEAN COMPETITION DATA?**\n\n"
+            "This will delete:\n"
+            "- All groups\n"
+            "- All group matches\n"
+            "- All knockout brackets\n"
+            "- All knockout matches\n\n"
+            "You can then use **🏆 Start European Now** to restart from scratch.\n\n"
+            "**This cannot be undone!**",
+            view=view,
+            ephemeral=True
+        )
+        
+        await view.wait()
+        
+        if not view.confirmed:
+            return
+        
+        try:
+            state = await db.get_game_state()
+            season = state['current_season']
+            
+            deleted_counts = {
+                'groups': 0,
+                'group_matches': 0,
+                'knockout_brackets': 0,
+                'knockout_matches': 0
+            }
+            
+            async with db.pool.acquire() as conn:
+                try:
+                    result = await conn.execute(
+                        "DELETE FROM european_knockout WHERE season = $1", 
+                        season
+                    )
+                    deleted_counts['knockout_brackets'] = int(result.split()[-1]) if result else 0
+                except Exception as e:
+                    print(f"Could not delete from european_knockout: {e}")
+                
+                try:
+                    result = await conn.execute(
+                        "DELETE FROM european_fixtures WHERE season = $1", 
+                        season
+                    )
+                    deleted_counts['knockout_matches'] = int(result.split()[-1]) if result else 0
+                except Exception as e:
+                    print(f"Could not delete from european_fixtures: {e}")
+                
+                try:
+                    result = await conn.execute(
+                        "DELETE FROM european_groups WHERE season = $1", 
+                        season
+                    )
+                    deleted_counts['groups'] = int(result.split()[-1]) if result else 0
+                except Exception as e:
+                    print(f"Could not delete from european_groups: {e}")
+                
+                try:
+                    await conn.execute(
+                        "DELETE FROM player_european_stats WHERE season = $1", 
+                        season
+                    )
+                except:
+                    pass
+                
+                try:
+                    await conn.execute(
+                        "DELETE FROM european_npc_performance WHERE season = $1", 
+                        season
+                    )
+                except:
+                    pass
+            
+            total_deleted = sum(deleted_counts.values())
+            
+            await interaction.followup.send(
+                f"✅ **All European data wiped for Season {season}!**\n\n"
+                f"**Deleted:**\n"
+                f"- {deleted_counts['groups']} groups\n"
+                f"- {deleted_counts['group_matches']} group matches\n"
+                f"- {deleted_counts['knockout_brackets']} knockout brackets\n"
+                f"- {deleted_counts['knockout_matches']} knockout matches\n\n"
+                f"**Total records deleted: {total_deleted}**\n\n"
+                f"You can now use:\n"
+                f"- **🏆 Start European Now** to restart competitions\n"
+                f"- **🏆 Simulate European to End** to fast-forward after restarting",
+                ephemeral=True
+            )
+                
+        except Exception as e:
+            await interaction.followup.send(f"❌ Error: {e}", ephemeral=True)
+            import traceback
+            traceback.print_exc()
+    
     async def _diagnose_npcs(self, interaction: discord.Interaction):
         """Diagnose NPC stat issues"""
         await interaction.response.defer(ephemeral=True)
         
-        # Sample Championship NPCs
         async with db.pool.acquire() as conn:
             npcs = await conn.fetch("""
                 SELECT 
@@ -607,7 +749,6 @@ class AdminCommands(commands.Cog):
             stat_text = ""
             has_issue = False
             
-            # Check each stat
             stats_to_check = {
                 'Pace': npc['pace'],
                 'Shooting': npc['shooting'],
@@ -634,7 +775,6 @@ class AdminCommands(commands.Cog):
                 inline=False
             )
         
-        # Summary
         if all_good:
             embed.color = discord.Color.green()
             embed.set_footer(text="✅ All NPCs have complete stats!")
@@ -651,7 +791,6 @@ class AdminCommands(commands.Cog):
         try:
             import random
             
-            # Create sandbox teams with random players
             home_team = self._create_sandbox_team("Test United", "Premier League")
             away_team = self._create_sandbox_team("Sandbox City", "Championship")
             away_team['home_advantage'] = False
@@ -672,10 +811,8 @@ class AdminCommands(commands.Cog):
             await interaction.followup.send(embed=embed)
             await interaction.followup.send("⚙️ Simulating match... (sandbox - no DB changes)")
             
-            # Import your match engine
             from utils.match_engine import simulate_match
             
-            # Create match object (adjust based on your match_engine function signature)
             sandbox_match = {
                 'home_team': home_team,
                 'away_team': away_team,
@@ -684,10 +821,8 @@ class AdminCommands(commands.Cog):
                 'competition': 'Premier League',
             }
             
-            # Run the simulation (this is a sandbox - no DB writes)
             match_result = await simulate_match(sandbox_match)
             
-            # Display results
             result_embed = discord.Embed(
                 title="⚽ Match Result",
                 description=f"**{match_result['home_goals']} - {match_result['away_goals']}**",
@@ -710,7 +845,6 @@ class AdminCommands(commands.Cog):
                 inline=True
             )
             
-            # Show goalscorers if available
             if match_result.get('events'):
                 goals = [e for e in match_result['events'] if e['type'] == 'goal']
                 if goals:
@@ -721,7 +855,6 @@ class AdminCommands(commands.Cog):
             
             await interaction.followup.send(embed=result_embed)
             
-            # Optional: Show detailed stats
             if match_result.get('detailed_stats'):
                 stats_embed = discord.Embed(
                     title="📊 Detailed Match Stats",
@@ -745,10 +878,7 @@ class AdminCommands(commands.Cog):
             traceback.print_exc()
     
     def _create_sandbox_team(self, team_name: str, league: str) -> dict:
-        """
-        Create a sandbox team with random players for testing
-        Does NOT interact with database
-        """
+        """Create a sandbox team with random players for testing"""
         import random
         
         positions = ['GK', 'CB', 'CB', 'LB', 'RB', 'CM', 'CM', 'CAM', 'LW', 'RW', 'ST']
@@ -768,7 +898,7 @@ class AdminCommands(commands.Cog):
                 'dribbling': base_rating + random.randint(-3, 3),
                 'defending': base_rating + random.randint(-3, 3),
                 'physical': base_rating + random.randint(-3, 3),
-                'form': random.randint(6, 10) / 10,  # 0.6 to 1.0
+                'form': random.randint(6, 10) / 10,
                 'fitness': random.randint(85, 100),
             }
             players.append(player)
@@ -831,168 +961,3 @@ class ConfirmEuropeanWipeView(discord.ui.View):
 
 async def setup(bot):
     await bot.add_cog(AdminCommands(bot))
-            traceback.print_exc()
-    
-    async def _simulate_european_to_end(self, interaction: discord.Interaction):
-        """SIMULATE ENTIRE EUROPEAN SEASON TO COMPLETION"""
-        await interaction.response.defer()
-        
-        try:
-            state = await db.get_game_state()
-            current_week = state['current_week']
-            season = state['current_season']
-            
-            # ✅ Check if started first
-            async with db.pool.acquire() as conn:
-                existing_groups = await conn.fetchval(
-                    "SELECT COUNT(*) FROM european_groups WHERE season = $1", 
-                    season
-                )
-                
-                if existing_groups == 0:
-                    await interaction.followup.send(
-                        f"❌ **European competitions haven't started yet for Season {season}!**\n\n"
-                        f"Use **🏆 Start European Now** first.",
-                        ephemeral=True
-                    )
-                    return
-            
-            await interaction.followup.send(
-                f"🏆 Simulating ENTIRE European season to completion!\n"
-                f"Current Week: {current_week}\n\n"
-                f"This will simulate:\n"
-                f"- All remaining group matches\n"
-                f"- All knockout rounds\n"
-                f"- Determine champions\n\n"
-                f"Processing... (may take 30-60 seconds)",
-                ephemeral=True
-            )
-            
-            from utils.european_mid_season import simulate_full_european_season
-            
-            results = await simulate_full_european_season(season, current_week)
-            
-            await interaction.followup.send(
-                f"✅ European season simulated to completion!\n\n"
-                f"**Results:**\n"
-                f"- Group matches: {results['group_matches']}\n"
-                f"- Knockout matches: {results['knockout_matches']}\n\n"
-                f"**Champions:**\n"
-                f"🏆 CL Winner: {results['cl_winner']}\n"
-                f"🏆 EL Winner: {results['el_winner']}\n\n"
-                f"Use `/knockout_bracket` to see full bracket!",
-                ephemeral=True
-            )
-                
-        except Exception as e:
-            await interaction.followup.send(f"❌ Error: {e}", ephemeral=True)
-            import traceback
-            traceback.print_exc()
-    
-    async def _wipe_european(self, interaction: discord.Interaction):
-        """WIPE ALL EUROPEAN DATA AND START FRESH"""
-        
-        # Confirmation dialog
-        view = ConfirmEuropeanWipeView()
-        await interaction.response.send_message(
-            "⚠️ **WARNING: WIPE ALL EUROPEAN COMPETITION DATA?**\n\n"
-            "This will delete:\n"
-            "- All groups\n"
-            "- All group matches\n"
-            "- All knockout brackets\n"
-            "- All knockout matches\n\n"
-            "You can then use **🏆 Start European Now** to restart from scratch.\n\n"
-            "**This cannot be undone!**",
-            view=view,
-            ephemeral=True
-        )
-        
-        await view.wait()
-        
-        if not view.confirmed:
-            return
-        
-        try:
-            state = await db.get_game_state()
-            season = state['current_season']
-            
-            deleted_counts = {
-                'groups': 0,
-                'group_matches': 0,
-                'knockout_brackets': 0,
-                'knockout_matches': 0
-            }
-            
-            async with db.pool.acquire() as conn:
-                # Delete from each European table - try/except handles missing columns gracefully
-                
-                # european_knockout
-                try:
-                    result = await conn.execute(
-                        "DELETE FROM european_knockout WHERE season = $1", 
-                        season
-                    )
-                    deleted_counts['knockout_brackets'] = int(result.split()[-1]) if result else 0
-                except Exception as e:
-                    print(f"Could not delete from european_knockout: {e}")
-                
-                # european_fixtures
-                try:
-                    result = await conn.execute(
-                        "DELETE FROM european_fixtures WHERE season = $1", 
-                        season
-                    )
-                    deleted_counts['knockout_matches'] = int(result.split()[-1]) if result else 0
-                except Exception as e:
-                    print(f"Could not delete from european_fixtures: {e}")
-                
-                # european_groups
-                try:
-                    result = await conn.execute(
-                        "DELETE FROM european_groups WHERE season = $1", 
-                        season
-                    )
-                    deleted_counts['groups'] = int(result.split()[-1]) if result else 0
-                except Exception as e:
-                    print(f"Could not delete from european_groups: {e}")
-                
-                # Also check for player European stats if it exists
-                try:
-                    result = await conn.execute(
-                        "DELETE FROM player_european_stats WHERE season = $1", 
-                        season
-                    )
-                    # Don't track count for this one
-                except:
-                    pass
-                
-                # Also check for any npc performance data if it exists
-                try:
-                    result = await conn.execute(
-                        "DELETE FROM european_npc_performance WHERE season = $1", 
-                        season
-                    )
-                    # Don't track count for this one
-                except:
-                    pass
-            
-            total_deleted = sum(deleted_counts.values())
-            
-            await interaction.followup.send(
-                f"✅ **All European data wiped for Season {season}!**\n\n"
-                f"**Deleted:**\n"
-                f"- {deleted_counts['groups']} groups\n"
-                f"- {deleted_counts['group_matches']} group matches\n"
-                f"- {deleted_counts['knockout_brackets']} knockout brackets\n"
-                f"- {deleted_counts['knockout_matches']} knockout matches\n\n"
-                f"**Total records deleted: {total_deleted}**\n\n"
-                f"You can now use:\n"
-                f"- **🏆 Start European Now** to restart competitions\n"
-                f"- **🏆 Simulate European to End** to fast-forward after restarting",
-                ephemeral=True
-            )
-                
-        except Exception as e:
-            await interaction.followup.send(f"❌ Error: {e}", ephemeral=True)
-            import traceback
-            traceback.print_exc()
