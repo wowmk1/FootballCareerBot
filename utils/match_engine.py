@@ -1,17 +1,11 @@
 """
 CRITICAL FIXES:
-1. ✅ Match stats now properly increment (goals, assists, actions)
-2. ✅ Match rating properly retrieved for MOTM display
-3. ✅ All counters working correctly
-4. ✅ MOTM DM notification added
-5. ✅ Hat-trick notification added
-6. ✅ Red card suspension notification added
-7. ✅ Form update now uses CORRECT match ratings from database
-8. ✅ Action buttons now verify user identity - prevents cross-player interference
-9. ✅ MEMORY LEAK FIXED - Auto-cleanup of old matches every hour
-10. ✅ European competition support added
-11. ✅ ENHANCED D20 SYSTEM - Weighted stats (70/30), position bonuses, accurate probabilities
-12. ✅ FOLLOW-UP ACTIONS - Dynamic gameplay with realistic chains (all positions)
+1. ✅ defending_team parameter added - match no longer freezes
+2. ✅ Combined crests display (both teams side-by-side like european.py)
+3. ✅ Enhanced action descriptions with follow-up info
+4. ✅ Recommended action highlighted
+5. ✅ Duplicate match cleanup on restart
+6. ✅ All previous features maintained
 """
 import discord
 from discord.ext import commands
@@ -44,11 +38,67 @@ class MatchEngine:
         self._last_cleanup = datetime.now()
         self._match_timestamps: Dict[int, datetime] = {}
         
-        # NEW: Track yellow cards per match (match_id -> {user_id: yellow_count})
         self.match_yellow_cards: Dict[int, Dict[int, int]] = {}
-        
-        # NEW: Track match statistics (match_id -> stats)
         self.match_stats: Dict[int, dict] = {}
+
+    # ═══════════════════════════════════════════════════════════════
+    # HELPER: Generate combined crests image (like european.py)
+    # ═══════════════════════════════════════════════════════════════
+    
+    async def generate_crests_image(self, home_url, away_url):
+        """Generate combined image with both crests side by side"""
+        try:
+            from io import BytesIO
+            from PIL import Image
+            import aiohttp
+            
+            async with aiohttp.ClientSession() as session:
+                home_img_bytes = None
+                away_img_bytes = None
+                
+                if home_url:
+                    try:
+                        async with session.get(home_url, timeout=aiohttp.ClientTimeout(total=5)) as r:
+                            if r.status == 200:
+                                home_img_bytes = await r.read()
+                    except:
+                        pass
+                
+                if away_url:
+                    try:
+                        async with session.get(away_url, timeout=aiohttp.ClientTimeout(total=5)) as r:
+                            if r.status == 200:
+                                away_img_bytes = await r.read()
+                    except:
+                        pass
+            
+            size = (100, 100)
+            padding = 40
+            width = size[0] * 2 + padding
+            height = size[1]
+            img = Image.new("RGBA", (width, height), (255, 255, 255, 0))
+            
+            if home_img_bytes:
+                try:
+                    home = Image.open(BytesIO(home_img_bytes)).convert("RGBA").resize(size)
+                    img.paste(home, (0, 0), home)
+                except:
+                    pass
+            
+            if away_img_bytes:
+                try:
+                    away = Image.open(BytesIO(away_img_bytes)).convert("RGBA").resize(size)
+                    img.paste(away, (size[0] + padding, 0), away)
+                except:
+                    pass
+            
+            buffer = BytesIO()
+            img.save(buffer, format="PNG")
+            buffer.seek(0)
+            return buffer
+        except Exception as e:
+            print(f"Error generating crests image: {e}")
+            return None
 
     async def cleanup_old_matches(self):
         """Remove matches older than 6 hours from memory"""
@@ -63,7 +113,6 @@ class MatchEngine:
                 removed_matches += 1
                 if match_id in self._match_timestamps:
                     del self._match_timestamps[match_id]
-                # Clean up match-specific tracking
                 if match_id in self.match_yellow_cards:
                     del self.match_yellow_cards[match_id]
                 if match_id in self.match_stats:
@@ -89,10 +138,6 @@ class MatchEngine:
         if datetime.now() - self._last_cleanup > timedelta(hours=1):
             await self.cleanup_old_matches()
 
-    # ═══════════════════════════════════════════════════════════════
-    # NEW FEATURES: HOME ADVANTAGE, STATS, CARDS, SET PIECES
-    # ═══════════════════════════════════════════════════════════════
-    
     def initialize_match_stats(self, match_id, home_participants, away_participants):
         """Initialize match statistics tracking"""
         self.match_stats[match_id] = {
@@ -119,7 +164,6 @@ class MatchEngine:
         stats = self.match_stats[match_id][team_side]
         stats['actions'] += 1
         
-        # Track specific actions
         if action in ['shoot', 'header']:
             stats['shots'] += 1
             if success:
@@ -135,7 +179,6 @@ class MatchEngine:
             if success:
                 stats['tackles_won'] += 1
         
-        # Update possession based on action success (simple approximation)
         if success:
             stats['possession'] = min(70, stats['possession'] + 1)
             opponent = 'away' if team_side == 'home' else 'home'
@@ -146,7 +189,6 @@ class MatchEngine:
         if not is_home:
             return 0
         
-        # Home advantage: +2 to most actions, +3 for attacking actions
         attacking_positions = ['ST', 'W', 'CAM']
         if player_position in attacking_positions:
             return 3
@@ -166,13 +208,11 @@ class MatchEngine:
             color=discord.Color.gold()
         )
         
-        # Check for second yellow = red card
         if current_yellows >= 1:
             embed.title = "🟥 SECOND YELLOW = RED CARD!"
             embed.description = f"**{player['player_name']}** sent off!\n\n⚠️ **SUSPENDED FOR NEXT MATCH**"
             embed.color = discord.Color.red()
             
-            # Penalize rating heavily
             async with db.pool.acquire() as conn:
                 await conn.execute("""
                     UPDATE match_participants
@@ -180,12 +220,10 @@ class MatchEngine:
                     WHERE match_id = $1 AND user_id = $2
                 """, match_id, user_id)
             
-            # Send DM notification
             await self.send_red_card_notification(player, {'team_name': 'Team'}, {'team_name': 'Opposition'})
         else:
             self.match_yellow_cards[match_id][user_id] = current_yellows + 1
             
-            # Small rating penalty
             async with db.pool.acquire() as conn:
                 await conn.execute("""
                     UPDATE match_participants
@@ -194,13 +232,11 @@ class MatchEngine:
                 """, match_id, user_id)
         
         await channel.send(embed=embed)
-        print(f"🟨 Yellow card given to {player['player_name']}")
     
     async def handle_set_piece(self, channel, attacking_team, defending_team, minute, match_id, is_european=False):
         """Handle corner kick or free kick"""
         set_piece_type = random.choice(['corner', 'free_kick'])
         
-        # Get best taker
         async with db.pool.acquire() as conn:
             if is_european:
                 if set_piece_type == 'corner':
@@ -242,9 +278,7 @@ class MatchEngine:
         await channel.send(embed=embed)
         await asyncio.sleep(2)
         
-        # Set piece calculation
         if set_piece_type == 'free_kick':
-            # Direct free kick: 12% goal chance (realistic)
             roll = random.randint(1, 100)
             success_threshold = min(95, 12 + (taker['shooting'] - 70) // 2)
             
@@ -256,7 +290,6 @@ class MatchEngine:
                 )
                 await channel.send(embed=result_embed)
                 
-                # Update NPC stats
                 async with db.pool.acquire() as conn:
                     if is_european and 'european_npc_id' in taker:
                         await conn.execute("""
@@ -278,13 +311,11 @@ class MatchEngine:
                 )
                 await channel.send(embed=result_embed)
         
-        else:  # Corner kick
-            # Corner: 25% goal chance (realistic for corners)
+        else:
             roll = random.randint(1, 100)
             success_threshold = min(95, 25 + (taker['passing'] - 70) // 2)
             
             if roll <= success_threshold:
-                # Get header specialist
                 async with db.pool.acquire() as conn:
                     if is_european:
                         header_player = await conn.fetchrow("""
@@ -308,7 +339,6 @@ class MatchEngine:
                     )
                     await channel.send(embed=result_embed)
                     
-                    # Update stats
                     async with db.pool.acquire() as conn:
                         if is_european and 'european_npc_id' in header_player:
                             await conn.execute("""
@@ -340,7 +370,6 @@ class MatchEngine:
         home_stats = self.match_stats[match_id]['home']
         away_stats = self.match_stats[match_id]['away']
         
-        # Calculate percentages
         home_pass_pct = int((home_stats['passes_completed'] / max(1, home_stats['passes_attempted'])) * 100)
         away_pass_pct = int((away_stats['passes_completed'] / max(1, away_stats['passes_attempted'])) * 100)
         
@@ -392,37 +421,24 @@ class MatchEngine:
         await channel.send(embed=embed)
 
     # ═══════════════════════════════════════════════════════════════
-    # ENHANCED D20 SYSTEM - NEW FUNCTIONS
+    # ENHANCED D20 SYSTEM
     # ═══════════════════════════════════════════════════════════════
 
     def get_action_stats(self, action):
-        """
-        Returns weighted stat configuration for each action
-        Format: (attacker_primary, attacker_secondary, defender_primary, defender_secondary)
-        Primary = 70% weight, Secondary = 30% weight
-        """
+        """Returns weighted stat configuration for each action"""
         stat_configs = {
-            # SHOOTING
             'shoot': ('shooting', 'physical', 'defending', 'physical'),
             'header': ('physical', 'shooting', 'physical', 'defending'),
-            
-            # PASSING
             'pass': ('passing', 'dribbling', 'pace', 'defending'),
             'through_ball': ('passing', 'dribbling', 'pace', 'defending'),
             'key_pass': ('passing', 'dribbling', 'defending', 'pace'),
             'cross': ('passing', 'physical', 'physical', 'defending'),
             'long_ball': ('passing', 'physical', 'pace', 'defending'),
-            
-            # DRIBBLING
             'dribble': ('dribbling', 'pace', 'defending', 'pace'),
             'cut_inside': ('dribbling', 'pace', 'defending', 'pace'),
             'overlap': ('pace', 'physical', 'pace', 'defending'),
             'run_in_behind': ('pace', 'dribbling', 'pace', 'defending'),
-            
-            # PHYSICAL
             'hold_up_play': ('physical', 'dribbling', 'physical', 'defending'),
-            
-            # DEFENSIVE
             'tackle': ('defending', 'physical', 'dribbling', 'physical'),
             'clearance': ('defending', 'physical', 'shooting', 'pace'),
             'interception': ('defending', 'pace', 'passing', 'pace'),
@@ -432,8 +448,6 @@ class MatchEngine:
             'cover': ('defending', 'pace', 'passing', 'pace'),
             'track_runner': ('pace', 'defending', 'pace', 'dribbling'),
             'press_defender': ('pace', 'physical', 'passing', 'dribbling'),
-            
-            # GOALKEEPER
             'save': ('defending', 'physical', 'shooting', 'physical'),
             'claim_cross': ('physical', 'defending', 'passing', 'physical'),
             'distribution': ('passing', 'physical', 'pace', 'defending'),
@@ -451,37 +465,21 @@ class MatchEngine:
     def get_position_bonus(self, position, action):
         """Position-specific bonuses to d20 rolls"""
         bonuses = {
-            'ST': {
-                'shoot': 3, 'header': 2, 'hold_up_play': 2, 'run_in_behind': 2
-            },
-            'W': {
-                'dribble': 3, 'cross': 2, 'cut_inside': 2, 'overlap': 2
-            },
-            'CAM': {
-                'pass': 2, 'through_ball': 3, 'key_pass': 3, 'shoot': 1
-            },
-            'CM': {
-                'pass': 2, 'tackle': 2, 'interception': 2, 'long_ball': 2
-            },
-            'CDM': {
-                'tackle': 3, 'interception': 3, 'block': 2, 'cover': 2
-            },
-            'FB': {
-                'tackle': 2, 'cross': 2, 'overlap': 2, 'clearance': 2, 'track_runner': 2
-            },
-            'CB': {
-                'tackle': 3, 'clearance': 3, 'block': 3, 'header': 2, 'interception': 2
-            },
-            'GK': {
-                'save': 5, 'claim_cross': 3, 'distribution': 1, 'sweep': 2
-            }
+            'ST': {'shoot': 3, 'header': 2, 'hold_up_play': 2, 'run_in_behind': 2},
+            'W': {'dribble': 3, 'cross': 2, 'cut_inside': 2, 'overlap': 2},
+            'CAM': {'pass': 2, 'through_ball': 3, 'key_pass': 3, 'shoot': 1},
+            'CM': {'pass': 2, 'tackle': 2, 'interception': 2, 'long_ball': 2},
+            'CDM': {'tackle': 3, 'interception': 3, 'block': 2, 'cover': 2},
+            'FB': {'tackle': 2, 'cross': 2, 'overlap': 2, 'clearance': 2, 'track_runner': 2},
+            'CB': {'tackle': 3, 'clearance': 3, 'block': 3, 'header': 2, 'interception': 2},
+            'GK': {'save': 5, 'claim_cross': 3, 'distribution': 1, 'sweep': 2}
         }
         return bonuses.get(position, {}).get(action, 0)
 
     def calculate_d20_success_probability(self, player_stat, defender_stat):
         """Calculate exact probability that (player_stat + d20) > (defender_stat + d20)"""
         if defender_stat == 0:
-            return 55  # No defender = need 10+ on d20
+            return 55
         
         stat_diff = defender_stat - player_stat
         wins = 0
@@ -499,88 +497,50 @@ class MatchEngine:
     # ═══════════════════════════════════════════════════════════════
 
     def get_followup_config(self, action, success):
-        """
-        Defines realistic follow-up chances after actions
-        NOW WORKS FOR ALL POSITION MATCHUPS (midfield vs midfield, etc.)
-        """
+        """Defines realistic follow-up chances after actions"""
         followups = {
-            # SUCCESSFUL ACTIONS
-            'dribble_success': {
-                'chance': 0.30,  # 30% - beating defender doesn't always = shot
-                'type': 'shooting_chance',
-                'desc': "Space created! Shooting opportunity..."
-            },
-            'cut_inside_success': {
-                'chance': 0.40,  # 40% - wingers cutting in often shoot
-                'type': 'shooting_chance',
-                'desc': "Cut onto strong foot! Shot incoming..."
-            },
-            'tackle_success': {
-                'chance': 0.40,  # 40% - winning ball often leads to break
-                'type': 'counter_attack',
-                'desc': "Ball won! Counter-attack developing..."
-            },
-            'interception_success': {
-                'chance': 0.40,  # 40% - reading play leads to breaks
-                'type': 'counter_attack',
-                'desc': "Intercepted! Quick break on..."
-            },
-            'hold_up_play_success': {
-                'chance': 0.25,  # 25% - not every hold-up creates chance
-                'type': 'layoff_pass',
-                'desc': "Held up! Teammate making run..."
-            },
-            'run_in_behind_success': {
-                'chance': 0.60,  # 60% - beating trap = usually through
-                'type': '1v1_keeper',
-                'desc': "Through on goal! One-on-one!"
-            },
-            'block_success': {
-                'chance': 0.20,  # 20% - most blocks go away
-                'type': 'loose_ball',
-                'desc': "Blocked! Ball ricochets loose..."
-            },
-            'save_success': {
-                'chance': 0.25,  # 25% - GK can start counter
-                'type': 'distribution_counter',
-                'desc': "Great save! Launch counter?"
-            },
-            'header_success': {
-                'chance': 0.15,  # 15% - headers can lead to scrambles
-                'type': 'loose_ball',
-                'desc': "Header! Ball drops loose..."
-            },
-            
-            # FAILED ACTIONS
-            'shoot_fail': {
-                'chance': 0.15,  # 15% - most shots go away
-                'type': 'rebound',
-                'desc': "Shot blocked! Rebound..."
-            },
-            'header_fail': {
-                'chance': 0.20,  # 20% - missed headers often fall to someone
-                'type': 'loose_ball',
-                'desc': "Missed header! Loose ball..."
-            },
-            'clearance_fail': {
-                'chance': 0.35,  # 35% - poor clearances dangerous
-                'type': 'falls_to_attacker',
-                'desc': "Poor clearance! Falls to attacker..."
-            },
-            'pass_fail': {
-                'chance': 0.25,  # 25% - interceptions can lead to counters
-                'type': 'interception_counter',
-                'desc': "Intercepted! They break..."
-            },
-            'dribble_fail': {
-                'chance': 0.20,  # 20% - losing ball can be dangerous
-                'type': 'dispossessed_counter',
-                'desc': "Dispossessed! Counter on..."
-            },
+            'dribble_success': {'chance': 0.30, 'type': 'shooting_chance', 'desc': "Space created! Shooting opportunity..."},
+            'cut_inside_success': {'chance': 0.40, 'type': 'shooting_chance', 'desc': "Cut onto strong foot! Shot incoming..."},
+            'tackle_success': {'chance': 0.40, 'type': 'counter_attack', 'desc': "Ball won! Counter-attack developing..."},
+            'interception_success': {'chance': 0.40, 'type': 'counter_attack', 'desc': "Intercepted! Quick break on..."},
+            'hold_up_play_success': {'chance': 0.25, 'type': 'layoff_pass', 'desc': "Held up! Teammate making run..."},
+            'run_in_behind_success': {'chance': 0.60, 'type': '1v1_keeper', 'desc': "Through on goal! One-on-one!"},
+            'block_success': {'chance': 0.20, 'type': 'loose_ball', 'desc': "Blocked! Ball ricochets loose..."},
+            'save_success': {'chance': 0.25, 'type': 'distribution_counter', 'desc': "Great save! Launch counter?"},
+            'header_success': {'chance': 0.15, 'type': 'loose_ball', 'desc': "Header! Ball drops loose..."},
+            'shoot_fail': {'chance': 0.15, 'type': 'rebound', 'desc': "Shot blocked! Rebound..."},
+            'header_fail': {'chance': 0.20, 'type': 'loose_ball', 'desc': "Missed header! Loose ball..."},
+            'clearance_fail': {'chance': 0.35, 'type': 'falls_to_attacker', 'desc': "Poor clearance! Falls to attacker..."},
+            'pass_fail': {'chance': 0.25, 'type': 'interception_counter', 'desc': "Intercepted! They break..."},
+            'dribble_fail': {'chance': 0.20, 'type': 'dispossessed_counter', 'desc': "Dispossessed! Counter on..."},
         }
         
         key = f"{action}_{'success' if success else 'fail'}"
         return followups.get(key, None)
+    
+    def get_followup_description(self, action):
+        """Get follow-up action description for display"""
+        followup_info = {
+            'shoot': "Success: May create rebound (15%) | Fail: Possible rebound (15%)",
+            'header': "Success: Ball may drop loose (15%) | Fail: Loose ball (20%)",
+            'pass': "Success: 35% teammate scores (assist) | Fail: Counter risk (25%)",
+            'through_ball': "Success: 40% teammate scores (assist) | Fail: Intercepted",
+            'key_pass': "Success: 45% teammate scores (assist) | Fail: Defended",
+            'cross': "Success: 40% teammate scores (assist) | Fail: Cleared",
+            'dribble': "Success: 30% shooting chance | Fail: Counter risk (20%)",
+            'cut_inside': "Success: 40% shooting chance | Fail: Closed down",
+            'tackle': "Success: 40% launch counter | Fail: Beaten/foul risk",
+            'interception': "Success: 40% counter-attack | Fail: Miss the ball",
+            'hold_up_play': "Success: 25% layoff to teammate | Fail: Dispossessed",
+            'run_in_behind': "Success: 60% 1v1 with keeper! | Fail: Offside/caught",
+            'block': "Success: 20% loose ball | Fail: Shot through",
+            'clearance': "Success: Safety | Fail: 35% falls to attacker",
+            'save': "Success: 25% start counter | Fail: Goal",
+            'press': "Success: Win ball | Fail: Bypassed",
+            'track_back': "Success: Stop attack | Fail: Too slow",
+            'cover': "Success: Stop attack | Fail: Exposed",
+        }
+        return followup_info.get(action, "No follow-up")
 
     async def handle_followup_action(self, channel, action, success, player, attacking_team,
                                      defending_team, match_id, is_european=False):
@@ -590,7 +550,6 @@ class MatchEngine:
         if not config or random.random() > config['chance']:
             return None
         
-        # Show follow-up developing
         followup_embed = discord.Embed(
             title="⚡ FOLLOW-UP!",
             description=config['desc'],
@@ -599,7 +558,6 @@ class MatchEngine:
         await channel.send(embed=followup_embed)
         await asyncio.sleep(1.5)
         
-        # Execute based on type - PASS PLAYER INFO FOR RATING UPDATES
         if config['type'] == 'shooting_chance':
             return await self.followup_shooting_chance(channel, player, attacking_team, 
                                                       defending_team, match_id, is_european)
@@ -616,7 +574,7 @@ class MatchEngine:
             return await self.followup_layoff_pass(channel, player, attacking_team, 
                                                   match_id, is_european)
         elif config['type'] == 'loose_ball':
-            return await self.followup_loose_ball(channel, player, attacking_team, defending_team, 
+            return await self.followup_loose_ball(channel, attacking_team, defending_team, 
                                                  match_id, is_european)
         elif config['type'] == 'falls_to_attacker':
             return await self.followup_long_shot(channel, player, attacking_team, match_id, is_european)
@@ -631,7 +589,6 @@ class MatchEngine:
         """After successful dribble - you get a shot!"""
         adjusted_stats = self.apply_form_to_stats(player)
         
-        # Get keeper
         async with db.pool.acquire() as conn:
             if is_european:
                 keeper = await conn.fetchrow("""
@@ -647,7 +604,6 @@ class MatchEngine:
                 """, defending_team['team_id'])
             keeper = dict(keeper) if keeper else None
         
-        # Shot calculation
         att_p, att_s, def_p, def_s = self.get_action_stats('shoot')
         player_stat = self.calculate_weighted_stat(adjusted_stats, att_p, att_s)
         position_bonus = self.get_position_bonus(player['position'], 'shoot')
@@ -658,7 +614,7 @@ class MatchEngine:
         if keeper:
             keeper_stat = self.calculate_weighted_stat(keeper, def_p, def_s)
             keeper_roll = random.randint(1, 20)
-            keeper_total = keeper_stat + keeper_roll + 5  # GK bonus
+            keeper_total = keeper_stat + keeper_roll + 5
         else:
             keeper_total = 0
         
@@ -704,7 +660,6 @@ class MatchEngine:
         await channel.send(embed=embed)
         await asyncio.sleep(1)
         
-        # Get keeper
         async with db.pool.acquire() as conn:
             if is_european:
                 keeper = await conn.fetchrow("""
@@ -728,7 +683,6 @@ class MatchEngine:
         player_total = player_stat + player_roll + 3
         keeper_total = keeper_stat + keeper_roll
         
-        # 65% chance to score in 1v1 (realistic)
         is_goal = player_total > keeper_total
         
         result_embed = discord.Embed(
@@ -764,7 +718,7 @@ class MatchEngine:
 
     async def followup_counter_attack(self, channel, player, attacking_team, defending_team, 
                                      match_id, is_european=False):
-        """Quick counter-attack - NOW CREDITS THE PLAYER WHO WON THE BALL"""
+        """Quick counter-attack"""
         embed = discord.Embed(
             title="⚡💨 COUNTER-ATTACK!",
             description=f"**{attacking_team['team_name']}** breaks forward!",
@@ -773,7 +727,6 @@ class MatchEngine:
         await channel.send(embed=embed)
         await asyncio.sleep(1)
         
-        # Get fast attacker
         async with db.pool.acquire() as conn:
             if is_european:
                 attacker = await conn.fetchrow("""
@@ -796,7 +749,6 @@ class MatchEngine:
         roll = random.randint(1, 20)
         total = counter_stat + roll + 5
         
-        # 25% realistic counter goal rate
         is_goal = total >= 95
         
         result_embed = discord.Embed(
@@ -811,7 +763,6 @@ class MatchEngine:
                 inline=False
             )
             
-            # ═══ CREDIT THE PLAYER WHO WON THE BALL! ═══
             if player:
                 result_embed.add_field(
                     name="🎯 Key Contribution",
@@ -825,9 +776,7 @@ class MatchEngine:
                         SET match_rating = GREATEST(0.0, LEAST(10.0, match_rating + 0.6))
                         WHERE match_id = $1 AND user_id = $2
                     """, match_id, player['user_id'])
-                print(f"  ⚡ Counter goal credit: +0.6 rating to {player['player_name']}")
             
-            # Update NPC stats
             async with db.pool.acquire() as conn:
                 if is_european and 'european_npc_id' in attacker:
                     await conn.execute("""
@@ -845,7 +794,6 @@ class MatchEngine:
                 inline=False
             )
             
-            # Small credit for winning ball even if counter failed
             if player:
                 async with db.pool.acquire() as conn:
                     await conn.execute("""
@@ -858,7 +806,7 @@ class MatchEngine:
         return {'goal': is_goal, 'scorer_name': attacker['player_name'] if is_goal else None}
 
     async def followup_rebound(self, channel, player, attacking_team, defending_team, match_id, is_european=False):
-        """Rebound falls to teammate - NOW CREDITS THE ORIGINAL SHOOTER"""
+        """Rebound falls to teammate"""
         async with db.pool.acquire() as conn:
             if is_european:
                 attacker = await conn.fetchrow("""
@@ -895,7 +843,6 @@ class MatchEngine:
                 inline=False
             )
             
-            # ═══ CREDIT THE ORIGINAL SHOOTER! ═══
             if player:
                 result_embed.add_field(
                     name="🎯 Created Chance",
@@ -909,9 +856,7 @@ class MatchEngine:
                         SET match_rating = GREATEST(0.0, LEAST(10.0, match_rating + 0.4))
                         WHERE match_id = $1 AND user_id = $2
                     """, match_id, player['user_id'])
-                print(f"  🔄 Rebound goal credit: +0.4 rating to {player['player_name']}")
             
-            # Update NPC stats
             async with db.pool.acquire() as conn:
                 if is_european and 'european_npc_id' in attacker:
                     await conn.execute("""
@@ -992,7 +937,7 @@ class MatchEngine:
         await channel.send(embed=result_embed)
         return None
 
-    async def followup_loose_ball(self, channel, attacking_team, defending_team, is_european=False):
+    async def followup_loose_ball(self, channel, attacking_team, defending_team, match_id, is_european=False):
         """50-50 ball"""
         async with db.pool.acquire() as conn:
             if is_european:
@@ -1036,7 +981,7 @@ class MatchEngine:
         return None
 
     async def followup_long_shot(self, channel, player, attacking_team, match_id, is_european=False):
-        """Long shot from edge of box - NOW PENALIZES POOR CLEARANCES"""
+        """Long shot from edge of box"""
         async with db.pool.acquire() as conn:
             if is_european:
                 attacker = await conn.fetchrow("""
@@ -1064,7 +1009,7 @@ class MatchEngine:
         await asyncio.sleep(1)
         
         shot_total = attacker['shooting'] + random.randint(1, 20)
-        is_goal = shot_total >= 98  # Long shots very difficult
+        is_goal = shot_total >= 98
         
         result_embed = discord.Embed(
             title="🚀 LONG RANGE!",
@@ -1078,7 +1023,6 @@ class MatchEngine:
                 inline=False
             )
             
-            # ═══ PENALIZE PLAYER FOR POOR CLEARANCE LEADING TO GOAL ═══
             if player:
                 result_embed.add_field(
                     name="⚠️ Poor Clearance",
@@ -1092,9 +1036,7 @@ class MatchEngine:
                         SET match_rating = GREATEST(0.0, LEAST(10.0, match_rating - 0.3))
                         WHERE match_id = $1 AND user_id = $2
                     """, match_id, player['user_id'])
-                print(f"  ❌ Poor clearance led to goal: -0.3 rating to {player['player_name']}")
             
-            # Update NPC stats
             async with db.pool.acquire() as conn:
                 if is_european and 'european_npc_id' in attacker:
                     await conn.execute("""
@@ -1113,140 +1055,66 @@ class MatchEngine:
         await channel.send(embed=result_embed)
         return None
 
-    # ═══════════════════════════════════════════════════════════════
-    # ORIGINAL FUNCTIONS (keeping everything else the same)
-    # ═══════════════════════════════════════════════════════════════
+    async def followup_interception_counter(self, channel, player, defending_team, attacking_team, match_id, is_european=False):
+        """When your pass is intercepted - they counter"""
+        return await self.followup_counter_attack(channel, None, defending_team, attacking_team, match_id, is_european)
 
     def get_contextual_defender_positions(self, player_position, action):
-        """
-        Get realistic defender positions based on player position and action
-        Returns list of positions that would realistically oppose this action
-        """
-        
-        # Position-based matchups
+        """Get realistic defender positions based on player position and action"""
         matchups = {
-            # STRIKERS face CBs primarily, occasionally CDMs
-            'ST': {
-                'shoot': ['CB', 'GK'],
-                'header': ['CB', 'FB'],
-                'hold_up_play': ['CB', 'CDM'],
-                'run_in_behind': ['CB', 'FB'],
-                'pass': ['CB', 'CDM']
-            },
-            
-            # WINGERS face FBs primarily, occasionally CBs or wingers tracking back
-            'W': {
-                'dribble': ['FB', 'W', 'CB'],
-                'cross': ['FB', 'CB'],
-                'cut_inside': ['FB', 'CDM', 'CB'],
-                'shoot': ['CB', 'CDM', 'GK'],
-                'track_back': ['W', 'FB']  # Defensive action
-            },
-            
-            # ATTACKING MIDS face CDMs/CMs primarily
-            'CAM': {
-                'shoot': ['CDM', 'CB', 'GK'],
-                'through_ball': ['CDM', 'CM', 'CB'],
-                'key_pass': ['CDM', 'CM'],
-                'dribble': ['CDM', 'CM', 'CB'],
-                'long_ball': ['CDM', 'CM']
-            },
-            
-            # CENTRAL MIDS face other CMs/CDMs
-            'CM': {
-                'pass': ['CM', 'CDM'],
-                'through_ball': ['CM', 'CDM', 'CB'],
-                'long_ball': ['CM', 'CDM'],
-                'tackle': ['CM', 'CAM', 'W'],  # Winning ball from attacking players
-                'shoot': ['CDM', 'CB', 'GK']
-            },
-            
-            # DEFENSIVE MIDS face CAMs/CMs/STs
-            'CDM': {
-                'tackle': ['CAM', 'CM', 'ST'],
-                'interception': ['CAM', 'CM', 'ST'],
-                'pass': ['CAM', 'CM'],
-                'block': ['CAM', 'CM', 'ST'],
-                'cover': ['CAM', 'ST']
-            },
-            
-            # FULLBACKS face wingers primarily, occasionally strikers
-            'FB': {
-                'tackle': ['W', 'ST', 'CAM'],
-                'cross': ['FB', 'CB'],  # Overlapping, opposed by defenders
-                'overlap': ['FB', 'W'],
-                'clearance': ['W', 'ST'],
-                'track_runner': ['W', 'ST']
-            },
-            
-            # CENTER BACKS face strikers primarily
-            'CB': {
-                'tackle': ['ST', 'W', 'CAM'],
-                'clearance': ['ST', 'W'],
-                'block': ['ST', 'CAM', 'CM'],
-                'header': ['ST', 'W'],
-                'pass': ['ST', 'CAM']  # When building from back
-            },
-            
-            # GOALKEEPERS face strikers
-            'GK': {
-                'save': ['ST', 'W', 'CAM', 'CM'],
-                'claim_cross': ['ST', 'W'],
-                'distribution': ['ST', 'CAM'],
-                'sweep': ['ST', 'W'],
-                'clearance': ['ST']
-            }
+            'ST': {'shoot': ['CB', 'GK'], 'header': ['CB', 'FB'], 'hold_up_play': ['CB', 'CDM'], 'run_in_behind': ['CB', 'FB'], 'pass': ['CB', 'CDM']},
+            'W': {'dribble': ['FB', 'W', 'CB'], 'cross': ['FB', 'CB'], 'cut_inside': ['FB', 'CDM', 'CB'], 'shoot': ['CB', 'CDM', 'GK'], 'track_back': ['W', 'FB']},
+            'CAM': {'shoot': ['CDM', 'CB', 'GK'], 'through_ball': ['CDM', 'CM', 'CB'], 'key_pass': ['CDM', 'CM'], 'dribble': ['CDM', 'CM', 'CB'], 'long_ball': ['CDM', 'CM']},
+            'CM': {'pass': ['CM', 'CDM'], 'through_ball': ['CM', 'CDM', 'CB'], 'long_ball': ['CM', 'CDM'], 'tackle': ['CM', 'CAM', 'W'], 'shoot': ['CDM', 'CB', 'GK']},
+            'CDM': {'tackle': ['CAM', 'CM', 'ST'], 'interception': ['CAM', 'CM', 'ST'], 'pass': ['CAM', 'CM'], 'block': ['CAM', 'CM', 'ST'], 'cover': ['CAM', 'ST']},
+            'FB': {'tackle': ['W', 'ST', 'CAM'], 'cross': ['FB', 'CB'], 'overlap': ['FB', 'W'], 'clearance': ['W', 'ST'], 'track_runner': ['W', 'ST']},
+            'CB': {'tackle': ['ST', 'W', 'CAM'], 'clearance': ['ST', 'W'], 'block': ['ST', 'CAM', 'CM'], 'header': ['ST', 'W'], 'pass': ['ST', 'CAM']},
+            'GK': {'save': ['ST', 'W', 'CAM', 'CM'], 'claim_cross': ['ST', 'W'], 'distribution': ['ST', 'CAM'], 'sweep': ['ST', 'W'], 'clearance': ['ST']}
         }
         
-        # Get appropriate positions for this matchup
         if player_position in matchups and action in matchups[player_position]:
             return matchups[player_position][action]
         
-        # Default fallback based on player position
         default_matchups = {
-            'ST': ['CB', 'CDM'],
-            'W': ['FB', 'CB'],
-            'CAM': ['CDM', 'CM'],
-            'CM': ['CM', 'CDM'],
-            'CDM': ['CAM', 'CM'],
-            'FB': ['W', 'ST'],
-            'CB': ['ST', 'W'],
-            'GK': ['ST', 'W', 'CAM']
+            'ST': ['CB', 'CDM'], 'W': ['FB', 'CB'], 'CAM': ['CDM', 'CM'], 'CM': ['CM', 'CDM'],
+            'CDM': ['CAM', 'CM'], 'FB': ['W', 'ST'], 'CB': ['ST', 'W'], 'GK': ['ST', 'W', 'CAM']
         }
         
         return default_matchups.get(player_position, ['CB', 'CDM', 'FB', 'GK'])
+
+    def get_action_description_with_followup(self, action):
         """Get detailed description with follow-up info"""
         descriptions = {
-            'shoot': "⚽ **SHOOT**: Take a shot on goal\n→ Success: Possible goal | Fail: Blocked/saved",
-            'header': "🎯 **HEADER**: Aerial challenge\n→ Success: Possible goal/clear | Fail: Defender wins",
-            'pass': "🎯 **PASS**: Find a teammate safely\n→ Success: 35% chance teammate scores (assist) | Fail: Intercepted",
-            'dribble': "💨 **DRIBBLE**: Take on defender 1v1\n→ Success: Create space, may get shooting chance | Fail: Dispossessed",
-            'tackle': "🛡️ **TACKLE**: Win the ball back\n→ Success: Gain possession | Fail: Beaten/foul",
-            'cross': "📤 **CROSS**: Deliver ball into box\n→ Success: 40% chance teammate scores (assist) | Fail: Cleared",
-            'clearance': "🚀 **CLEAR**: Get ball away from danger\n→ Success: Safety | Fail: Poor clearance",
-            'save': "🧤 **SAVE**: Stop the shot\n→ Success: Keep clean sheet | Fail: Goal conceded",
-            'through_ball': "⚡ **THROUGH BALL**: Split defense\n→ Success: 40% chance teammate scores (assist) | Fail: Intercepted",
-            'interception': "👀 **INTERCEPT**: Read and cut out pass\n→ Success: Win possession | Fail: Miss the ball",
-            'block': "🧱 **BLOCK**: Body on the line\n→ Success: Heroic block | Fail: Shot gets through",
-            'cut_inside': "↩️ **CUT INSIDE**: Move to center for shot\n→ Success: Shooting opportunity | Fail: Closed down",
-            'key_pass': "🔑 **KEY PASS**: Create clear chance\n→ Success: 45% chance teammate scores (assist) | Fail: Defended",
-            'long_ball': "📡 **LONG BALL**: Switch play/launch attack\n→ Success: Create opportunity | Fail: Intercepted",
+            'shoot': "⚽ **SHOOT**: Take a shot on goal\n→ " + self.get_followup_description('shoot'),
+            'header': "🎯 **HEADER**: Aerial challenge\n→ " + self.get_followup_description('header'),
+            'pass': "🎯 **PASS**: Find a teammate safely\n→ " + self.get_followup_description('pass'),
+            'dribble': "💨 **DRIBBLE**: Take on defender 1v1\n→ " + self.get_followup_description('dribble'),
+            'tackle': "🛡️ **TACKLE**: Win the ball back\n→ " + self.get_followup_description('tackle'),
+            'cross': "📤 **CROSS**: Deliver ball into box\n→ " + self.get_followup_description('cross'),
+            'clearance': "🚀 **CLEAR**: Get ball away from danger\n→ " + self.get_followup_description('clearance'),
+            'save': "🧤 **SAVE**: Stop the shot\n→ " + self.get_followup_description('save'),
+            'through_ball': "⚡ **THROUGH BALL**: Split defense\n→ " + self.get_followup_description('through_ball'),
+            'interception': "👀 **INTERCEPT**: Read and cut out pass\n→ " + self.get_followup_description('interception'),
+            'block': "🧱 **BLOCK**: Body on the line\n→ " + self.get_followup_description('block'),
+            'cut_inside': "↩️ **CUT INSIDE**: Move to center for shot\n→ " + self.get_followup_description('cut_inside'),
+            'key_pass': "🔑 **KEY PASS**: Create clear chance\n→ " + self.get_followup_description('key_pass'),
+            'long_ball': "📡 **LONG BALL**: Switch play/launch attack\n→ " + self.get_followup_description('long_ball'),
             'overlap': "🏃 **OVERLAP**: Run past teammate\n→ Success: Crossing opportunity | Fail: Tracked back",
             'claim_cross': "✊ **CLAIM CROSS**: Catch/punch away\n→ Success: Command box | Fail: Drop/spill",
             'distribution': "🎯 **DISTRIBUTE**: Start attack from GK\n→ Success: Launch counter | Fail: Poor pass",
-            'hold_up_play': "💪 **HOLD UP**: Shield ball for support\n→ Success: Maintain possession, pass option | Fail: Dispossessed",
-            'run_in_behind': "🏃 **RUN BEHIND**: Off-ball run\n→ Success: 1v1 with keeper possible | Fail: Offside/caught",
-            'press_defender': "⚡ **PRESS HIGH**: Force mistake\n→ Success: Win ball high | Fail: Bypassed",
-            'track_back': "🔙 **TRACK BACK**: Help defense\n→ Success: Stop attack | Fail: Too slow",
-            'press': "⚡ **PRESS**: Hunt the ball\n→ Success: Win possession | Fail: Bypassed",
-            'cover': "🛡️ **COVER**: Fill defensive gap\n→ Success: Stop attack | Fail: Exposed",
+            'hold_up_play': "💪 **HOLD UP**: Shield ball for support\n→ " + self.get_followup_description('hold_up_play'),
+            'run_in_behind': "🏃 **RUN BEHIND**: Off-ball run\n→ " + self.get_followup_description('run_in_behind'),
+            'press_defender': "⚡ **PRESS HIGH**: Force mistake\n→ " + self.get_followup_description('press'),
+            'track_back': "🔙 **TRACK BACK**: Help defense\n→ " + self.get_followup_description('track_back'),
+            'press': "⚡ **PRESS**: Hunt the ball\n→ " + self.get_followup_description('press'),
+            'cover': "🛡️ **COVER**: Fill defensive gap\n→ " + self.get_followup_description('cover'),
             'track_runner': "🏃 **TRACK RUNNER**: Stay with attacker\n→ Success: Deny space | Fail: Lost them",
             'sweep': "🧹 **SWEEP**: Rush out behind defense\n→ Success: Clear danger | Fail: Caught out"
         }
         return descriptions.get(action, f"Attempt {action.replace('_', ' ')}")
 
     def get_position_events(self, position):
-        """Position-specific actions - BALANCED & REALISTIC"""
+        """Position-specific actions"""
         position_events = {
             'ST': ['shoot', 'header', 'hold_up_play', 'run_in_behind', 'pass'],
             'W': ['dribble', 'cross', 'cut_inside', 'shoot', 'track_back'],
@@ -1258,34 +1126,6 @@ class MatchEngine:
             'GK': ['save', 'claim_cross', 'distribution', 'sweep', 'clearance']
         }
         return position_events.get(position, ['pass', 'dribble', 'tackle', 'shoot', 'clearance'])
-
-    def get_stat_for_action(self, action):
-        stat_map = {
-            'shoot': 'shooting', 'pass': 'passing', 'dribble': 'dribbling', 'tackle': 'defending',
-            'cross': 'passing', 'clearance': 'defending', 'save': 'defending', 'through_ball': 'passing',
-            'interception': 'defending', 'block': 'physical', 'cut_inside': 'dribbling',
-            'key_pass': 'passing', 'long_ball': 'passing', 'overlap': 'pace',
-            'claim_cross': 'physical', 'distribution': 'passing', 'hold_up_play': 'physical',
-            'run_in_behind': 'pace', 'press_defender': 'physical', 'track_back': 'pace',
-            'press': 'physical', 'cover': 'defending', 'track_runner': 'pace', 'sweep': 'pace'
-        }
-        return stat_map.get(action, 'pace')
-
-    def get_defender_stat(self, action):
-        defender_stat_map = {
-            'shoot': 'defending', 'pass': 'pace', 'dribble': 'defending', 'tackle': 'dribbling',
-            'cross': 'pace', 'clearance': 'shooting', 'through_ball': 'pace', 'interception': 'passing',
-            'block': 'shooting', 'cut_inside': 'defending', 'key_pass': 'pace',
-            'long_ball': 'pace', 'overlap': 'pace', 'hold_up_play': 'defending',
-            'run_in_behind': 'defending', 'press_defender': 'passing', 'track_back': 'pace',
-            'press': 'dribbling', 'cover': 'pace', 'track_runner': 'pace'
-        }
-        return defender_stat_map.get(action, 'defending')
-
-    def calculate_success_chance(self, player_stat, defender_stat):
-        stat_diff = player_stat - defender_stat
-        chance = 50 + (stat_diff * 2.5)
-        return max(5, min(95, int(chance)))
 
     def apply_form_to_stats(self, player):
         from utils.form_morale_system import get_form_modifier
@@ -1341,8 +1181,34 @@ class MatchEngine:
 
     async def start_match(self, fixture: dict, interaction: discord.Interaction, is_european: bool = False):
         """Start a match - supports both domestic and European competitions"""
+        
+        # ═══ CLEANUP: Remove any existing active match for this fixture ═══
+        async with db.pool.acquire() as conn:
+            existing = await conn.fetchrow(
+                "SELECT match_id FROM active_matches WHERE fixture_id = $1",
+                fixture['fixture_id']
+            )
+            if existing:
+                print(f"⚠️ Cleaning up existing active match {existing['match_id']} for fixture {fixture['fixture_id']}")
+                await conn.execute(
+                    "DELETE FROM active_matches WHERE fixture_id = $1",
+                    fixture['fixture_id']
+                )
+                match_id = existing['match_id']
+                if match_id in self.active_matches:
+                    del self.active_matches[match_id]
+                if match_id in self.pinned_messages:
+                    try:
+                        msg = self.pinned_messages[match_id]
+                        await msg.unpin()
+                    except:
+                        pass
+                    del self.pinned_messages[match_id]
+                if match_id in self.match_yellow_cards:
+                    del self.match_yellow_cards[match_id]
+                if match_id in self.match_stats:
+                    del self.match_stats[match_id]
 
-        # Get teams from appropriate tables
         if is_european:
             home_team = await self.get_team_info(fixture['home_team_id'], is_european=True)
             away_team = await self.get_team_info(fixture['away_team_id'], is_european=True)
@@ -1375,13 +1241,10 @@ class MatchEngine:
             if member:
                 overwrites[member] = discord.PermissionOverwrite(read_messages=True, send_messages=True)
         
-        # NEW: Add SPECTATOR permissions for admins/users with specific role
-        # Admins can always watch
         for member in guild.members:
             if member.guild_permissions.administrator and member.id not in player_users:
                 overwrites[member] = discord.PermissionOverwrite(read_messages=True, send_messages=False)
         
-        # Optional: Add role-based spectating (e.g., "Spectator" role)
         spectator_role = discord.utils.get(guild.roles, name="Spectator")
         if spectator_role:
             overwrites[spectator_role] = discord.PermissionOverwrite(read_messages=True, send_messages=False)
@@ -1390,7 +1253,6 @@ class MatchEngine:
 
         num_events = random.randint(config.MATCH_EVENTS_PER_GAME_MIN, config.MATCH_EVENTS_PER_GAME_MAX)
 
-        # Competition display
         comp_display = fixture.get('competition', 'League')
         if is_european:
             comp_display = "🏆 Champions League" if fixture.get('competition') == 'CL' else "🏆 Europa League"
@@ -1460,9 +1322,7 @@ class MatchEngine:
                                          match_channel.id, message.id, 'in_progress', 0, datetime.now().isoformat())
             match_id = result['match_id']
 
-        # Track when this match started for cleanup
         self._match_timestamps[match_id] = datetime.now()
-
         self.active_matches[match_id] = {'rivalry': rivalry, 'is_european': is_european}
 
         for user_id in player_users:
@@ -1480,14 +1340,12 @@ class MatchEngine:
         """Get team info from appropriate table"""
         async with db.pool.acquire() as conn:
             if is_european:
-                # Try european_teams first
                 team = await conn.fetchrow("""
                                            SELECT team_id, team_name, 'European' as league
                                            FROM european_teams
                                            WHERE team_id = $1
                                            """, team_id)
 
-                # Fallback to regular teams
                 if not team:
                     team = await conn.fetchrow("""
                                                SELECT team_id, team_name, league
@@ -1505,7 +1363,6 @@ class MatchEngine:
 
     async def run_match(self, match_id: int, fixture: dict, channel: discord.TextChannel, num_events: int,
                         is_european: bool = False):
-        # Check if cleanup needed (runs every hour)
         await self.maybe_cleanup()
 
         home_team = await self.get_team_info(fixture['home_team_id'], is_european)
@@ -1520,7 +1377,6 @@ class MatchEngine:
         home_participants = [p for p in participants if p['team_id'] == fixture['home_team_id']]
         away_participants = [p for p in participants if p['team_id'] == fixture['away_team_id']]
 
-        # Initialize match stats
         self.initialize_match_stats(match_id, home_participants, away_participants)
 
         possible_minutes = list(range(3, 91, 3))
@@ -1543,10 +1399,8 @@ class MatchEngine:
             if minute == 45:
                 await self.post_halftime_summary(channel, home_team, away_team, home_score, away_score, participants,
                                                  match_id)
-                # Display stats at halftime
                 await self.display_match_stats(channel, match_id, home_team, away_team)
 
-            # NEW: 10% chance of set piece instead of regular play
             if random.random() < 0.10:
                 attacking_team_choice = random.choice(['home', 'away'])
                 if attacking_team_choice == 'home':
@@ -1564,7 +1418,6 @@ class MatchEngine:
                                                         away_team['team_id'], home_score, away_score, set_piece_result.get('assister_name'))
                         await self.update_pinned_score(channel, match_id, home_team, away_team, home_score, away_score, minute)
                 
-                # Continue to next minute after set piece
                 async with db.pool.acquire() as conn:
                     await conn.execute(
                         'UPDATE active_matches SET home_score = $1, away_score = $2, current_minute = $3 WHERE match_id = $4',
@@ -1572,7 +1425,6 @@ class MatchEngine:
                 await asyncio.sleep(2)
                 continue
 
-            # Regular play
             attacking_team = random.choice(['home', 'away'])
             if attacking_team == 'home':
                 if home_participants:
@@ -1623,155 +1475,6 @@ class MatchEngine:
                     home_score, away_score, minute, match_id)
 
             await asyncio.sleep(2)
-        
-        # NEW: EXTRA TIME & PENALTIES for European knockout matches if tied
-        if is_european and home_score == away_score:
-            knockout_stages = ['R16', 'QF', 'SF', 'Final']
-            match_stage = fixture.get('stage', '')
-            
-            if match_stage in knockout_stages:
-                # Check aggregate score for two-legged ties
-                # For simplicity, if it's a single match or aggregate is tied, go to extra time
-                
-                embed = discord.Embed(
-                    title="⏱️ MATCH TIED - EXTRA TIME!",
-                    description=f"**{home_score} - {away_score}** after 90 minutes!\n\n🔥 30 minutes of extra time!",
-                    color=discord.Color.orange()
-                )
-                await channel.send(embed=embed)
-                await asyncio.sleep(3)
-                
-                # Extra time: 4-6 additional events (proportional to 30 mins)
-                extra_time_events = random.randint(4, 6)
-                et_minutes = sorted(random.sample(list(range(93, 121, 3)), min(extra_time_events, 9)))
-                
-                for minute in et_minutes:
-                    embed = discord.Embed(
-                        title=f"⚡ EXTRA TIME — {minute}'",
-                        description=f"## {home_team['team_name']} {home_score} - {away_score} {away_team['team_name']}",
-                        color=discord.Color.orange()
-                    )
-                    await channel.send(embed=embed)
-                    await asyncio.sleep(2)
-                    
-                    # Same logic as regular time (simplified for brevity)
-                    attacking_team = random.choice(['home', 'away'])
-                    if attacking_team == 'home' and home_participants:
-                        participant = random.choice(home_participants)
-                        player = await db.get_player(participant['user_id'])
-                        if player:
-                            result = await self.handle_player_moment(channel, player, participant, minute, home_team,
-                                                                     away_team, True, match_id, is_european)
-                            if result and result.get('goal'):
-                                home_score += 1
-                                await self.post_goal_celebration(channel, result['scorer_name'], home_team['team_name'],
-                                                                 home_team['team_id'], home_score, away_score,
-                                                                 result.get('assister_name'))
-                    elif attacking_team == 'away' and away_participants:
-                        participant = random.choice(away_participants)
-                        player = await db.get_player(participant['user_id'])
-                        if player:
-                            result = await self.handle_player_moment(channel, player, participant, minute, away_team,
-                                                                     home_team, False, match_id, is_european)
-                            if result and result.get('goal'):
-                                away_score += 1
-                                await self.post_goal_celebration(channel, result['scorer_name'], away_team['team_name'],
-                                                                 away_team['team_id'], home_score, away_score,
-                                                                 result.get('assister_name'))
-                    
-                    await asyncio.sleep(2)
-                
-                # If STILL tied after extra time, PENALTIES
-                if home_score == away_score:
-                    embed = discord.Embed(
-                        title="🎯 PENALTY SHOOTOUT!",
-                        description=f"Still **{home_score} - {away_score}** after extra time!\n\n⚽ Penalties to decide!",
-                        color=discord.Color.red()
-                    )
-                    await channel.send(embed=embed)
-                    await asyncio.sleep(3)
-                    
-                    # Simple penalty shootout (5 kicks each, sudden death if needed)
-                    home_pens = 0
-                    away_pens = 0
-                    
-                    for pen_round in range(1, 6):
-                        # Home penalty
-                        home_roll = random.randint(1, 100)
-                        home_success = home_roll <= 75  # 75% penalty success rate
-                        
-                        pen_embed = discord.Embed(
-                            title=f"🎯 PENALTY {pen_round} - {home_team['team_name']}",
-                            color=discord.Color.green() if home_success else discord.Color.red()
-                        )
-                        
-                        if home_success:
-                            home_pens += 1
-                            pen_embed.description = "⚽ **SCORED!**"
-                        else:
-                            pen_embed.description = "❌ **MISSED!**"
-                        
-                        await channel.send(embed=pen_embed)
-                        await asyncio.sleep(2)
-                        
-                        # Away penalty
-                        away_roll = random.randint(1, 100)
-                        away_success = away_roll <= 75
-                        
-                        pen_embed = discord.Embed(
-                            title=f"🎯 PENALTY {pen_round} - {away_team['team_name']}",
-                            color=discord.Color.green() if away_success else discord.Color.red()
-                        )
-                        
-                        if away_success:
-                            away_pens += 1
-                            pen_embed.description = "⚽ **SCORED!**"
-                        else:
-                            pen_embed.description = "❌ **MISSED!**"
-                        
-                        await channel.send(embed=pen_embed)
-                        await asyncio.sleep(2)
-                        
-                        # Check if winner is decided early
-                        pens_remaining = 5 - pen_round
-                        if home_pens > away_pens + pens_remaining or away_pens > home_pens + pens_remaining:
-                            break
-                    
-                    # Sudden death if still tied
-                    sudden_death_round = 6
-                    while home_pens == away_pens and sudden_death_round <= 10:
-                        embed = discord.Embed(
-                            title=f"💀 SUDDEN DEATH - Round {sudden_death_round}",
-                            description="Next goal wins!",
-                            color=discord.Color.gold()
-                        )
-                        await channel.send(embed=embed)
-                        await asyncio.sleep(2)
-                        
-                        home_success = random.randint(1, 100) <= 75
-                        away_success = random.randint(1, 100) <= 75
-                        
-                        if home_success:
-                            home_pens += 1
-                        if away_success:
-                            away_pens += 1
-                        
-                        sudden_death_round += 1
-                        await asyncio.sleep(2)
-                    
-                    # Determine penalty winner
-                    if home_pens > away_pens:
-                        home_score = 999  # Signal penalty win
-                    elif away_pens > home_pens:
-                        away_score = 999  # Signal penalty win
-                    
-                    pen_result_embed = discord.Embed(
-                        title="🎯 PENALTY SHOOTOUT RESULT",
-                        description=f"**{home_team['team_name']} {home_pens} - {away_pens} {away_team['team_name']}**",
-                        color=discord.Color.gold()
-                    )
-                    await channel.send(embed=pen_result_embed)
-                    await asyncio.sleep(2)
 
         await self.end_match(match_id, fixture, channel, home_score, away_score, participants, is_european)
 
@@ -1784,12 +1487,9 @@ class MatchEngine:
         adjusted_stats = self.apply_form_to_stats(player)
         available_actions = self.get_position_events(player['position'])
 
-        # ═══ GET CONTEXTUAL DEFENDER BASED ON PLAYER POSITION ═══
-        # Pick a random action to determine defender type (more realistic)
         sample_action = random.choice(available_actions)
         defender_positions = self.get_contextual_defender_positions(player['position'], sample_action)
         
-        # Build position filter for SQL
         position_filter = ', '.join([f"'{pos}'" for pos in defender_positions])
 
         async with db.pool.acquire() as conn:
@@ -1811,7 +1511,6 @@ class MatchEngine:
                 """, defending_team['team_id'])
             defender = dict(result) if result else None
         
-        # Fallback: if no appropriate defender found, get any defender
         if not defender:
             async with db.pool.acquire() as conn:
                 if is_european:
@@ -1835,11 +1534,9 @@ class MatchEngine:
         from utils.form_morale_system import get_form_description
         form_desc = get_form_description(player['form'])
 
-        # ═══ CONTEXTUAL SCENARIO TEXT ═══
         if defender:
             defender_pos = defender.get('position', 'DEF')
             
-            # Create realistic scenario based on matchup
             scenarios = {
                 ('ST', 'CB'): f"You receive the ball with {defender['player_name']} marking you tight!",
                 ('ST', 'GK'): f"Through ball! Just you and keeper {defender['player_name']}!",
@@ -1862,23 +1559,28 @@ class MatchEngine:
         else:
             scenario_text = f"Ball comes to you in a dangerous area!\n{defending_team['team_name']}'s defense scrambling!"
 
+        # ═══ CREATE EMBED WITH COMBINED CRESTS ═══
         embed = discord.Embed(
             title=f"🎯 {member.display_name}'S MOMENT!",
             description=f"## {player['player_name']} ({player['position']})\n**{minute}'** | Form: {form_desc}\n\n{scenario_text}",
             color=discord.Color.gold()
         )
 
-        team_crest = get_team_crest_url(attacking_team['team_id'])
-        if team_crest:
-            embed.set_thumbnail(url=team_crest)
+        # Generate combined crests image
+        home_crest = get_team_crest_url(attacking_team['team_id'])
+        away_crest = get_team_crest_url(defending_team['team_id'])
+        
+        crests_file = None
+        if home_crest or away_crest:
+            crests_buffer = await self.generate_crests_image(home_crest, away_crest)
+            if crests_buffer:
+                crests_file = discord.File(fp=crests_buffer, filename=f"crests_{minute}.png")
+                embed.set_image(url=f"attachment://crests_{minute}.png")
 
-        # ═══ CLEAN ACTION DISPLAY ═══
-        actions_text = ""
+        # ═══ ENHANCED ACTION DISPLAY WITH RECOMMENDATIONS ═══
+        actions_data = []
         for action in available_actions[:5]:
-            # Get stat configuration
             att_p, att_s, def_p, def_s = self.get_action_stats(action)
-            
-            # Calculate weighted stats
             player_weighted = self.calculate_weighted_stat(adjusted_stats, att_p, att_s)
             player_pos_bonus = self.get_position_bonus(player['position'], action)
             
@@ -1886,17 +1588,33 @@ class MatchEngine:
                 defender_weighted = self.calculate_weighted_stat(defender, def_p, def_s)
                 defender_pos_bonus = self.get_position_bonus(defender.get('position', 'CB'), action)
                 
-                # Calculate probability WITH position bonuses factored in
-                # Average effect of position bonuses on probability (~10% per +2 bonus)
                 bonus_diff = player_pos_bonus - defender_pos_bonus
                 chance = self.calculate_d20_success_probability(player_weighted, defender_weighted)
-                # Adjust for position bonus difference (each +1 bonus ≈ 2.5% chance)
                 chance = max(5, min(95, chance + (bonus_diff * 2)))
             else:
                 defender_weighted = 0
-                chance = 55 + (player_pos_bonus * 2)  # Unopposed, just position bonus helps
+                chance = 55 + (player_pos_bonus * 2)
             
-            # Color coding
+            actions_data.append({
+                'action': action,
+                'chance': chance,
+                'player_stat': player_weighted,
+                'player_bonus': player_pos_bonus,
+                'defender_stat': defender_weighted,
+                'primary': att_p[:3].upper(),
+                'secondary': att_s[:3].upper()
+            })
+        
+        # Sort by chance to find recommended action
+        actions_data.sort(key=lambda x: x['chance'], reverse=True)
+        recommended_action = actions_data[0]['action']
+        
+        actions_text = ""
+        for data in actions_data:
+            action = data['action']
+            chance = data['chance']
+            
+            # Emoji based on chance + star for recommended
             if chance >= 65:
                 emoji = "🟢"
             elif chance >= 50:
@@ -1904,66 +1622,64 @@ class MatchEngine:
             else:
                 emoji = "🔴"
             
-            # CLEAN, SCANNABLE FORMAT
-            action_name = action.replace('_', ' ').title()
-            actions_text += f"{emoji} **{action_name}** — {chance}%\n"
+            # Add star for recommended action
+            if action == recommended_action:
+                emoji = "⭐" + emoji
             
-            # Show key stats compactly
-            actions_text += f"   {att_p[:3].upper()}/{att_s[:3].upper()}: {player_weighted}"
-            if player_pos_bonus > 0:
-                actions_text += f" (+{player_pos_bonus})"
+            action_name = action.replace('_', ' ').title()
+            actions_text += f"{emoji} **{action_name}** — **{chance}%**\n"
+            actions_text += f"   {data['primary']}/{data['secondary']}: {data['player_stat']}"
+            if data['player_bonus'] > 0:
+                actions_text += f" (+{data['player_bonus']})"
             
             if defender:
-                actions_text += f" vs {defender_weighted}"
-                if defender_pos_bonus > 0:
-                    actions_text += f" (+{defender_pos_bonus})"
-                actions_text += "\n"
-            else:
-                actions_text += "\n"
-            
+                actions_text += f" vs {data['defender_stat']}"
             actions_text += "\n"
+            
+            # Add follow-up info
+            followup_desc = self.get_followup_description(action)
+            actions_text += f"   _↪ {followup_desc}_\n\n"
 
         embed.add_field(name="⚡ CHOOSE ACTION", value=actions_text, inline=False)
         
         if defender:
-            embed.set_footer(text=f"⚔️ vs {defender['player_name']} ({defender['position']}) • 30 sec!")
+            embed.set_footer(text=f"⚔️ vs {defender['player_name']} ({defender['position']}) • ⭐ = RECOMMENDED • 30 sec!")
         else:
-            embed.set_footer(text="⏱️ 30 seconds!")
+            embed.set_footer(text="⭐ = RECOMMENDED ACTION • ⏱️ 30 seconds!")
 
         view = EnhancedActionView(available_actions, player['user_id'], timeout=30)
-        message = await channel.send(content=f"📢 {member.mention}", embed=embed, view=view)
+        
+        if crests_file:
+            message = await channel.send(content=f"📢 {member.mention}", embed=embed, file=crests_file, view=view)
+        else:
+            message = await channel.send(content=f"📢 {member.mention}", embed=embed, view=view)
+        
         await view.wait()
 
         action = view.chosen_action if view.chosen_action else random.choice(available_actions)
         if not view.chosen_action:
             await channel.send(f"⏰ {member.mention} **AUTO-SELECTED**: {action.upper()}")
 
+        # ✅ FIXED: Pass defending_team parameter
         result = await self.execute_action_with_duel(channel, player, adjusted_stats, defender, action, minute,
-                                                     match_id, member, attacking_team, is_european, is_home)
+                                                     match_id, member, attacking_team, defending_team, is_european, is_home)
 
         return result
 
+    # ✅ FIXED: Added defending_team parameter
     async def execute_action_with_duel(self, channel, player, adjusted_stats, defender, action, minute,
-                                       match_id, member, attacking_team, is_european=False, is_home=False):
+                                       match_id, member, attacking_team, defending_team, is_european=False, is_home=False):
         
-        # Get stat configuration
         att_p, att_s, def_p, def_s = self.get_action_stats(action)
         
-        # Calculate weighted stats
         player_stat = self.calculate_weighted_stat(adjusted_stats, att_p, att_s)
-        
-        # Get position bonus
         position_bonus = self.get_position_bonus(player['position'], action)
-        
-        # NEW: Get home advantage bonus
         home_bonus = self.get_home_advantage_bonus(is_home, player['position'])
         
-        # D20 ROLL
         player_roll = random.randint(1, 20)
         player_roll_with_bonus = player_roll + position_bonus + home_bonus
         player_total = player_stat + player_roll_with_bonus
         
-        # Defender rolls
         defender_roll = 0
         defender_total = 0
         defender_stat_value = 0
@@ -1972,23 +1688,17 @@ class MatchEngine:
         if defender:
             defender_stat_value = self.calculate_weighted_stat(defender, def_p, def_s)
             defender_roll = random.randint(1, 20)
-            
-            # ═══ CRITICAL: NPCs GET POSITION BONUSES TOO! ═══
             defender_position_bonus = self.get_position_bonus(defender.get('position', 'CB'), action)
             defender_total = defender_stat_value + defender_roll + defender_position_bonus
         
-        # SUCCESS CHECK
         success = player_total > defender_total if defender_total > 0 else player_roll_with_bonus >= 10
         
-        # NEW: Track stats
         team_side = 'home' if is_home else 'away'
         self.update_match_stats(match_id, team_side, action, success)
         
-        # CRITICAL SUCCESS/FAILURE
         critical_success = player_roll == 20
         critical_failure = player_roll == 1
         
-        # Suspense
         suspense_embed = discord.Embed(
             title=f"⚡ {action.replace('_', ' ').upper()}!",
             description=f"**{player['player_name']}** attempts the action...",
@@ -1997,13 +1707,11 @@ class MatchEngine:
         suspense_msg = await channel.send(embed=suspense_embed)
         await asyncio.sleep(1.5)
         
-        # ═══ CLEAN RESULT DISPLAY ═══
         result_embed = discord.Embed(
             title=f"🎲 {action.replace('_', ' ').upper()}",
             color=discord.Color.green() if success else discord.Color.red()
         )
         
-        # Show the duel
         if defender and defender_total > 0:
             duel_text = f"**YOU**\n"
             duel_text += f"{att_p.upper()}/{att_s.upper()}: **{player_stat}**\n"
@@ -2042,14 +1750,11 @@ class MatchEngine:
         assister_name = None
         rating_change = 0
         
-        # NEW: YELLOW CARD LOGIC
         if action in ['tackle', 'block'] and not success:
-            # Failed tackle with big stat difference = potential card
             if defender and player_total < defender_total - 12:
-                if random.random() < 0.20:  # 20% chance of yellow for bad tackle
+                if random.random() < 0.20:
                     await self.give_yellow_card(player, match_id, channel, "dangerous tackle")
         
-        # ═══ CRITICAL HIT ═══
         if critical_success:
             result_embed.add_field(
                 name="🌟 NAT 20!",
@@ -2058,13 +1763,11 @@ class MatchEngine:
             )
             rating_change = 0.5
             
-            # Shooting/heading actions = guaranteed goal on nat 20
             if action in ['shoot', 'header']:
                 is_goal = True
                 scorer_name = player['player_name']
                 rating_change = 1.8
                 
-                # Update stats for critical goal
                 async with db.pool.acquire() as conn:
                     await conn.execute("""
                         UPDATE match_participants SET goals_scored = goals_scored + 1
@@ -2086,7 +1789,6 @@ class MatchEngine:
                 from utils.form_morale_system import update_player_morale
                 await update_player_morale(player['user_id'], 'goal')
         
-        # ═══ CRITICAL FAILURE ═══
         elif critical_failure:
             result_embed.add_field(
                 name="💥 NAT 1!",
@@ -2096,11 +1798,9 @@ class MatchEngine:
             rating_change = -0.5
             success = False
             
-            # Natural 1 on tackle = automatic yellow card
             if action in ['tackle', 'block']:
                 await self.give_yellow_card(player, match_id, channel, "reckless challenge")
         
-        # ═══ NORMAL OUTCOMES ═══
         if not is_goal and not critical_failure:
             if action in ['shoot', 'header'] and success:
                 if player_roll_with_bonus >= 18 or player_total >= defender_total + 10:
@@ -2173,7 +1873,6 @@ class MatchEngine:
         await suspense_msg.delete()
         await channel.send(embed=result_embed)
         
-        # Update rating
         async with db.pool.acquire() as conn:
             await conn.execute("""
                 UPDATE match_participants
@@ -2182,15 +1881,11 @@ class MatchEngine:
                 WHERE match_id = $2 AND user_id = $3
             """, rating_change, match_id, player['user_id'])
         
-        # ═══════════════════════════════════════════════════════════════
-        # CHECK FOR FOLLOW-UP ACTIONS
-        # ═══════════════════════════════════════════════════════════════
-        
+        # ✅ FIXED: Now defending_team is available for follow-up actions
         followup_result = await self.handle_followup_action(
             channel, action, success, player, attacking_team, defending_team, match_id, is_european
         )
         
-        # If follow-up resulted in goal, override
         if followup_result and followup_result.get('goal'):
             is_goal = True
             scorer_name = followup_result.get('scorer_name')
@@ -2395,7 +2090,6 @@ class MatchEngine:
                         UPDATE players SET season_apps = season_apps + 1, career_apps = career_apps + 1
                         WHERE user_id = $1
                     """, participant['user_id'])
-                print(f"  👕 Appearance recorded for user {participant['user_id']}")
 
         for participant in participants:
             if participant['user_id']:
@@ -2487,7 +2181,6 @@ class MatchEngine:
                         motm_embed.set_thumbnail(url=team_crest)
 
                     await channel.send(embed=motm_embed)
-                    print(f"⭐ MOTM: {motm_player['player_name']} ({motm['match_rating']:.1f}/10)")
 
                     try:
                         user = await self.bot.fetch_user(motm['user_id'])
@@ -2505,7 +2198,6 @@ class MatchEngine:
                             dm_embed.set_thumbnail(url=team_crest)
                         dm_embed.set_footer(text="🏆 Career MOTM increased!")
                         await user.send(embed=dm_embed)
-                        print(f"✅ MOTM DM sent to {motm_player['player_name']}")
                     except Exception as e:
                         print(f"❌ Could not DM MOTM to {motm['user_id']}: {e}")
 
@@ -2644,7 +2336,7 @@ class EnhancedActionView(discord.ui.View):
             'block': '🧱', 'cut_inside': '↩️', 'key_pass': '🔑', 'long_ball': '📡',
             'overlap': '🏃', 'claim_cross': '✊', 'distribution': '🎯', 'hold_up_play': '💪',
             'run_in_behind': '🏃', 'press_defender': '⚡', 'track_back': '🔙',
-            'press': '⚡', 'cover': '🛡️', 'track_runner': '🏃', 'sweep': '🧹'
+            'press': '⚡', 'cover': '🛡️', 'track_runner': '🏃', 'sweep': '🧹', 'header': '🎯'
         }
 
         for action in available_actions[:5]:
