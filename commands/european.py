@@ -1,5 +1,6 @@
 """
 European Competition Commands - UNIFIED ACTION MENU
+✅ UPDATED: Removed single club header, both crests now shown in scoreline area
 """
 
 import discord
@@ -167,38 +168,69 @@ class European(commands.Cog):
             if fixture['played']:
                 status_emoji = "✅"
                 status_text = "Full Time"
-                score_display = f"**{fixture['home_score']} - {fixture['away_score']}**"
+                score_display = f"{fixture['home_score']} - {fixture['away_score']}"
             elif fixture.get('playable'):
                 status_emoji = "🟢"
                 status_text = "Live - Play Now!"
-                score_display = "**VS**"
+                score_display = "VS"
             else:
                 status_emoji = "⏳"
                 status_text = "Upcoming"
-                score_display = "**VS**"
+                score_display = "VS"
             
             if fixture['stage'] == 'group':
                 stage_display = f"Group {fixture.get('group_name', '?')} • Week {fixture['week_number']}"
             else:
                 leg_text = f" - Leg {fixture['leg']}" if fixture.get('leg', 1) > 1 else ""
-                stage_display = f"{fixture['stage'].title()}{leg_text} • Week {fixture['week_number']}"
+                stage_display = f"{fixture['stage'].title()}{leg_text}"
             
+            # ✅ UPDATED: Simple title with both teams in description, no single-club header
             embed = discord.Embed(
                 title=f"{comp_emoji} {comp_name}",
-                description=f"**{fixture['home_name']}** {score_display} **{fixture['away_name']}**",
+                description=f"{fixture['home_name']} **{score_display}** {fixture['away_name']}",
                 color=comp_color
             )
             
+            # Competition logo as thumbnail (top right)
             if comp_logo:
                 embed.set_thumbnail(url=comp_logo)
-            if home_crest:
-                embed.set_author(name=fixture['home_name'], icon_url=home_crest)
-            if away_crest:
-                embed.set_footer(text="", icon_url=away_crest)
             
-            embed.add_field(name="📋 Status", value=f"{status_emoji} **{status_text}**", inline=True)
-            embed.add_field(name="🏆 Stage", value=stage_display, inline=True)
-            embed.add_field(name="📅 Week", value=f"**{fixture['week_number']}**", inline=True)
+            # ✅ NEW: Both team crests shown inline with match info
+            # Add crest fields in first row
+            if home_crest:
+                embed.add_field(
+                    name=f"🏠 {fixture['home_name'][:15]}",
+                    value=f"[Crest]({home_crest})",
+                    inline=True
+                )
+            else:
+                embed.add_field(
+                    name=f"🏠 {fixture['home_name'][:15]}",
+                    value="Home",
+                    inline=True
+                )
+            
+            if away_crest:
+                embed.add_field(
+                    name=f"✈️ {fixture['away_name'][:15]}",
+                    value=f"[Crest]({away_crest})",
+                    inline=True
+                )
+            else:
+                embed.add_field(
+                    name=f"✈️ {fixture['away_name'][:15]}",
+                    value="Away",
+                    inline=True
+                )
+            
+            # Empty field for spacing (3-column layout)
+            embed.add_field(name="\u200b", value="\u200b", inline=True)
+            
+            # Match info in second row
+            embed.add_field(name="📊 Status", value=f"{status_emoji} {status_text}", inline=True)
+            embed.add_field(name="🎭 Stage", value=stage_display, inline=True)
+            embed.add_field(name="📅 Week", value=f"{fixture['week_number']}", inline=True)
+            
             embeds.append(embed)
         
         if len(embeds) == 1:
@@ -404,12 +436,17 @@ class European(commands.Cog):
         
         if comp_logo:
             embed.set_thumbnail(url=comp_logo)
+        
+        # ✅ UPDATED: Use author for home team crest, footer for away team crest
         if home_crest:
             embed.set_author(name=match['home_name'], icon_url=home_crest)
         else:
             embed.set_author(name=match['home_name'])
+        
         if away_crest:
-            embed.set_footer(text="", icon_url=away_crest)
+            embed.set_footer(text=match['away_name'], icon_url=away_crest)
+        else:
+            embed.set_footer(text=match['away_name'])
         
         embed.add_field(name=f"{stage_emoji} Stage", value=f"**{stage_display}**", inline=True)
         embed.add_field(name="📅 Week", value=f"**{match['week_number']}**", inline=True)
