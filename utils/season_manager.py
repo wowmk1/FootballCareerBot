@@ -6,6 +6,7 @@ Season Management - Two Windows on Same Days
 ✅ UPDATED: Now adds match results to news database
 ✅ FIXED: Corrected window end time detection
 ✅ FIXED: NPC transfers only during transfer windows
+✅ FIXED: Warning notifications now actually work!
 """
 import asyncio
 from datetime import datetime, timedelta, timezone
@@ -425,22 +426,220 @@ async def end_season(bot=None):
         logger.info(f"✅ New season: {current_season + 1}/{current_season + 2}")
 
 
-# Warning functions
+# ✅ FIXED: Warning functions now actually work!
 async def send_1h_warning(bot):
-    """Send 1 hour warning (for domestic 2 PM or European 11 AM)"""
-    pass
+    """Send 1 hour warning for domestic (2 PM)"""
+    state = await db.get_game_state()
+    current_week = state['current_week']
+    
+    logger.info("📢 Sending domestic 1h warning...")
+    
+    async with db.pool.acquire() as conn:
+        players_with_matches = await conn.fetch("""
+            SELECT DISTINCT p.user_id, p.player_name, p.team_id, t.team_name,
+                   f.home_team_id, f.away_team_id,
+                   ht.team_name as home_name,
+                   at.team_name as away_name
+            FROM players p
+            JOIN teams t ON p.team_id = t.team_id
+            JOIN fixtures f ON (f.home_team_id = p.team_id OR f.away_team_id = p.team_id)
+            JOIN teams ht ON f.home_team_id = ht.team_id
+            JOIN teams at ON f.away_team_id = at.team_id
+            WHERE p.retired = FALSE
+              AND p.team_id != 'free_agent'
+              AND f.week_number = $1
+              AND f.played = FALSE
+        """, current_week)
+    
+    for player_info in players_with_matches:
+        try:
+            user = await bot.fetch_user(player_info['user_id'])
+            
+            embed = discord.Embed(
+                title="⏰ MATCH WINDOW - 1 HOUR WARNING",
+                description=f"Your league match starts in **1 hour** (3:00 PM EST)!",
+                color=discord.Color.orange()
+            )
+            
+            embed.add_field(
+                name="⚽ Your Match",
+                value=f"**{player_info['home_name']}** vs **{player_info['away_name']}**\n"
+                      f"Week {current_week}",
+                inline=False
+            )
+            
+            embed.add_field(
+                name="🕐 Window",
+                value="**3:00 PM - 5:00 PM EST**\n2 hour window",
+                inline=True
+            )
+            
+            embed.add_field(
+                name="🎮 Ready to Play",
+                value="`/play_match` when window opens",
+                inline=True
+            )
+            
+            embed.set_footer(text=f"⚽ League Match • Week {current_week}")
+            
+            await user.send(embed=embed)
+            logger.info(f"  ✅ Sent domestic 1h warning to {player_info['player_name']}")
+        except Exception as e:
+            logger.warning(f"  ⚠️ Could not send warning: {e}")
+
 
 async def send_30m_warning(bot):
-    """Send 30 minute warning"""
-    pass
+    """Send 30 minute warning for domestic (2:30 PM)"""
+    state = await db.get_game_state()
+    current_week = state['current_week']
+    
+    logger.info("📢 Sending domestic 30m warning...")
+    
+    async with db.pool.acquire() as conn:
+        players_with_matches = await conn.fetch("""
+            SELECT DISTINCT p.user_id, p.player_name,
+                   ht.team_name as home_name,
+                   at.team_name as away_name
+            FROM players p
+            JOIN teams t ON p.team_id = t.team_id
+            JOIN fixtures f ON (f.home_team_id = p.team_id OR f.away_team_id = p.team_id)
+            JOIN teams ht ON f.home_team_id = ht.team_id
+            JOIN teams at ON f.away_team_id = at.team_id
+            WHERE p.retired = FALSE
+              AND p.team_id != 'free_agent'
+              AND f.week_number = $1
+              AND f.played = FALSE
+        """, current_week)
+    
+    for player_info in players_with_matches:
+        try:
+            user = await bot.fetch_user(player_info['user_id'])
+            
+            embed = discord.Embed(
+                title="⏰ MATCH WINDOW - 30 MINUTES!",
+                description=f"Your league match window opens in **30 minutes**!",
+                color=discord.Color.orange()
+            )
+            
+            embed.add_field(
+                name="⚽ Match",
+                value=f"**{player_info['home_name']}** vs **{player_info['away_name']}**",
+                inline=False
+            )
+            
+            embed.add_field(
+                name="🕐 Opens At",
+                value="**3:00 PM EST**",
+                inline=True
+            )
+            
+            embed.set_footer(text="⚽ Get ready!")
+            
+            await user.send(embed=embed)
+            logger.info(f"  ✅ Sent domestic 30m warning to {player_info['player_name']}")
+        except Exception as e:
+            logger.warning(f"  ⚠️ Could not send warning: {e}")
+
 
 async def send_15m_warning(bot):
-    """Send 15 minute warning"""
-    pass
+    """Send 15 minute warning for domestic (2:45 PM)"""
+    state = await db.get_game_state()
+    current_week = state['current_week']
+    
+    logger.info("📢 Sending domestic 15m warning...")
+    
+    async with db.pool.acquire() as conn:
+        players_with_matches = await conn.fetch("""
+            SELECT DISTINCT p.user_id, p.player_name,
+                   ht.team_name as home_name,
+                   at.team_name as away_name
+            FROM players p
+            JOIN teams t ON p.team_id = t.team_id
+            JOIN fixtures f ON (f.home_team_id = p.team_id OR f.away_team_id = p.team_id)
+            JOIN teams ht ON f.home_team_id = ht.team_id
+            JOIN teams at ON f.away_team_id = at.team_id
+            WHERE p.retired = FALSE
+              AND p.team_id != 'free_agent'
+              AND f.week_number = $1
+              AND f.played = FALSE
+        """, current_week)
+    
+    for player_info in players_with_matches:
+        try:
+            user = await bot.fetch_user(player_info['user_id'])
+            
+            embed = discord.Embed(
+                title="🚨 MATCH WINDOW - 15 MINUTES!",
+                description=f"Window opens in **15 minutes**!",
+                color=discord.Color.red()
+            )
+            
+            embed.add_field(
+                name="⚽ Your Match",
+                value=f"**{player_info['home_name']}** vs **{player_info['away_name']}**",
+                inline=False
+            )
+            
+            embed.add_field(
+                name="⏰ Final Reminder",
+                value="Be ready at **3:00 PM EST**!",
+                inline=False
+            )
+            
+            embed.set_footer(text="⚽ Almost time!")
+            
+            await user.send(embed=embed)
+            logger.info(f"  ✅ Sent domestic 15m warning to {player_info['player_name']}")
+        except Exception as e:
+            logger.warning(f"  ⚠️ Could not send warning: {e}")
+
 
 async def send_closing_warning(bot):
-    """Send closing warning"""
-    pass
+    """Send closing warning (4:45 PM)"""
+    state = await db.get_game_state()
+    current_week = state['current_week']
+    
+    logger.info("📢 Sending closing warning...")
+    
+    async with db.pool.acquire() as conn:
+        players_with_matches = await conn.fetch("""
+            SELECT DISTINCT p.user_id, p.player_name
+            FROM players p
+            JOIN fixtures f ON (f.home_team_id = p.team_id OR f.away_team_id = p.team_id)
+            WHERE p.retired = FALSE
+              AND p.team_id != 'free_agent'
+              AND f.week_number = $1
+              AND f.played = FALSE
+        """, current_week)
+    
+    for player_info in players_with_matches:
+        try:
+            user = await bot.fetch_user(player_info['user_id'])
+            
+            embed = discord.Embed(
+                title="🚨 WINDOW CLOSING - 15 MINUTES!",
+                description=f"**Last chance to play your match!**",
+                color=discord.Color.red()
+            )
+            
+            embed.add_field(
+                name="⏰ Time Left",
+                value="**15 minutes** until window closes!",
+                inline=False
+            )
+            
+            embed.add_field(
+                name="⚡ Action Required",
+                value="Use `/play_match` NOW or your match will be simulated!",
+                inline=False
+            )
+            
+            embed.set_footer(text="⏰ Window closes at 5:00 PM EST!")
+            
+            await user.send(embed=embed)
+            logger.info(f"  ✅ Sent closing warning to {player_info['player_name']}")
+        except Exception as e:
+            logger.warning(f"  ⚠️ Could not send warning: {e}")
 
 
 async def send_european_1h_warning(bot):
