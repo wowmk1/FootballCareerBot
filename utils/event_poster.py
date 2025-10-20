@@ -5,6 +5,8 @@ Posts beautiful, themed news embeds to Discord channels
 import discord
 from database import db
 import config
+from utils.crest_image_helper import generate_combined_crests
+import asyncio
 
 
 async def post_transfer_news_to_channel(bot, guild, transfer_info):
@@ -170,7 +172,7 @@ async def post_match_result_to_channel(bot, guild, fixture, home_score, away_sco
 async def post_european_results(bot, competition, week_number):
     """
     Post BEAUTIFUL European match results with rich embeds
-    ✅ UPDATED: Removed top single club section, added crests to both teams in scoreline
+    ✅ UPDATED: Uses combined crests image like other bot
     """
     comp_name = "Champions League" if competition == 'CL' else "Europa League"
     comp_emoji = "⭐" if competition == 'CL' else "🌟"
@@ -202,6 +204,62 @@ async def post_european_results(bot, competition, week_number):
         from utils.football_data_api import get_team_crest_url, get_competition_logo
         comp_logo = get_competition_logo(comp_name)
         
+        # Helper function to generate combined crest image
+        async def generate_crests_image(home_url, away_url, idx):
+            """Generate combined image with both crests side by side"""
+            try:
+                from io import BytesIO
+                from PIL import Image
+                import aiohttp
+                
+                async with aiohttp.ClientSession() as session:
+                    home_img_bytes = None
+                    away_img_bytes = None
+                    
+                    if home_url:
+                        try:
+                            async with session.get(home_url, timeout=aiohttp.ClientTimeout(total=5)) as r:
+                                if r.status == 200:
+                                    home_img_bytes = await r.read()
+                        except:
+                            pass
+                    
+                    if away_url:
+                        try:
+                            async with session.get(away_url, timeout=aiohttp.ClientTimeout(total=5)) as r:
+                                if r.status == 200:
+                                    away_img_bytes = await r.read()
+                        except:
+                            pass
+                
+                size = (100, 100)
+                padding = 40
+                width = size[0] * 2 + padding
+                height = size[1]
+                img = Image.new("RGBA", (width, height), (255, 255, 255, 0))
+                
+                if home_img_bytes:
+                    try:
+                        home = Image.open(BytesIO(home_img_bytes)).convert("RGBA").resize(size)
+                        img.paste(home, (0, 0), home)
+                    except:
+                        pass
+                
+                if away_img_bytes:
+                    try:
+                        away = Image.open(BytesIO(away_img_bytes)).convert("RGBA").resize(size)
+                        img.paste(away, (size[0] + padding, 0), away)
+                    except:
+                        pass
+                
+                buffer = BytesIO()
+                img.save(buffer, format="PNG")
+                buffer.seek(0)
+                return buffer
+            except Exception as e:
+                print(f"Error generating crests image: {e}")
+                return None
+        
         # Post to all guilds
         for guild in bot.guilds:
             try:
@@ -215,10 +273,13 @@ async def post_european_results(bot, competition, week_number):
                 if not news_channel:
                     continue
                 
-                # Create beautiful result embeds (max 10 per batch)
-                embeds = []
+                # Send header message
+                header = f"## {comp_emoji} {comp_name} Results - Week {week_number}\n"
+                header += f"**{len(results)} matches completed**"
+                await news_channel.send(header)
                 
-                for result in results[:10]:
+                # Create beautiful result embeds (max 10 per batch)
+                for idx, result in enumerate(results[:10]):
                     # Get crests
                     home_crest = get_team_crest_url(result['home_team_id'])
                     away_crest = get_team_crest_url(result['away_team_id'])
@@ -241,12 +302,12 @@ async def post_european_results(bot, competition, week_number):
                         leg = f" - Leg {result['leg']}" if result.get('leg', 1) > 1 else ""
                         stage_text = f"{result['stage'].title()}{leg}"
                     
-                    # ✅ UPDATED: Simple title and scoreline with crests in description
-                    scoreline = f"{result['home_name']} {result['home_score']} - {result['away_score']} {result['away_name']}"
+                    # Build embed with scoreline
+                    scoreline = f"{result['home_name']} **{result['home_score']} - {result['away_score']}** {result['away_name']}"
                     
                     embed = discord.Embed(
                         title=f"{comp_emoji} {comp_name}",
-                        description=f"## {scoreline}\n\n{result_emoji} {winner_text}",
+                        description=f"{scoreline}\n\n{result_emoji} {winner_text}",
                         color=comp_color
                     )
                     
@@ -254,21 +315,15 @@ async def post_european_results(bot, competition, week_number):
                     if comp_logo:
                         embed.set_thumbnail(url=comp_logo)
                     
-                    # ✅ NEW: Set home team crest as author icon (left side)
-                    if home_crest:
-                        embed.set_author(
-                            name=result['home_name'],
-                            icon_url=home_crest
-                        )
+                    # Generate combined crests image
+                    file = None
+                    if home_crest or away_crest:
+                        crests_buffer = await generate_crests_image(home_crest, away_crest, idx)
+                        if crests_buffer:
+                            file = discord.File(fp=crests_buffer, filename=f"crests_{idx}.png")
+                            embed.set_image(url=f"attachment://crests_{idx}.png")
                     
-                    # ✅ NEW: Set away team crest as footer icon (bottom)
-                    if away_crest:
-                        embed.set_footer(
-                            text=result['away_name'],
-                            icon_url=away_crest
-                        )
-                    
-                    # Match info - 3 columns in first row
+                    # Match info
                     embed.add_field(
                         name="📊 Status",
                         value="✅ Full Time",
@@ -283,11 +338,11 @@ async def post_european_results(bot, competition, week_number):
                     
                     embed.add_field(
                         name="📅 Week",
-                        value=f"3",
+                        value=f"{week_number}",
                         inline=True
                     )
                     
-                    # Goal scorers would go here if tracked
+                    # Goal stats
                     total_goals = result['home_score'] + result['away_score']
                     if total_goals >= 4:
                         embed.add_field(
@@ -296,18 +351,14 @@ async def post_european_results(bot, competition, week_number):
                             inline=False
                         )
                     
-                    embeds.append(embed)
-                
-                # Send header message
-                header = f"## {comp_emoji} {comp_name} Results - Week {week_number}\n"
-                header += f"**{len(results)} matches completed**"
-                
-                await news_channel.send(header)
-                
-                # Send embeds in batches
-                for i in range(0, len(embeds), 10):
-                    batch = embeds[i:i+10]
-                    await news_channel.send(embeds=batch)
+                    # Send embed with file
+                    if file:
+                        await news_channel.send(embed=embed, file=file)
+                    else:
+                        await news_channel.send(embed=embed)
+                    
+                    # Small delay to avoid rate limits
+                    await asyncio.sleep(0.5)
                 
                 print(f"  ✅ Posted beautiful {comp_name} results to {guild.name}")
                 
