@@ -48,6 +48,7 @@ class AdminCommands(commands.Cog):
         app_commands.Choice(name="🔍 Diagnose NPC Stats", value="diagnose_npcs"),
         app_commands.Choice(name="🎮 Test Match Engine", value="test_match_engine"),
         app_commands.Choice(name="🔄 Restart Bot", value="restart"),
+        app_commands.Choice(name="🧪 Test Training System", value="test_training"),
     ])
     @app_commands.checks.has_permissions(administrator=True)
     async def adm(
@@ -104,6 +105,8 @@ class AdminCommands(commands.Cog):
             await self._test_match_engine(interaction)
         elif action == "restart":
             await self._restart(interaction)
+        elif action == "test_training":  # ← ADD THIS
+            await self._test_training(interaction)  # ← AND THIS
     
     async def _advance_week(self, interaction: discord.Interaction):
         """Advance to the next week"""
@@ -1050,6 +1053,33 @@ class AdminCommands(commands.Cog):
         """Restart the bot"""
         await interaction.response.send_message("🔄 Restarting bot...", ephemeral=True)
         await self.bot.close()
+
+    async def _test_training(self, interaction: discord.Interaction):  # ← ADD HERE!
+        """Test training system in sandbox mode (no DB changes)"""
+        await interaction.response.defer()
+        
+        try:
+            # Import the sandbox tester
+            from commands.training import test_training_sandbox
+            
+            await interaction.followup.send(
+                "🧪 **Starting Training Sandbox Test**\n\n"
+                "This will show you the complete training flow:\n"
+                "✅ Stat selection screen\n"
+                "✅ Preview with secondary stats\n"
+                "✅ Detailed results screen\n"
+                "✅ All GIFs and formatting\n\n"
+                "⚠️ **No database changes will be made!**",
+                ephemeral=True
+            )
+            
+            # Run the sandbox test
+            await test_training_sandbox(interaction)
+            
+        except Exception as e:
+            await interaction.followup.send(f"❌ Error: {e}", ephemeral=True)
+            import traceback
+            traceback.print_exc()
 
 
 class ConfirmWipeView(discord.ui.View):
