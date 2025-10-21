@@ -118,13 +118,39 @@ FALLBACK_GIFS = {
     'success': ['https://media.giphy.com/media/g9582DNuQppxC/giphy.gif'],
 }
 
+# ✅ SOCCER-SPECIFIC SEARCH TERMS (Avoids American football & memes!)
+# Uses player names, league names, and technical terms for accurate results
 GIPHY_SEARCH_TERMS = {
-    'intense': ['football training gym', 'soccer workout intense', 'athlete training'],
-    'skill': ['football skills', 'soccer dribbling', 'football tricks'],
-    'cardio': ['football sprint', 'soccer running', 'athlete cardio'],
-    'defending': ['football defending', 'soccer tackle', 'defensive training'],
-    'shooting': ['football shooting', 'soccer goal', 'striker training'],
-    'success': ['football celebration', 'soccer goal celebration', 'athlete celebration']
+    'intense': [
+        'premier league training ground',
+        'soccer gym workout professional',
+        'champions league fitness training'
+    ],
+    'skill': [
+        'messi dribbling skills',
+        'neymar skill compilation',
+        'ronaldinho magic tricks'
+    ],
+    'cardio': [
+        'soccer sprint training drill',
+        'kylian mbappe running',
+        'premier league fitness test'
+    ],
+    'defending': [
+        'virgil van dijk defending',
+        'sergio ramos tackle',
+        'soccer defensive training drill'
+    ],
+    'shooting': [
+        'lionel messi free kick',
+        'cristiano ronaldo bicycle kick',
+        'premier league striker goal'
+    ],
+    'success': [
+        'messi world cup celebration 2022',
+        'ronaldo siuu celebration',
+        'champions league trophy celebration'
+    ]
 }
 
 async def fetch_giphy_gif(search_term, limit=10):
@@ -147,7 +173,7 @@ async def fetch_giphy_gif(search_term, limit=10):
             'api_key': GIPHY_API_KEY,
             'q': search_term,
             'limit': limit,
-            'rating': 'pg-13',  # Family friendly
+            'rating': 'g',  # Family friendly
             'lang': 'en'
         }
         
