@@ -196,9 +196,9 @@ GIPHY_SEARCH_TERMS = {
         'soccer defending training'
     ],
     'shooting': [
-        'manchester real ronaldo free kick goal',
+        'ronaldo free kick goal',
         'messi goal barcelona',
-        'premier league player goal',
+        'premier league goal',
         'champions league goal',
         'football shooting training'
     ],
@@ -310,8 +310,8 @@ class StatTrainingView(View):
         for stat in ['pace', 'shooting', 'passing', 'dribbling', 'defending', 'physical']:
             efficiency = position_efficiency.get(stat, 100)
             
-            # Calculate expected gains (now position-adjusted!)
-            expected_gains = calculate_expected_gains(stat, total_points, position_efficiency, player)
+            # Calculate expected gains with base points (efficiency applied inside function)
+            expected_gains = calculate_expected_gains(stat, self.total_points, position_efficiency, player)
             
             # Build label showing actual expected gains
             primary_gain = expected_gains[stat]
@@ -608,36 +608,42 @@ class TrainingCommands(commands.Cog):
 
         # Apply training with multi-stat gains
         selected_stat = view.selected_stat
-        efficiency = position_efficiency[selected_stat] / 100.0
-        total_points = int(base_total_points * efficiency)
-        total_points = max(1, total_points)
-
+        
+        # Position efficiency is applied inside the gain calculations
+        # So we use base_total_points here (with all other bonuses already applied)
+        total_points = base_total_points
+        
         # Randomness
         if random.random() < 0.15:
             total_points = max(1, total_points - 1)
         elif random.random() < 0.10:
             total_points += 1
+        
+        # Get position-adjusted points for the selected stat
+        efficiency = position_efficiency[selected_stat] / 100.0
+        adjusted_points = int(total_points * efficiency)
+        adjusted_points = max(1, adjusted_points)
 
         # Calculate gains for primary + secondary stats
         relationships = get_training_stat_relationships()
         actual_gains = {}
 
-        # Apply primary stat gain
+        # Apply primary stat gain (using position-adjusted points)
         current = player[selected_stat]
         current_potential = player['potential']  # Initialize here
         distance_from_potential = current_potential - current
 
         if distance_from_potential <= 0:
             if current < current_potential + 3:
-                successful_gains = sum(1 for _ in range(total_points) if random.random() < 0.10)
+                successful_gains = sum(1 for _ in range(adjusted_points) if random.random() < 0.10)
             else:
                 successful_gains = 0
         elif distance_from_potential <= 5:
-            successful_gains = sum(1 for _ in range(total_points) if random.random() < 0.30)
+            successful_gains = sum(1 for _ in range(adjusted_points) if random.random() < 0.30)
         elif distance_from_potential <= 10:
-            successful_gains = sum(1 for _ in range(total_points) if random.random() < 0.50)
+            successful_gains = sum(1 for _ in range(adjusted_points) if random.random() < 0.50)
         else:
-            successful_gains = sum(1 for _ in range(total_points) if random.random() < 0.70)
+            successful_gains = sum(1 for _ in range(adjusted_points) if random.random() < 0.70)
 
         new_value = min(99, current + successful_gains)
         actual_gain = new_value - current
@@ -648,7 +654,7 @@ class TrainingCommands(commands.Cog):
         # Apply secondary stat gains
         if selected_stat in relationships:
             for secondary_stat, percentage in relationships[selected_stat].items():
-                secondary_points = int(total_points * percentage)
+                secondary_points = int(adjusted_points * percentage)
                 
                 if secondary_points > 0:
                     sec_current = player[secondary_stat]
