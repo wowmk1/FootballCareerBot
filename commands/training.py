@@ -168,11 +168,11 @@ FOOTBALL_GIFS = {
 # Focused on most reliable terms that return quality football content
 GIPHY_SEARCH_TERMS = {
     'intense': [
-        'cristiano ronaldo gym training',
-        'premier league training session',
-        'football fitness workout',
-        'soccer strength training',
-        'professional football gym'
+        'man utd soccer indoor training',
+        'soccer serious',
+        'soccer amazing skills',
+        'juve soccer strength',
+        'https://giphy.com/search/professional-football-soccer-gym'
     ],
     'skill': [
         'messi dribbling barcelona',
