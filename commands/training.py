@@ -331,7 +331,7 @@ class StatTrainingView(View):
         
         embed = discord.Embed(
             title=f"🎯 Training Focus: {self.selected_stat.capitalize()}",
-            description="Here's what you can expect from this training session:",
+            description="**Here's what will improve from this session:**",
             color=discord.Color.blue()
         )
         
@@ -344,41 +344,42 @@ class StatTrainingView(View):
             inline=False
         )
         
-        # Secondary stats
+        # Secondary stats - MORE VISIBLE!
         secondary_stats = [(s, g) for s, g in expected_gains.items() if s != self.selected_stat]
         if secondary_stats:
-            secondary_text = "These stats also improve during this training:\n\n"
+            secondary_text = "**These stats also improve automatically:**\n\n"
             for sec_stat, (min_g, max_g, _) in secondary_stats:
                 if max_g > 0:
-                    secondary_text += f"• **{sec_stat.capitalize()}**: +{min_g}-{max_g} points\n"
+                    current = self.player[sec_stat]
+                    secondary_text += f"💡 **{sec_stat.capitalize()}**: +{min_g}-{max_g} ({current} → ~{current + max_g})\n"
             
             embed.add_field(
-                name="💡 BONUS: Related Stats",
+                name="✨ BONUS: Related Stats Improve Too!",
                 value=secondary_text,
                 inline=False
             )
         
         # Explanation
         relationships_text = {
-            'shooting': "Shooting practice includes:\n• Shot power & strength (Physical)\n• Close control in box (Dribbling)\n• Getting into positions (Pace)\n• Striking technique (Passing)",
-            'pace': "Speed training includes:\n• Cardio & explosive power (Physical)\n• Ball control at speed (Dribbling)\n• Tracking/recovery runs (Defending)\n• Quick transitions (Passing)",
-            'physical': "Strength training improves:\n• Explosive acceleration (Pace)\n• Winning physical battles (Defending)\n• Shot power (Shooting)\n• Long passing power (Passing)",
-            'dribbling': "Dribbling drills improve:\n• Quick feet & agility (Pace)\n• Ball control for passing (Passing)\n• Close control for shots (Shooting)\n• Balance & core strength (Physical)",
-            'passing': "Passing practice enhances:\n• Receiving & ball control (Dribbling)\n• Striking technique (Shooting)\n• Stamina for quality (Physical)\n• Positioning awareness (Defending)",
-            'defending': "Defensive training builds:\n• Tackling strength & stamina (Physical)\n• Tracking & recovery speed (Pace)\n• Playing out from back (Passing)\n• Carrying ball forward (Dribbling)"
+            'shooting': "**Why?** Shooting practice includes:\n• Shot power & strength (Physical)\n• Close control in box (Dribbling)\n• Getting into positions (Pace)\n• Striking technique (Passing)",
+            'pace': "**Why?** Speed training includes:\n• Cardio & explosive power (Physical)\n• Ball control at speed (Dribbling)\n• Tracking/recovery runs (Defending)\n• Quick transitions (Passing)",
+            'physical': "**Why?** Strength training improves:\n• Explosive acceleration (Pace)\n• Winning physical battles (Defending)\n• Shot power (Shooting)\n• Long passing power (Passing)",
+            'dribbling': "**Why?** Dribbling drills improve:\n• Quick feet & agility (Pace)\n• Ball control for passing (Passing)\n• Close control for shots (Shooting)\n• Balance & core strength (Physical)",
+            'passing': "**Why?** Passing practice enhances:\n• Receiving & ball control (Dribbling)\n• Striking technique (Shooting)\n• Stamina for quality (Physical)\n• Positioning awareness (Defending)",
+            'defending': "**Why?** Defensive training builds:\n• Tackling strength & stamina (Physical)\n• Tracking & recovery speed (Pace)\n• Playing out from back (Passing)\n• Carrying ball forward (Dribbling)"
         }
         
         if self.selected_stat in relationships_text:
             embed.add_field(
-                name="📋 Why These Stats?",
+                name="📋 Realistic Training Logic",
                 value=relationships_text[self.selected_stat],
                 inline=False
             )
         
-        embed.set_footer(text="✅ Training is realistic - related attributes improve naturally!")
+        embed.set_footer(text="✅ Training is realistic - related attributes improve naturally! | Starting in 5 seconds...")
         
         await interaction.response.edit_message(embed=embed, view=None)
-        await asyncio.sleep(2)  # Let them read it
+        await asyncio.sleep(5)  # Give them time to read! Changed from 2 to 5 seconds
         self.stop()
 
 
@@ -642,38 +643,132 @@ class TrainingCommands(commands.Cog):
         success_level = 'success' if sum(actual_gains.values()) >= 3 or new_overall > player['overall_rating'] else 'normal'
         result_gif = await get_training_gif(selected_stat, success_level)
 
+        # Determine description based on gains
+        if not actual_gains:
+            description = "Tough session today! Keep training - gains will come."
+        elif sum(actual_gains.values()) >= 4:
+            description = "Outstanding session! Hard work and dedication!"
+        elif streak_broken:
+            description = "Back to training after missing a day!"
+        else:
+            description = "Hard work and dedication!"
+        
+        # Add bad day message if applicable
+        bad_day_message = ""
+        if random.random() < 0.15 and sum(actual_gains.values()) < 3:
+            bad_day_message = "\n⚠️ **Tough session today!** Gains reduced."
+        
         embed = discord.Embed(
             title="💪 Training Complete!",
-            description=f"Focused on **{selected_stat.capitalize()}** training!",
+            description=description + bad_day_message,
             color=discord.Color.gold() if actual_gains else discord.Color.orange()
         )
         
         embed.set_image(url=result_gif)
 
-        # Show primary gains
-        if selected_stat in actual_gains:
-            primary_text = f"⭐ **+{actual_gains[selected_stat]} {selected_stat.capitalize()}** "
-            primary_text += f"({player[selected_stat]} → **{updated_stats[selected_stat]}**)\n"
+        # Progress to next OVR (like old version!)
+        if new_overall < 99:
+            next_ovr = new_overall + 1
+            # Calculate how close to next level
+            total_stats = sum(updated_stats.values())
+            needed_for_next = (next_ovr * 6) - total_stats
+            progress = ((6 - needed_for_next) / 6) * 100 if needed_for_next < 6 else 0
             
-            if updated_stats[selected_stat] >= 90 and player[selected_stat] < 90:
-                primary_text += "🔥 **WORLD CLASS!**"
-            elif updated_stats[selected_stat] >= 80 and player[selected_stat] < 80:
-                primary_text += "⚡ **ELITE!**"
+            progress_bar_length = 20
+            filled = int(progress / 100 * progress_bar_length)
+            progress_bar = "█" * filled + "░" * (progress_bar_length - filled)
             
-            embed.add_field(name="🎯 Primary Focus", value=primary_text, inline=False)
+            embed.add_field(
+                name=f"📊 Progress to {next_ovr} OVR",
+                value=f"{progress_bar} {int(progress)}%",
+                inline=False
+            )
 
-        # Show secondary gains
-        secondary_gains = {s: g for s, g in actual_gains.items() if s != selected_stat}
-        if secondary_gains:
-            sec_text = "Related stats improved from training:\n\n"
-            for sec_stat, sec_gain in secondary_gains.items():
-                sec_text += f"• **+{sec_gain} {sec_stat.capitalize()}** ({player[sec_stat]} → {updated_stats[sec_stat]})\n"
+        # Show ALL stat gains with highlights (like old version!)
+        if actual_gains:
+            gains_text = ""
+            for stat, gain in actual_gains.items():
+                is_primary = stat == selected_stat
+                emoji = "⭐" if is_primary else "💡"
+                
+                # Highlight milestone gains
+                new_val = updated_stats[stat]
+                old_val = player[stat]
+                milestone = ""
+                if new_val >= 90 and old_val < 90:
+                    milestone = " 🔥 **WORLD CLASS!**"
+                elif new_val >= 80 and old_val < 80:
+                    milestone = " ⚡ **ELITE!**"
+                elif new_val >= 70 and old_val < 70:
+                    milestone = " ✨ **PROFESSIONAL!**"
+                
+                if is_primary:
+                    gains_text += f"{emoji} **+{gain} {stat.capitalize()}** ({old_val} → {new_val}){milestone}\n"
+                else:
+                    gains_text += f"{emoji} +{gain} {stat.capitalize()} ({old_val} → {new_val}){milestone}\n"
             
-            embed.add_field(name="💡 Bonus Improvements", value=sec_text, inline=False)
+            # Check if past potential
+            past_potential = any(updated_stats[stat] >= player['potential'] for stat in actual_gains.keys())
+            if past_potential:
+                gains_text += "\n✨ **Pushing beyond limits!**"
+        else:
+            gains_text = "Tough session! Keep working - gains will come."
 
-        if not actual_gains:
-            embed.add_field(name="📈 Results", value="No improvements this session. Keep training!", inline=False)
+        embed.add_field(name="📈 Stat Gains", value=gains_text, inline=False)
 
+        # 🆕 SHOW TRAIT UNLOCKS IF ANY (like old version!)
+        if newly_unlocked_traits:
+            traits_text = ""
+            for trait_id, trait_data in newly_unlocked_traits:
+                traits_text += f"{trait_data['emoji']} **{trait_data['name']}** unlocked!\n"
+            
+            embed.add_field(
+                name="🎯 NEW TRAITS UNLOCKED!",
+                value=traits_text,
+                inline=False
+            )
+
+        # 🆕 PROGRESS BAR TO 30-DAY STREAK (like old version!)
+        if new_streak < 30:
+            streak_progress = new_streak / 30
+            progress_bar_filled = int(streak_progress * 20)
+            streak_progress_bar = "█" * progress_bar_filled + "░" * (20 - progress_bar_filled)
+            embed.add_field(
+                name="🎯 Progress to 30-Day Streak",
+                value=f"{streak_progress_bar} **{new_streak}/30 days**\n"
+                      f"Unlock: **+3 Potential** permanently!",
+                inline=False
+            )
+
+        # 30-day milestone reward (like old version!)
+        if potential_boost > 0:
+            embed.add_field(
+                name="🌟 30-DAY MILESTONE REACHED!",
+                value=f"**+{potential_boost} POTENTIAL!** New max: {current_potential}",
+                inline=False
+            )
+
+        # League comparison (CRITICAL - was missing!)
+        async with db.pool.acquire() as conn:
+            league_avg = await conn.fetchrow("""
+                SELECT AVG(overall_rating) as avg_rating
+                FROM players
+                WHERE league = $1 AND retired = FALSE
+            """, player['league'])
+            
+            if league_avg and league_avg['avg_rating']:
+                avg = float(league_avg['avg_rating'])
+                diff = new_overall - avg
+                comparison = "above" if diff > 0 else "below"
+                
+                embed.add_field(
+                    name="📊 League Comparison",
+                    value=f"You: **{new_overall}** | League Avg: **{avg:.1f}**\n"
+                          f"You are **{abs(diff):.1f} OVR {comparison}** average",
+                    inline=False
+                )
+
+        # Overall rating change (like old version!)
         if new_overall > player['overall_rating']:
             embed.add_field(
                 name="⭐ Overall Rating",
@@ -681,15 +776,62 @@ class TrainingCommands(commands.Cog):
                 inline=True
             )
 
-        embed.add_field(name="🔥 Streak", value=f"**{new_streak} days**", inline=True)
+        # Streak display (like old version!)
+        embed.add_field(
+            name="🔥 Streak",
+            value=f"**{new_streak} days**",
+            inline=True
+        )
 
-        if newly_unlocked_traits:
-            traits_text = ""
-            for trait_id, trait_data in newly_unlocked_traits:
-                traits_text += f"{trait_data['emoji']} **{trait_data['name']}**\n"
-            embed.add_field(name="🎯 NEW TRAITS!", value=traits_text, inline=False)
+        # Show morale impact (like old version!)
+        if morale_multiplier > 1.0:
+            embed.add_field(
+                name="😊 Morale Bonus",
+                value=f"{morale_desc}\n**+{int((morale_multiplier - 1.0) * 100)}%** training gains!",
+                inline=True
+            )
+        elif morale_multiplier < 1.0:
+            embed.add_field(
+                name="😕 Morale Penalty",
+                value=f"{morale_desc}\n**{int((morale_multiplier - 1.0) * 100)}%** training gains",
+                inline=True
+            )
 
-        embed.set_footer(text=f"✨ Total gains: +{sum(actual_gains.values())} across {len(actual_gains)} stats | Realistic training!")
+        # Potential progress (like old version!)
+        distance = current_potential - new_overall
+        if distance > 0:
+            embed.add_field(
+                name="🎯 Potential Progress",
+                value=f"**{distance} OVR** from potential ({current_potential})\n"
+                      f"Estimated: ~{distance * 3} focused sessions (~{distance * 3} days)",
+                inline=False
+            )
+        else:
+            over_by = new_overall - player['potential']
+            embed.add_field(
+                name="🚀 Beyond Potential!",
+                value=f"**+{over_by} OVR** above base potential!",
+                inline=False
+            )
+
+        # Career time (like old version!)
+        years_left = config.RETIREMENT_AGE - player['age']
+        embed.add_field(
+            name="⏳ Career Time",
+            value=f"**{years_left} years** left | Age: {player['age']}",
+            inline=True
+        )
+
+        # Next session time (like old version!)
+        embed.add_field(
+            name="⏰ Next Session",
+            value=f"**{config.TRAINING_COOLDOWN_HOURS}h**",
+            inline=True
+        )
+
+        # Footer with all multipliers (like old version!)
+        league_name = player.get('league', 'Championship')
+        embed.set_footer(text=f"Age: {age_multiplier:.1f}x | Morale: {morale_multiplier:.1f}x | {league_name}: {league_modifier}x | Position: {efficiency:.1f}x")
 
         await interaction.edit_original_response(embed=embed, view=None)
 
