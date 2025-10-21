@@ -172,31 +172,31 @@ GIPHY_SEARCH_TERMS = {
         'soccer serious',
         'soccer amazing skills',
         'juve soccer strength',
-        'https://giphy.com/search/professional-football-soccer-gym'
+        'professional football soccer gym'
     ],
     'skill': [
         'messi dribbling barcelona',
         'neymar skills psg',
-        'ronaldinho football tricks',
+        'ronaldinho soccer',
         'hazard dribbling chelsea',
         'football skill moves'
     ],
     'cardio': [
-        'mbappe running speed',
-        'football sprint training',
-        'soccer speed drill',
-        'rashford sprint drill',
-        'football cardio workout'
+        'mbappe',
+        'running for soccer',
+        'soccer running player',
+        'ryan giggs',
+        'paul scholes'
     ],
     'defending': [
         'van dijk defending',
         'ramos tackle madrid',
-        'football defensive drill',
+        'soccer tackle',
         'chiellini juventus tackle',
-        'soccer defending training'
+        'rudiger'
     ],
     'shooting': [
-        'ronaldo free kick goal',
+        'ronaldo free kick',
         'messi goal barcelona',
         'premier league goal',
         'champions league goal',
@@ -207,7 +207,7 @@ GIPHY_SEARCH_TERMS = {
         'ronaldo siuu celebration',
         'champions league celebration',
         'football trophy celebration',
-        'premier league champions'
+        'premier league celebration'
     ]
 }
 
