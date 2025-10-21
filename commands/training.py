@@ -8,6 +8,7 @@ from datetime import datetime, timedelta
 import config
 import asyncio
 import aiohttp
+import os
 
 
 # ============================================
@@ -100,7 +101,16 @@ def calculate_expected_gains(selected_stat, total_points, position_efficiency, p
 # 🎬 GIPHY GIF API - FOOTBALL ONLY!
 # ============================================
 
-GIPHY_API_KEY = config.GIPHY_API_KEY if hasattr(config, 'GIPHY_API_KEY') else None
+# Check multiple sources for API key
+GIPHY_API_KEY = None
+if hasattr(config, 'GIPHY_API_KEY') and config.GIPHY_API_KEY:
+    GIPHY_API_KEY = config.GIPHY_API_KEY
+    print("✅ Giphy API key loaded from config.py")
+elif os.getenv('GIPHY_API_KEY'):
+    GIPHY_API_KEY = os.getenv('GIPHY_API_KEY')
+    print("✅ Giphy API key loaded from environment variable")
+else:
+    print("⚠️ No Giphy API key found - using fallback GIFs only")
 
 # Curated football GIFs - High quality fallbacks
 FALLBACK_GIFS = {
@@ -125,7 +135,7 @@ GIPHY_SEARCH_TERMS = {
 async def fetch_giphy_gif(search_term, limit=15):
     """Fetch GIF from Giphy API with football-specific filtering"""
     if not GIPHY_API_KEY:
-        print("⚠️ No Giphy API key found")
+        print("⚠️ Giphy API key not found - skipping API call")
         return None
     
     try:
@@ -138,7 +148,7 @@ async def fetch_giphy_gif(search_term, limit=15):
             'lang': 'en'
         }
         
-        print(f"🔍 Searching Giphy: {search_term}")
+        print(f"🔍 Searching Giphy for: {search_term}")
         
         async with aiohttp.ClientSession() as session:
             async with session.get(url, params=params, timeout=aiohttp.ClientTimeout(total=5)) as response:
@@ -147,15 +157,22 @@ async def fetch_giphy_gif(search_term, limit=15):
                     if data.get('data') and len(data['data']) > 0:
                         result = random.choice(data['data'])
                         gif_url = result['images']['original']['url']
-                        print(f"✅ Got Giphy GIF: {gif_url[:50]}...")
+                        print(f"✅ Got Giphy GIF successfully!")
                         return gif_url
                     else:
-                        print("⚠️ Giphy returned no results")
+                        print("⚠️ Giphy returned no results for this search")
+                elif response.status == 401:
+                    print("❌ Giphy API key is invalid (401 Unauthorized)")
+                elif response.status == 429:
+                    print("⚠️ Giphy rate limit reached (429)")
                 else:
-                    print(f"⚠️ Giphy API error: {response.status}")
+                    print(f"⚠️ Giphy API error: HTTP {response.status}")
         
         return None
     
+    except asyncio.TimeoutError:
+        print("⚠️ Giphy API timeout after 5 seconds")
+        return None
     except Exception as e:
         print(f"❌ Giphy API error: {e}")
         return None
