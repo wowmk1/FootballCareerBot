@@ -425,7 +425,7 @@ class TrainingCommands(commands.Cog):
             await interaction.followup.send(f"You're injured! Rest for **{player['injury_weeks']} more weeks** before training.", ephemeral=True)
             return
 
-        # [Keep all cooldown checking code from previous version]
+        # Check cooldown and streak
         streak_broken = False
         if player['last_training']:
             last_train = datetime.fromisoformat(player['last_training'])
@@ -609,6 +609,12 @@ class TrainingCommands(commands.Cog):
 
         new_overall = sum(updated_stats.values()) // 6
 
+        # Check for 30-day streak milestone (potential boost)
+        potential_boost = 0
+        if new_streak == 30 and player['training_streak'] < 30:
+            potential_boost = 3
+            current_potential += potential_boost
+
         # Update database
         async with db.pool.acquire() as conn:
             if actual_gains:
@@ -622,8 +628,14 @@ class TrainingCommands(commands.Cog):
                 if update_parts:
                     set_clause = ", ".join([f"{part} = ${i + 1}" for i, part in enumerate(update_parts)])
                     set_clause += f", overall_rating = ${len(update_parts) + 1}, training_streak = ${len(update_parts) + 2}, last_training = ${len(update_parts) + 3}"
-                    all_values = update_values + [new_overall, new_streak, datetime.now().isoformat(), interaction.user.id]
-                    await conn.execute(f"UPDATE players SET {set_clause} WHERE user_id = ${len(update_parts) + 4}", *all_values)
+                    
+                    if potential_boost > 0:
+                        set_clause += f", potential = ${len(update_parts) + 4}"
+                        all_values = update_values + [new_overall, new_streak, datetime.now().isoformat(), current_potential, interaction.user.id]
+                        await conn.execute(f"UPDATE players SET {set_clause} WHERE user_id = ${len(update_parts) + 5}", *all_values)
+                    else:
+                        all_values = update_values + [new_overall, new_streak, datetime.now().isoformat(), interaction.user.id]
+                        await conn.execute(f"UPDATE players SET {set_clause} WHERE user_id = ${len(update_parts) + 4}", *all_values)
             else:
                 await conn.execute("UPDATE players SET training_streak = $1, last_training = $2 WHERE user_id = $3",
                     new_streak, datetime.now().isoformat(), interaction.user.id)
@@ -666,7 +678,7 @@ class TrainingCommands(commands.Cog):
         
         embed.set_image(url=result_gif)
 
-        # Progress to next OVR (like old version!)
+        # Progress to next OVR
         if new_overall < 99:
             next_ovr = new_overall + 1
             # Calculate how close to next level
@@ -684,7 +696,7 @@ class TrainingCommands(commands.Cog):
                 inline=False
             )
 
-        # Show ALL stat gains with highlights (like old version!)
+        # Show ALL stat gains with highlights
         if actual_gains:
             gains_text = ""
             for stat, gain in actual_gains.items():
@@ -716,7 +728,7 @@ class TrainingCommands(commands.Cog):
 
         embed.add_field(name="📈 Stat Gains", value=gains_text, inline=False)
 
-        # 🆕 SHOW TRAIT UNLOCKS IF ANY (like old version!)
+        # Show trait unlocks if any
         if newly_unlocked_traits:
             traits_text = ""
             for trait_id, trait_data in newly_unlocked_traits:
@@ -728,7 +740,7 @@ class TrainingCommands(commands.Cog):
                 inline=False
             )
 
-        # 🆕 PROGRESS BAR TO 30-DAY STREAK (like old version!)
+        # Progress bar to 30-day streak
         if new_streak < 30:
             streak_progress = new_streak / 30
             progress_bar_filled = int(streak_progress * 20)
@@ -740,7 +752,7 @@ class TrainingCommands(commands.Cog):
                 inline=False
             )
 
-        # 30-day milestone reward (like old version!)
+        # 30-day milestone reward
         if potential_boost > 0:
             embed.add_field(
                 name="🌟 30-DAY MILESTONE REACHED!",
@@ -748,7 +760,7 @@ class TrainingCommands(commands.Cog):
                 inline=False
             )
 
-        # League comparison (CRITICAL - was missing!)
+        # League comparison
         async with db.pool.acquire() as conn:
             league_avg = await conn.fetchrow("""
                 SELECT AVG(overall_rating) as avg_rating
@@ -768,7 +780,7 @@ class TrainingCommands(commands.Cog):
                     inline=False
                 )
 
-        # Overall rating change (like old version!)
+        # Overall rating change
         if new_overall > player['overall_rating']:
             embed.add_field(
                 name="⭐ Overall Rating",
@@ -776,14 +788,14 @@ class TrainingCommands(commands.Cog):
                 inline=True
             )
 
-        # Streak display (like old version!)
+        # Streak display
         embed.add_field(
             name="🔥 Streak",
             value=f"**{new_streak} days**",
             inline=True
         )
 
-        # Show morale impact (like old version!)
+        # Show morale impact
         if morale_multiplier > 1.0:
             embed.add_field(
                 name="😊 Morale Bonus",
@@ -797,7 +809,7 @@ class TrainingCommands(commands.Cog):
                 inline=True
             )
 
-        # Potential progress (like old version!)
+        # Potential progress
         distance = current_potential - new_overall
         if distance > 0:
             embed.add_field(
@@ -814,7 +826,7 @@ class TrainingCommands(commands.Cog):
                 inline=False
             )
 
-        # Career time (like old version!)
+        # Career time
         years_left = config.RETIREMENT_AGE - player['age']
         embed.add_field(
             name="⏳ Career Time",
@@ -822,18 +834,194 @@ class TrainingCommands(commands.Cog):
             inline=True
         )
 
-        # Next session time (like old version!)
+        # Next session time
         embed.add_field(
             name="⏰ Next Session",
             value=f"**{config.TRAINING_COOLDOWN_HOURS}h**",
             inline=True
         )
 
-        # Footer with all multipliers (like old version!)
+        # Footer with all multipliers
         league_name = player.get('league', 'Championship')
         embed.set_footer(text=f"Age: {age_multiplier:.1f}x | Morale: {morale_multiplier:.1f}x | {league_name}: {league_modifier}x | Position: {efficiency:.1f}x")
 
         await interaction.edit_original_response(embed=embed, view=None)
+
+
+# ============================================
+# 🧪 SANDBOX TEST FUNCTION (NO DB CHANGES!)
+# ============================================
+async def test_training_sandbox(interaction: discord.Interaction):
+    """
+    Sandbox test of the training system - shows all screens without DB changes
+    """
+    import random
+    
+    # Create fake player data
+    fake_player = {
+        'user_id': interaction.user.id,
+        'player_name': f"{interaction.user.display_name}'s Test Player",
+        'overall_rating': 75,
+        'pace': 78,
+        'shooting': 72,
+        'passing': 74,
+        'dribbling': 76,
+        'defending': 68,
+        'physical': 73,
+        'team_id': 'test_team',
+        'league': 'Premier League',
+        'position': 'CM',
+        'age': 23,
+        'energy': 85,
+        'form': 0.80,
+        'potential': 85,
+        'morale': 75,
+        'training_streak': 5,
+        'retired': False,
+        'injury_weeks': 0,
+        'last_training': None
+    }
+    
+    # Calculate sandbox modifiers
+    age_multiplier = 1.0
+    morale_multiplier = 1.1
+    league_modifier = 1.2
+    position_efficiency = get_position_efficiency(fake_player['position'])
+    
+    base_total_points = int((1 + 0) * age_multiplier * morale_multiplier * league_modifier)
+    base_total_points = max(1, base_total_points)
+    
+    # Show initial selection screen
+    embed = discord.Embed(
+        title=f"🧪 SANDBOX TEST: {fake_player['player_name']}",
+        description=f"**{fake_player['position']}** • Age {fake_player['age']} • **{fake_player['overall_rating']}** OVR → ⭐ **{fake_player['potential']}** POT\n\n"
+                   f"✨ **Testing:** Multi-stat training system (no database changes)",
+        color=discord.Color.purple()
+    )
+    
+    training_prep_gif = await get_training_gif('physical', 'normal')
+    embed.set_image(url=training_prep_gif)
+    
+    # Current stats
+    stats_text = (
+        f"⚡ **Pace:** {fake_player['pace']}\n🎯 **Shooting:** {fake_player['shooting']}\n"
+        f"🎨 **Passing:** {fake_player['passing']}\n⚽ **Dribbling:** {fake_player['dribbling']}\n"
+        f"🛡️ **Defending:** {fake_player['defending']}\n💪 **Physical:** {fake_player['physical']}"
+    )
+    embed.add_field(name="📊 Current Attributes", value=stats_text, inline=True)
+    
+    modifiers_text = (
+        f"😊 **Morale:** {morale_multiplier:.1f}x\n👤 **Age:** {age_multiplier:.1f}x\n"
+        f"🏟️ **Facilities:** {league_modifier}x\n🔥 **Streak:** {fake_player['training_streak']} days"
+    )
+    embed.add_field(name="⚙️ Modifiers", value=modifiers_text, inline=True)
+    
+    embed.add_field(
+        name="🧪 Sandbox Mode",
+        value="This is a TEST - no database changes!\n"
+              "You'll see all screens: selection → preview → results",
+        inline=False
+    )
+    
+    embed.set_footer(text="🧪 TESTING MODE | Select a stat to see preview screen")
+    
+    view = StatTrainingView(fake_player, position_efficiency, base_total_points)
+    await interaction.followup.send(embed=embed, view=view)
+    
+    await view.wait()
+    
+    if not view.selected_stat:
+        await interaction.followup.send("⏰ Test timed out!", ephemeral=True)
+        return
+    
+    # Simulate training results
+    selected_stat = view.selected_stat
+    efficiency = position_efficiency[selected_stat] / 100.0
+    total_points = int(base_total_points * efficiency)
+    total_points = max(1, total_points)
+    
+    # Calculate gains for primary + secondary stats
+    relationships = get_training_stat_relationships()
+    actual_gains = {}
+    
+    # Primary stat gain (simulated)
+    primary_gain = random.randint(1, 3)
+    actual_gains[selected_stat] = primary_gain
+    
+    # Secondary stat gains (simulated)
+    if selected_stat in relationships:
+        for secondary_stat, percentage in relationships[selected_stat].items():
+            secondary_points = int(total_points * percentage)
+            if secondary_points > 0 and random.random() < 0.7:
+                sec_gain = random.randint(0, 2)
+                if sec_gain > 0:
+                    actual_gains[secondary_stat] = sec_gain
+    
+    # Update fake stats
+    updated_stats = {stat: fake_player[stat] for stat in ['pace', 'shooting', 'passing', 'dribbling', 'defending', 'physical']}
+    for stat, gain in actual_gains.items():
+        updated_stats[stat] = fake_player[stat] + gain
+    
+    new_overall = sum(updated_stats.values()) // 6
+    
+    # Show results (mimicking real training results)
+    success_level = 'success' if sum(actual_gains.values()) >= 3 else 'normal'
+    result_gif = await get_training_gif(selected_stat, success_level)
+    
+    description = "🧪 **Sandbox Test Complete!**\n\nThis is how results look in real training!"
+    if sum(actual_gains.values()) >= 4:
+        description += "\n✨ Outstanding session!"
+    
+    embed = discord.Embed(
+        title="🧪 SANDBOX RESULTS (Not Saved)",
+        description=description,
+        color=discord.Color.purple()
+    )
+    
+    embed.set_image(url=result_gif)
+    
+    # Show stat gains
+    gains_text = ""
+    for stat, gain in actual_gains.items():
+        is_primary = stat == selected_stat
+        emoji = "⭐" if is_primary else "💡"
+        old_val = fake_player[stat]
+        new_val = updated_stats[stat]
+        
+        if is_primary:
+            gains_text += f"{emoji} **+{gain} {stat.capitalize()}** ({old_val} → {new_val})\n"
+        else:
+            gains_text += f"{emoji} +{gain} {stat.capitalize()} ({old_val} → {new_val})\n"
+    
+    embed.add_field(name="📈 Stat Gains", value=gains_text, inline=False)
+    
+    # Overall change
+    if new_overall > fake_player['overall_rating']:
+        embed.add_field(
+            name="⭐ Overall Rating",
+            value=f"{fake_player['overall_rating']} → **{new_overall}** (+{new_overall - fake_player['overall_rating']})",
+            inline=True
+        )
+    
+    embed.add_field(
+        name="🔥 Streak",
+        value=f"**{fake_player['training_streak']} days**",
+        inline=True
+    )
+    
+    embed.add_field(
+        name="✅ Test Summary",
+        value="• Stat selection screen ✓\n"
+              "• Preview with secondary stats ✓\n"
+              "• Detailed results screen ✓\n"
+              "• All GIFs working ✓\n\n"
+              "**No database changes made!**",
+        inline=False
+    )
+    
+    embed.set_footer(text="🧪 SANDBOX TEST COMPLETE | Real training uses /train command")
+    
+    await interaction.edit_original_response(embed=embed, view=None)
 
 
 async def setup(bot):
