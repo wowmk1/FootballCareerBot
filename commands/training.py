@@ -31,46 +31,40 @@ def get_training_stat_relationships():
     """
     return {
         'shooting': {
-            # Shooting practice involves: Running to positions, shot power, close control, technique
-            'physical': 0.50,   # Shot power, holding off defenders, stamina from repetitions
-            'dribbling': 0.30,  # Close control in box, receiving ball before shooting
-            'pace': 0.20,       # Getting into scoring positions quickly
-            'passing': 0.10,    # Striking technique transfers (both about hitting the ball)
+            'physical': 0.50,
+            'dribbling': 0.30,
+            'pace': 0.20,
+            'passing': 0.10,
         },
         'pace': {
-            # Sprint training involves: Cardio, explosive movements, agility, sometimes with ball
-            'physical': 0.60,   # Cardio conditioning and explosive power (VERY connected!)
-            'dribbling': 0.35,  # Speed dribbling, ball control at pace
-            'defending': 0.20,  # Tracking runs, recovery speed (especially for defenders)
-            'passing': 0.10,    # Quick transitions, passing on the move
+            'physical': 0.60,
+            'dribbling': 0.35,
+            'defending': 0.20,
+            'passing': 0.10,
         },
         'physical': {
-            # Strength/stamina training: Gym work, endurance, physical battles, power
-            'pace': 0.45,       # Explosive power improves acceleration/sprint speed
-            'defending': 0.40,  # Strength for tackles, winning physical battles
-            'shooting': 0.25,   # Shot power from leg/core strength
-            'passing': 0.15,    # Long passing power, driven passes
+            'pace': 0.45,
+            'defending': 0.40,
+            'shooting': 0.25,
+            'passing': 0.15,
         },
         'dribbling': {
-            # Dribbling drills: Close control, agility, ball manipulation, turns
-            'pace': 0.40,       # Agility and quick feet improve acceleration
-            'passing': 0.40,    # Ball control = better passing technique
-            'shooting': 0.25,   # Close control before shooting, dribbling to shoot
-            'physical': 0.15,   # Balance and core strength for tight turns
+            'pace': 0.40,
+            'passing': 0.40,
+            'shooting': 0.25,
+            'physical': 0.15,
         },
         'passing': {
-            # Passing practice: Technique, vision, weight of pass, distribution
-            'dribbling': 0.45,  # Receiving and controlling = dribbling improvement
-            'shooting': 0.30,   # Both require striking technique (hitting the ball)
-            'physical': 0.20,   # Stamina for maintaining quality, power for long passes
-            'defending': 0.15,  # Vision and positioning awareness (reading the game)
+            'dribbling': 0.45,
+            'shooting': 0.30,
+            'physical': 0.20,
+            'defending': 0.15,
         },
         'defending': {
-            # Defensive training: Tackling, positioning, 1v1s, physical battles
-            'physical': 0.55,   # Tackling strength, winning duels, stamina
-            'pace': 0.35,       # Tracking runners, recovery speed, jockeying
-            'passing': 0.20,    # Playing out from back after winning possession
-            'dribbling': 0.10,  # Carrying ball forward after winning it (modern defenders)
+            'physical': 0.55,
+            'pace': 0.35,
+            'passing': 0.20,
+            'dribbling': 0.10,
         }
     }
 
@@ -86,14 +80,13 @@ def calculate_expected_gains(selected_stat, total_points, position_efficiency, p
     expected_gains = {}
     
     # Primary stat gets all points
-    primary_min = max(1, int(total_points * 0.7))  # 70% success rate
-    primary_max = max(2, int(total_points * 1.2))  # Up to 120% with luck
+    primary_min = max(1, int(total_points * 0.7))
+    primary_max = max(2, int(total_points * 1.2))
     expected_gains[selected_stat] = (primary_min, primary_max, True)
     
     # Secondary stats get percentage of points
     if selected_stat in relationships:
         for secondary_stat, percentage in relationships[selected_stat].items():
-            # Secondary gains are reduced
             secondary_points = int(total_points * percentage)
             if secondary_points > 0:
                 sec_min = max(0, secondary_points - 1)
@@ -104,97 +97,35 @@ def calculate_expected_gains(selected_stat, total_points, position_efficiency, p
 
 
 # ============================================
-# 🎬 GIPHY GIF API (Better than Tenor!)
+# 🎬 GIPHY GIF API - FOOTBALL ONLY!
 # ============================================
 
 GIPHY_API_KEY = config.GIPHY_API_KEY if hasattr(config, 'GIPHY_API_KEY') else None
 
+# Curated football GIFs - High quality fallbacks
 FALLBACK_GIFS = {
-    'intense': ['https://media.giphy.com/media/3o7TKqm1mNujcBPSpy/giphy.gif'],
-    'skill': ['https://media.giphy.com/media/l0HlNQ03J5JxX6lva/giphy.gif'],
-    'cardio': ['https://media.giphy.com/media/3o6ZsZdNs3yE5l6hWM/giphy.gif'],
-    'defending': ['https://media.giphy.com/media/3o7btYXD7vNS0BkVZC/giphy.gif'],
-    'shooting': ['https://media.giphy.com/media/3o7TKPATxjC8vBZFUA/giphy.gif'],
-    'success': ['https://media.giphy.com/media/g9582DNuQppxC/giphy.gif'],
+    'intense': 'https://media1.tenor.com/m/8PXqXQZKY6UAAAAC/gym-training.gif',
+    'skill': 'https://media1.tenor.com/m/vHXPZmU-JQAAAAAC/cristiano-ronaldo-football.gif',
+    'cardio': 'https://media1.tenor.com/m/Pzd_yVGYGp8AAAAC/haaland-run.gif',
+    'defending': 'https://media1.tenor.com/m/NGL5rDZ_YbcAAAAC/van-dijk-tackle.gif',
+    'shooting': 'https://media1.tenor.com/m/uV9VDdqLUz4AAAAC/messi-goal.gif',
+    'success': 'https://media1.tenor.com/m/oqnSzC_FYukAAAAC/ronaldo-celebration.gif',
 }
 
-# ✅ SOCCER-SPECIFIC SEARCH TERMS (Avoids American football & memes!)
-# Uses player names, league names, and technical terms for accurate results
+# Ultra-specific search terms to avoid non-football results
 GIPHY_SEARCH_TERMS = {
-    'intense': [
-        'premier league training ground',
-        'soccer gym workout professional',
-        'champions league fitness training',
-        'manchester united training carrington',
-        'juventus training session',
-        'cristiano ronaldo manchester united gym',
-        'paul pogba juventus training',
-        'bruno fernandes training'
-    ],
-    'skill': [
-        'messi dribbling skills',
-        'neymar skill compilation',
-        'ronaldinho magic tricks',
-        'marcus rashford skills',
-        'antony manchester united tricks',
-        'paulo dybala juventus skills',
-        'federico chiesa dribbling',
-        'del piero magic'
-    ],
-    'cardio': [
-        'soccer sprint training drill',
-        'kylian mbappe running',
-        'premier league fitness test',
-        'manchester united sprint drill',
-        'rashford speed training',
-        'juventus fitness test',
-        'dusan vlahovic running',
-        'garnacho sprint'
-    ],
-    'defending': [
-        'virgil van dijk defending',
-        'sergio ramos tackle',
-        'soccer defensive training drill',
-        'lisandro martinez tackle',
-        'varane manchester united defending',
-        'chiellini juventus defending',
-        'bonucci tackle',
-        'bremer defending'
-    ],
-    'shooting': [
-        'lionel messi free kick',
-        'cristiano ronaldo bicycle kick',
-        'premier league striker goal',
-        'bruno fernandes goal',
-        'rashford free kick',
-        'manchester united goal celebration',
-        'vlahovic goal juventus',
-        'chiesa goal celebration'
-    ],
-    'success': [
-        'messi world cup celebration 2022',
-        'ronaldo siuu celebration',
-        'champions league trophy celebration',
-        'manchester united treble celebration',
-        'cristiano ronaldo manchester united celebration',
-        'juventus scudetto celebration',
-        'del piero celebration',
-        'bruno fernandes goal celebration'
-    ]
+    'intense': 'soccer training gym workout football fitness',
+    'skill': 'football skills dribbling soccer tricks',
+    'cardio': 'football sprint training soccer running drill',
+    'defending': 'football tackle defending soccer defense',
+    'shooting': 'football goal soccer striker finish',
+    'success': 'football celebration goal soccer winner',
 }
 
-async def fetch_giphy_gif(search_term, limit=10):
-    """
-    Fetch GIF from Giphy API
-    
-    Args:
-        search_term: Search query for Giphy
-        limit: Number of results to fetch (will pick random from these)
-    
-    Returns:
-        GIF URL or None if failed
-    """
+async def fetch_giphy_gif(search_term, limit=15):
+    """Fetch GIF from Giphy API with football-specific filtering"""
     if not GIPHY_API_KEY:
+        print("⚠️ No Giphy API key found")
         return None
     
     try:
@@ -203,32 +134,36 @@ async def fetch_giphy_gif(search_term, limit=10):
             'api_key': GIPHY_API_KEY,
             'q': search_term,
             'limit': limit,
-            'rating': 'g',  # Family friendly
+            'rating': 'g',
             'lang': 'en'
         }
+        
+        print(f"🔍 Searching Giphy: {search_term}")
         
         async with aiohttp.ClientSession() as session:
             async with session.get(url, params=params, timeout=aiohttp.ClientTimeout(total=5)) as response:
                 if response.status == 200:
                     data = await response.json()
                     if data.get('data') and len(data['data']) > 0:
-                        # Pick random from results
                         result = random.choice(data['data'])
-                        # Return the original GIF URL
-                        return result['images']['original']['url']
+                        gif_url = result['images']['original']['url']
+                        print(f"✅ Got Giphy GIF: {gif_url[:50]}...")
+                        return gif_url
+                    else:
+                        print("⚠️ Giphy returned no results")
+                else:
+                    print(f"⚠️ Giphy API error: {response.status}")
         
         return None
     
     except Exception as e:
-        print(f"Giphy API error: {e}")
+        print(f"❌ Giphy API error: {e}")
         return None
 
 
 async def get_training_gif(stat_trained, success_level='normal'):
-    """
-    Get appropriate training GIF based on what was trained
-    Uses Giphy API with fallback to static GIFs
-    """
+    """Get appropriate training GIF - Giphy first, fallback second"""
+    
     # Determine category
     if success_level == 'success':
         category = 'success'
@@ -245,14 +180,18 @@ async def get_training_gif(stat_trained, success_level='normal'):
     
     # Try Giphy API first
     if GIPHY_API_KEY:
-        search_term = random.choice(GIPHY_SEARCH_TERMS[category])
+        search_term = GIPHY_SEARCH_TERMS[category]
         gif_url = await fetch_giphy_gif(search_term)
         
         if gif_url:
             return gif_url
+        else:
+            print(f"⚠️ Giphy failed, using fallback for {category}")
+    else:
+        print("⚠️ No Giphy API key, using fallback")
     
-    # Fallback to static GIFs
-    return random.choice(FALLBACK_GIFS[category])
+    # Use curated fallback
+    return FALLBACK_GIFS[category]
 
 
 # ============================================
@@ -272,39 +211,45 @@ class StatTrainingView(View):
             'dribbling': '⚽', 'defending': '🛡️', 'physical': '💪'
         }
         
+        stat_abbrev = {
+            'pace': 'PAC', 'shooting': 'SHO', 'passing': 'PAS',
+            'dribbling': 'DRI', 'defending': 'DEF', 'physical': 'PHY'
+        }
+        
         for stat in ['pace', 'shooting', 'passing', 'dribbling', 'defending', 'physical']:
             efficiency = position_efficiency.get(stat, 100)
             
-            # Calculate expected gains for this stat
+            # Calculate expected gains
             expected_gains = calculate_expected_gains(stat, total_points, position_efficiency, player)
             
-            # Build preview text
+            # Get secondary stat abbreviations
+            secondary_stats = [stat_abbrev[s] for s in expected_gains.keys() if s != stat]
+            
+            # Build compact label
             primary_gain = expected_gains[stat]
-            preview = f"+{primary_gain[0]}-{primary_gain[1]} {stat.capitalize()}"
-            
-            # Add secondary stats preview
-            secondary_stats = [s for s in expected_gains.keys() if s != stat]
-            if secondary_stats:
-                preview += f" (+ {len(secondary_stats)} other stats)"
-            
-            # Efficiency label
-            if efficiency >= 120:
-                label_suffix = "⭐ EXPERT +20%"
-            elif efficiency >= 110:
-                label_suffix = "✓ Primary +10%"
-            elif efficiency >= 100:
-                label_suffix = "○ Primary"
-            elif efficiency >= 75:
-                label_suffix = "△ Secondary -25%"
-            else:
-                label_suffix = "✗ Off-Position -50%"
-            
             current_val = self.player[stat]
+            
+            # Shorter format: "Shooting (72) +1-2 → PHY/DRI/PAC"
+            label = f"{stat.capitalize()} ({current_val}) +{primary_gain[0]}-{primary_gain[1]}"
+            if secondary_stats:
+                label += f" → {'/'.join(secondary_stats[:3])}"
+            
+            # Efficiency description
+            if efficiency >= 120:
+                description = "⭐ EXPERT +20%"
+            elif efficiency >= 110:
+                description = "✓ Primary +10%"
+            elif efficiency >= 100:
+                description = "○ Primary"
+            elif efficiency >= 75:
+                description = "△ Secondary -25%"
+            else:
+                description = "✗ Off-Position -50%"
             
             options.append(
                 discord.SelectOption(
-                    label=f"{stat.capitalize()} ({current_val}) - {preview}",
-                    description=f"{label_suffix}",
+                    label=label,
+                    description=description,
                     emoji=stat_emojis[stat],
                     value=stat
                 )
@@ -321,7 +266,7 @@ class StatTrainingView(View):
     async def select_callback(self, interaction: discord.Interaction):
         self.selected_stat = interaction.data['values'][0]
         
-        # Show detailed preview before confirming
+        # Show detailed preview
         expected_gains = calculate_expected_gains(
             self.selected_stat, 
             self.total_points, 
@@ -344,7 +289,7 @@ class StatTrainingView(View):
             inline=False
         )
         
-        # Secondary stats - MORE VISIBLE!
+        # Secondary stats
         secondary_stats = [(s, g) for s, g in expected_gains.items() if s != self.selected_stat]
         if secondary_stats:
             secondary_text = "**These stats also improve automatically:**\n\n"
@@ -379,7 +324,7 @@ class StatTrainingView(View):
         embed.set_footer(text="✅ Training is realistic - related attributes improve naturally! | Starting in 5 seconds...")
         
         await interaction.response.edit_message(embed=embed, view=None)
-        await asyncio.sleep(5)  # Give them time to read! Changed from 2 to 5 seconds
+        await asyncio.sleep(5)
         self.stop()
 
 
@@ -483,7 +428,6 @@ class TrainingCommands(commands.Cog):
         if new_streak >= 30:
             streak_bonus = 0.7
 
-        # Base total points (before position efficiency)
         base_total_points = int((base_points + streak_bonus) * age_multiplier * morale_multiplier * league_modifier)
         base_total_points = max(1, base_total_points)
 
@@ -586,7 +530,6 @@ class TrainingCommands(commands.Cog):
                     sec_current = player[secondary_stat]
                     sec_distance = current_potential - sec_current
                     
-                    # Secondary stats have slightly lower success rates
                     if sec_distance <= 0:
                         sec_gains = sum(1 for _ in range(secondary_points) if random.random() < 0.05)
                     elif sec_distance <= 5:
@@ -609,7 +552,7 @@ class TrainingCommands(commands.Cog):
 
         new_overall = sum(updated_stats.values()) // 6
 
-        # Check for 30-day streak milestone (potential boost)
+        # Check for 30-day streak milestone
         potential_boost = 0
         if new_streak == 30 and player['training_streak'] < 30:
             potential_boost = 3
@@ -651,40 +594,32 @@ class TrainingCommands(commands.Cog):
         from utils.traits_system import check_trait_unlocks
         newly_unlocked_traits = await check_trait_unlocks(interaction.user.id, self.bot)
 
-        # Show results
+        # === RESULTS SCREEN - MATCH ORIGINAL DESIGN ===
         success_level = 'success' if sum(actual_gains.values()) >= 3 or new_overall > player['overall_rating'] else 'normal'
         result_gif = await get_training_gif(selected_stat, success_level)
 
-        # Determine description based on gains
         if not actual_gains:
-            description = "Tough session today! Keep training - gains will come."
+            title = "💪 Training Complete!"
+            description = "Hard work and dedication!\n⚠️ **Tough session today! Gains reduced.**"
+            color = discord.Color.orange()
         elif sum(actual_gains.values()) >= 4:
-            description = "Outstanding session! Hard work and dedication!"
-        elif streak_broken:
-            description = "Back to training after missing a day!"
-        else:
+            title = "💪 Training Complete!"
             description = "Hard work and dedication!"
+            color = discord.Color.gold()
+        else:
+            title = "💪 Training Complete!"
+            description = "Hard work and dedication!"
+            color = discord.Color.green()
         
-        # Add bad day message if applicable
-        bad_day_message = ""
-        if random.random() < 0.15 and sum(actual_gains.values()) < 3:
-            bad_day_message = "\n⚠️ **Tough session today!** Gains reduced."
-        
-        embed = discord.Embed(
-            title="💪 Training Complete!",
-            description=description + bad_day_message,
-            color=discord.Color.gold() if actual_gains else discord.Color.orange()
-        )
-        
+        embed = discord.Embed(title=title, description=description, color=color)
         embed.set_image(url=result_gif)
 
         # Progress to next OVR
         if new_overall < 99:
             next_ovr = new_overall + 1
-            # Calculate how close to next level
             total_stats = sum(updated_stats.values())
             needed_for_next = (next_ovr * 6) - total_stats
-            progress = ((6 - needed_for_next) / 6) * 100 if needed_for_next < 6 else 0
+            progress = max(0, min(100, ((6 - needed_for_next) / 6) * 100))
             
             progress_bar_length = 20
             filled = int(progress / 100 * progress_bar_length)
@@ -692,20 +627,19 @@ class TrainingCommands(commands.Cog):
             
             embed.add_field(
                 name=f"📊 Progress to {next_ovr} OVR",
-                value=f"{progress_bar} {int(progress)}%",
+                value=f"{progress_bar} **{int(progress)}%**",
                 inline=False
             )
 
-        # Show ALL stat gains with highlights
+        # Stat gains
         if actual_gains:
             gains_text = ""
             for stat, gain in actual_gains.items():
                 is_primary = stat == selected_stat
                 emoji = "⭐" if is_primary else "💡"
-                
-                # Highlight milestone gains
                 new_val = updated_stats[stat]
                 old_val = player[stat]
+                
                 milestone = ""
                 if new_val >= 90 and old_val < 90:
                     milestone = " 🔥 **WORLD CLASS!**"
@@ -714,45 +648,27 @@ class TrainingCommands(commands.Cog):
                 elif new_val >= 70 and old_val < 70:
                     milestone = " ✨ **PROFESSIONAL!**"
                 
-                if is_primary:
-                    gains_text += f"{emoji} **+{gain} {stat.capitalize()}** ({old_val} → {new_val}){milestone}\n"
-                else:
-                    gains_text += f"{emoji} +{gain} {stat.capitalize()} ({old_val} → {new_val}){milestone}\n"
+                gains_text += f"{emoji} **+{gain} {stat.capitalize()}**{milestone}\n"
             
-            # Check if past potential
             past_potential = any(updated_stats[stat] >= player['potential'] for stat in actual_gains.keys())
             if past_potential:
                 gains_text += "\n✨ **Pushing beyond limits!**"
         else:
-            gains_text = "Tough session! Keep working - gains will come."
+            gains_text = "⚠️ No gains this session - keep training!"
 
         embed.add_field(name="📈 Stat Gains", value=gains_text, inline=False)
 
-        # Show trait unlocks if any
-        if newly_unlocked_traits:
-            traits_text = ""
-            for trait_id, trait_data in newly_unlocked_traits:
-                traits_text += f"{trait_data['emoji']} **{trait_data['name']}** unlocked!\n"
-            
-            embed.add_field(
-                name="🎯 NEW TRAITS UNLOCKED!",
-                value=traits_text,
-                inline=False
-            )
-
-        # Progress bar to 30-day streak
+        # Progress to 30-day streak
         if new_streak < 30:
             streak_progress = new_streak / 30
             progress_bar_filled = int(streak_progress * 20)
             streak_progress_bar = "█" * progress_bar_filled + "░" * (20 - progress_bar_filled)
             embed.add_field(
                 name="🎯 Progress to 30-Day Streak",
-                value=f"{streak_progress_bar} **{new_streak}/30 days**\n"
-                      f"Unlock: **+3 Potential** permanently!",
+                value=f"{streak_progress_bar} **{new_streak}/30 days**\nUnlock: **+3 Potential** permanently!",
                 inline=False
             )
 
-        # 30-day milestone reward
         if potential_boost > 0:
             embed.add_field(
                 name="🌟 30-DAY MILESTONE REACHED!",
@@ -760,88 +676,64 @@ class TrainingCommands(commands.Cog):
                 inline=False
             )
 
+        # Trait unlocks
+        if newly_unlocked_traits:
+            traits_text = ""
+            for trait_id, trait_data in newly_unlocked_traits:
+                traits_text += f"{trait_data['emoji']} **{trait_data['name']}** unlocked!\n"
+            embed.add_field(name="🎯 NEW TRAITS UNLOCKED!", value=traits_text, inline=False)
+
         # League comparison
         async with db.pool.acquire() as conn:
             league_avg = await conn.fetchrow("""
                 SELECT AVG(overall_rating) as avg_rating
                 FROM players
                 WHERE league = $1 AND retired = FALSE
-            """, player['league'])
+            """, player.get('league', 'Championship'))
             
             if league_avg and league_avg['avg_rating']:
                 avg = float(league_avg['avg_rating'])
                 diff = new_overall - avg
-                comparison = "above" if diff > 0 else "below"
+                comparison = "above" if diff >= 0 else "below"
                 
                 embed.add_field(
                     name="📊 League Comparison",
-                    value=f"You: **{new_overall}** | League Avg: **{avg:.1f}**\n"
-                          f"You are **{abs(diff):.1f} OVR {comparison}** average",
+                    value=f"**You:** {new_overall} | **League Avg:** {avg:.1f}\nYou are **{abs(diff):.1f} OVR {comparison}** average",
                     inline=False
                 )
 
-        # Overall rating change
-        if new_overall > player['overall_rating']:
-            embed.add_field(
-                name="⭐ Overall Rating",
-                value=f"{player['overall_rating']} → **{new_overall}** (+{new_overall - player['overall_rating']})",
-                inline=True
-            )
+        # Two-column layout
+        left_col = ""
+        right_col = ""
 
-        # Streak display
-        embed.add_field(
-            name="🔥 Streak",
-            value=f"**{new_streak} days**",
-            inline=True
-        )
+        # Left: Streak & Morale
+        left_col += f"🔥 **Streak**\n{new_streak} days\n\n"
+        
+        if morale_multiplier != 1.0:
+            emoji = "😊" if morale_multiplier > 1.0 else "😕"
+            bonus_text = f"+{int((morale_multiplier - 1.0) * 100)}%" if morale_multiplier > 1.0 else f"{int((morale_multiplier - 1.0) * 100)}%"
+            left_col += f"{emoji} **Morale Bonus**\n{morale_desc}\n**{bonus_text}** training gains!"
 
-        # Show morale impact
-        if morale_multiplier > 1.0:
-            embed.add_field(
-                name="😊 Morale Bonus",
-                value=f"{morale_desc}\n**+{int((morale_multiplier - 1.0) * 100)}%** training gains!",
-                inline=True
-            )
-        elif morale_multiplier < 1.0:
-            embed.add_field(
-                name="😕 Morale Penalty",
-                value=f"{morale_desc}\n**{int((morale_multiplier - 1.0) * 100)}%** training gains",
-                inline=True
-            )
-
-        # Potential progress
+        # Right: Potential Progress
         distance = current_potential - new_overall
         if distance > 0:
-            embed.add_field(
-                name="🎯 Potential Progress",
-                value=f"**{distance} OVR** from potential ({current_potential})\n"
-                      f"Estimated: ~{distance * 3} focused sessions (~{distance * 3} days)",
-                inline=False
-            )
+            right_col += f"🎯 **Potential Progress**\n**{distance} OVR** from potential ({current_potential})\n"
+            right_col += f"Estimated: ~{distance * 3} sessions\n\n"
         else:
             over_by = new_overall - player['potential']
-            embed.add_field(
-                name="🚀 Beyond Potential!",
-                value=f"**+{over_by} OVR** above base potential!",
-                inline=False
-            )
+            right_col += f"🚀 **Beyond Potential!**\n**+{over_by} OVR** above base!\n\n"
 
-        # Career time
+        # Career & Next Session
         years_left = config.RETIREMENT_AGE - player['age']
-        embed.add_field(
-            name="⏳ Career Time",
-            value=f"**{years_left} years** left | Age: {player['age']}",
-            inline=True
-        )
+        right_col += f"⏳ **Career Time**\n{years_left} years left | Age {player['age']}\n\n"
+        right_col += f"⏰ **Next Session**\n{config.TRAINING_COOLDOWN_HOURS}h"
 
-        # Next session time
-        embed.add_field(
-            name="⏰ Next Session",
-            value=f"**{config.TRAINING_COOLDOWN_HOURS}h**",
-            inline=True
-        )
+        if left_col:
+            embed.add_field(name="\u200b", value=left_col, inline=True)
+        if right_col:
+            embed.add_field(name="\u200b", value=right_col, inline=True)
 
-        # Footer with all multipliers
+        # Footer
         league_name = player.get('league', 'Championship')
         embed.set_footer(text=f"Age: {age_multiplier:.1f}x | Morale: {morale_multiplier:.1f}x | {league_name}: {league_modifier}x | Position: {efficiency:.1f}x")
 
@@ -849,15 +741,12 @@ class TrainingCommands(commands.Cog):
 
 
 # ============================================
-# 🧪 SANDBOX TEST FUNCTION (NO DB CHANGES!)
+# 🧪 SANDBOX TEST FUNCTION
 # ============================================
 async def test_training_sandbox(interaction: discord.Interaction):
-    """
-    Sandbox test of the training system - shows all screens without DB changes
-    """
+    """Sandbox test - shows all screens without DB changes"""
     import random
     
-    # Create fake player data
     fake_player = {
         'user_id': interaction.user.id,
         'player_name': f"{interaction.user.display_name}'s Test Player",
@@ -872,8 +761,6 @@ async def test_training_sandbox(interaction: discord.Interaction):
         'league': 'Premier League',
         'position': 'CM',
         'age': 23,
-        'energy': 85,
-        'form': 0.80,
         'potential': 85,
         'morale': 75,
         'training_streak': 5,
@@ -882,7 +769,6 @@ async def test_training_sandbox(interaction: discord.Interaction):
         'last_training': None
     }
     
-    # Calculate sandbox modifiers
     age_multiplier = 1.0
     morale_multiplier = 1.1
     league_modifier = 1.2
@@ -891,39 +777,36 @@ async def test_training_sandbox(interaction: discord.Interaction):
     base_total_points = int((1 + 0) * age_multiplier * morale_multiplier * league_modifier)
     base_total_points = max(1, base_total_points)
     
-    # Show initial selection screen
     embed = discord.Embed(
         title=f"🧪 SANDBOX TEST: {fake_player['player_name']}",
         description=f"**{fake_player['position']}** • Age {fake_player['age']} • **{fake_player['overall_rating']}** OVR → ⭐ **{fake_player['potential']}** POT\n\n"
-                   f"✨ **Testing:** Multi-stat training system (no database changes)",
+                   f"✨ **Testing:** Multi-stat training (no database changes)",
         color=discord.Color.purple()
     )
     
     training_prep_gif = await get_training_gif('physical', 'normal')
     embed.set_image(url=training_prep_gif)
     
-    # Current stats
     stats_text = (
-        f"⚡ **Pace:** {fake_player['pace']}\n🎯 **Shooting:** {fake_player['shooting']}\n"
-        f"🎨 **Passing:** {fake_player['passing']}\n⚽ **Dribbling:** {fake_player['dribbling']}\n"
-        f"🛡️ **Defending:** {fake_player['defending']}\n💪 **Physical:** {fake_player['physical']}"
+        f"⚡ Pace: {fake_player['pace']}\n🎯 Shooting: {fake_player['shooting']}\n"
+        f"🎨 Passing: {fake_player['passing']}\n⚽ Dribbling: {fake_player['dribbling']}\n"
+        f"🛡️ Defending: {fake_player['defending']}\n💪 Physical: {fake_player['physical']}"
     )
     embed.add_field(name="📊 Current Attributes", value=stats_text, inline=True)
     
     modifiers_text = (
-        f"😊 **Morale:** {morale_multiplier:.1f}x\n👤 **Age:** {age_multiplier:.1f}x\n"
-        f"🏟️ **Facilities:** {league_modifier}x\n🔥 **Streak:** {fake_player['training_streak']} days"
+        f"😊 Morale: {morale_multiplier:.1f}x\n👤 Age: {age_multiplier:.1f}x\n"
+        f"🏟️ Facilities: {league_modifier}x\n🔥 Streak: {fake_player['training_streak']} days"
     )
     embed.add_field(name="⚙️ Modifiers", value=modifiers_text, inline=True)
     
     embed.add_field(
         name="🧪 Sandbox Mode",
-        value="This is a TEST - no database changes!\n"
-              "You'll see all screens: selection → preview → results",
+        value="TEST - no database changes!\nYou'll see: selection → preview → results",
         inline=False
     )
     
-    embed.set_footer(text="🧪 TESTING MODE | Select a stat to see preview screen")
+    embed.set_footer(text="🧪 TESTING | Select a stat")
     
     view = StatTrainingView(fake_player, position_efficiency, base_total_points)
     await interaction.followup.send(embed=embed, view=view)
@@ -934,21 +817,17 @@ async def test_training_sandbox(interaction: discord.Interaction):
         await interaction.followup.send("⏰ Test timed out!", ephemeral=True)
         return
     
-    # Simulate training results
     selected_stat = view.selected_stat
     efficiency = position_efficiency[selected_stat] / 100.0
     total_points = int(base_total_points * efficiency)
     total_points = max(1, total_points)
     
-    # Calculate gains for primary + secondary stats
     relationships = get_training_stat_relationships()
     actual_gains = {}
     
-    # Primary stat gain (simulated)
     primary_gain = random.randint(1, 3)
     actual_gains[selected_stat] = primary_gain
     
-    # Secondary stat gains (simulated)
     if selected_stat in relationships:
         for secondary_stat, percentage in relationships[selected_stat].items():
             secondary_points = int(total_points * percentage)
@@ -957,14 +836,12 @@ async def test_training_sandbox(interaction: discord.Interaction):
                 if sec_gain > 0:
                     actual_gains[secondary_stat] = sec_gain
     
-    # Update fake stats
     updated_stats = {stat: fake_player[stat] for stat in ['pace', 'shooting', 'passing', 'dribbling', 'defending', 'physical']}
     for stat, gain in actual_gains.items():
         updated_stats[stat] = fake_player[stat] + gain
     
     new_overall = sum(updated_stats.values()) // 6
     
-    # Show results (mimicking real training results)
     success_level = 'success' if sum(actual_gains.values()) >= 3 else 'normal'
     result_gif = await get_training_gif(selected_stat, success_level)
     
@@ -980,7 +857,6 @@ async def test_training_sandbox(interaction: discord.Interaction):
     
     embed.set_image(url=result_gif)
     
-    # Show stat gains
     gains_text = ""
     for stat, gain in actual_gains.items():
         is_primary = stat == selected_stat
@@ -988,14 +864,10 @@ async def test_training_sandbox(interaction: discord.Interaction):
         old_val = fake_player[stat]
         new_val = updated_stats[stat]
         
-        if is_primary:
-            gains_text += f"{emoji} **+{gain} {stat.capitalize()}** ({old_val} → {new_val})\n"
-        else:
-            gains_text += f"{emoji} +{gain} {stat.capitalize()} ({old_val} → {new_val})\n"
+        gains_text += f"{emoji} **+{gain} {stat.capitalize()}** ({old_val} → {new_val})\n"
     
     embed.add_field(name="📈 Stat Gains", value=gains_text, inline=False)
     
-    # Overall change
     if new_overall > fake_player['overall_rating']:
         embed.add_field(
             name="⭐ Overall Rating",
@@ -1003,23 +875,15 @@ async def test_training_sandbox(interaction: discord.Interaction):
             inline=True
         )
     
-    embed.add_field(
-        name="🔥 Streak",
-        value=f"**{fake_player['training_streak']} days**",
-        inline=True
-    )
+    embed.add_field(name="🔥 Streak", value=f"**{fake_player['training_streak']} days**", inline=True)
     
     embed.add_field(
         name="✅ Test Summary",
-        value="• Stat selection screen ✓\n"
-              "• Preview with secondary stats ✓\n"
-              "• Detailed results screen ✓\n"
-              "• All GIFs working ✓\n\n"
-              "**No database changes made!**",
+        value="• Stat selection ✓\n• Preview screen ✓\n• Results screen ✓\n• GIFs working ✓\n\n**No database changes!**",
         inline=False
     )
     
-    embed.set_footer(text="🧪 SANDBOX TEST COMPLETE | Real training uses /train command")
+    embed.set_footer(text="🧪 TEST COMPLETE | Real training: /train")
     
     await interaction.edit_original_response(embed=embed, view=None)
 
