@@ -104,10 +104,10 @@ def calculate_expected_gains(selected_stat, total_points, position_efficiency, p
 
 
 # ============================================
-# 🎬 TENOR GIF API (keeping from previous version)
+# 🎬 GIPHY GIF API (Better than Tenor!)
 # ============================================
 
-TENOR_API_KEY = config.TENOR_API_KEY if hasattr(config, 'TENOR_API_KEY') else None
+GIPHY_API_KEY = config.GIPHY_API_KEY if hasattr(config, 'GIPHY_API_KEY') else None
 
 FALLBACK_GIFS = {
     'intense': ['https://media.giphy.com/media/3o7TKqm1mNujcBPSpy/giphy.gif'],
@@ -118,46 +118,84 @@ FALLBACK_GIFS = {
     'success': ['https://media.giphy.com/media/g9582DNuQppxC/giphy.gif'],
 }
 
-TENOR_SEARCH_TERMS = {
-    'intense': ['football training gym', 'soccer workout', 'athlete training hard'],
-    'skill': ['football skills training', 'soccer dribbling practice'],
-    'cardio': ['football sprint training', 'soccer running drills'],
-    'defending': ['football defending training', 'soccer tackle practice'],
-    'shooting': ['football shooting practice', 'soccer goal scoring'],
-    'success': ['football celebration', 'soccer goal celebration']
+GIPHY_SEARCH_TERMS = {
+    'intense': ['football training gym', 'soccer workout intense', 'athlete training'],
+    'skill': ['football skills', 'soccer dribbling', 'football tricks'],
+    'cardio': ['football sprint', 'soccer running', 'athlete cardio'],
+    'defending': ['football defending', 'soccer tackle', 'defensive training'],
+    'shooting': ['football shooting', 'soccer goal', 'striker training'],
+    'success': ['football celebration', 'soccer goal celebration', 'athlete celebration']
 }
 
-async def fetch_tenor_gif(search_term, limit=10):
-    if not TENOR_API_KEY:
+async def fetch_giphy_gif(search_term, limit=10):
+    """
+    Fetch GIF from Giphy API
+    
+    Args:
+        search_term: Search query for Giphy
+        limit: Number of results to fetch (will pick random from these)
+    
+    Returns:
+        GIF URL or None if failed
+    """
+    if not GIPHY_API_KEY:
         return None
+    
     try:
-        url = f"https://tenor.googleapis.com/v2/search"
-        params = {'q': search_term, 'key': TENOR_API_KEY, 'limit': limit, 'media_filter': 'gif'}
+        url = "https://api.giphy.com/v1/gifs/search"
+        params = {
+            'api_key': GIPHY_API_KEY,
+            'q': search_term,
+            'limit': limit,
+            'rating': 'g',  # Family friendly
+            'lang': 'en'
+        }
+        
         async with aiohttp.ClientSession() as session:
             async with session.get(url, params=params, timeout=aiohttp.ClientTimeout(total=5)) as response:
                 if response.status == 200:
                     data = await response.json()
-                    if data.get('results'):
-                        result = random.choice(data['results'])
-                        return result['media_formats']['gif']['url']
+                    if data.get('data') and len(data['data']) > 0:
+                        # Pick random from results
+                        result = random.choice(data['data'])
+                        # Return the original GIF URL
+                        return result['images']['original']['url']
+        
         return None
-    except:
+    
+    except Exception as e:
+        print(f"Giphy API error: {e}")
         return None
 
+
 async def get_training_gif(stat_trained, success_level='normal'):
+    """
+    Get appropriate training GIF based on what was trained
+    Uses Giphy API with fallback to static GIFs
+    """
+    # Determine category
     if success_level == 'success':
         category = 'success'
     else:
-        gif_map = {'pace': 'cardio', 'physical': 'intense', 'shooting': 'shooting',
-                   'dribbling': 'skill', 'passing': 'skill', 'defending': 'defending'}
+        gif_map = {
+            'pace': 'cardio',
+            'physical': 'intense',
+            'shooting': 'shooting',
+            'dribbling': 'skill',
+            'passing': 'skill',
+            'defending': 'defending'
+        }
         category = gif_map.get(stat_trained, 'intense')
     
-    if TENOR_API_KEY:
-        search_term = random.choice(TENOR_SEARCH_TERMS[category])
-        gif_url = await fetch_tenor_gif(search_term)
+    # Try Giphy API first
+    if GIPHY_API_KEY:
+        search_term = random.choice(GIPHY_SEARCH_TERMS[category])
+        gif_url = await fetch_giphy_gif(search_term)
+        
         if gif_url:
             return gif_url
     
+    # Fallback to static GIFs
     return random.choice(FALLBACK_GIFS[category])
 
 
