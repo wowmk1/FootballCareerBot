@@ -7,8 +7,6 @@ import random
 from datetime import datetime, timedelta
 import config
 import asyncio
-import aiohttp
-import os
 
 
 # ============================================
@@ -98,143 +96,46 @@ def calculate_expected_gains(selected_stat, total_points, position_efficiency, p
 
 
 # ============================================
-# 🎬 GIPHY GIF API - FOOTBALL ONLY!
+# 🎬 CURATED FOOTBALL GIFS - No API needed!
 # ============================================
 
-# Check multiple sources for API key
-GIPHY_API_KEY = None
-if hasattr(config, 'GIPHY_API_KEY') and config.GIPHY_API_KEY:
-    GIPHY_API_KEY = config.GIPHY_API_KEY
-    print("✅ Giphy API key loaded from config.py")
-elif os.getenv('GIPHY_API_KEY'):
-    GIPHY_API_KEY = os.getenv('GIPHY_API_KEY')
-    print("✅ Giphy API key loaded from environment variable")
-else:
-    print("⚠️ No Giphy API key found - using fallback GIFs only")
-
-# Curated WORKING football GIFs - Verified URLs
-FALLBACK_GIFS = {
-    'intense': 'https://media.giphy.com/media/3oKIPqsXYcdjcBcXL2/giphy.gif',  # Ronaldo training
-    'skill': 'https://media.giphy.com/media/l0HlNQ03J5JxX6lva/giphy.gif',  # Messi dribbling
-    'cardio': 'https://media.giphy.com/media/xT9IgN8YKRhByRBzZm/giphy.gif',  # Running drills
-    'defending': 'https://media.giphy.com/media/3o7TKwmnDgQb5jemjK/giphy.gif',  # Defensive play
-    'shooting': 'https://media.giphy.com/media/3o7TKRn9HVJ8Ezn98c/giphy.gif',  # Goal scoring
-    'success': 'https://media.giphy.com/media/26BRBKqUiq586bRVm/giphy.gif',  # Celebration
-}
-
-# ✅ SOCCER-SPECIFIC SEARCH TERMS (Avoids American football & memes!)
-# Uses player names, league names, and technical terms for accurate results
-GIPHY_SEARCH_TERMS = {
+# Each category has multiple verified working GIFs
+FOOTBALL_GIFS = {
     'intense': [
-        'premier league training ground',
-        'soccer gym workout professional',
-        'champions league fitness training',
-        'manchester united training carrington',
-        'juventus training session',
-        'cristiano ronaldo manchester united gym',
-        'paul pogba juventus training',
-        'bruno fernandes training'
+        'https://media.giphy.com/media/3oKIPqsXYcdjcBcXL2/giphy.gif',  # Ronaldo gym
+        'https://media.giphy.com/media/l0HlBO7eyXzSZkJri/giphy.gif',  # Training drill
+        'https://media.giphy.com/media/xUOwGhOrYP0jP6iAy4/giphy.gif',  # Weights
     ],
     'skill': [
-        'messi dribbling skills',
-        'neymar skill compilation',
-        'ronaldinho magic tricks',
-        'marcus rashford skills',
-        'antony manchester united tricks',
-        'paulo dybala juventus skills',
-        'federico chiesa dribbling',
-        'del piero magic'
+        'https://media.giphy.com/media/l0HlNQ03J5JxX6lva/giphy.gif',  # Messi dribble
+        'https://media.giphy.com/media/26BRuo6sLetdllPAQ/giphy.gif',  # Ball control
+        'https://media.giphy.com/media/3o7TKMt1VVNkHV2PaE/giphy.gif',  # Skill move
     ],
     'cardio': [
-        'soccer sprint training drill',
-        'kylian mbappe running',
-        'premier league fitness test',
-        'manchester united sprint drill',
-        'rashford speed training',
-        'juventus fitness test',
-        'dusan vlahovic running',
-        'garnacho sprint'
+        'https://media.giphy.com/media/xT9IgN8YKRhByRBzZm/giphy.gif',  # Running
+        'https://media.giphy.com/media/l0HlHFRbmaZtBRhXG/giphy.gif',  # Sprint drill
+        'https://media.giphy.com/media/xT9IgN8YKRhByRBzZm/giphy.gif',  # Cardio
     ],
     'defending': [
-        'virgil van dijk defending',
-        'sergio ramos tackle',
-        'soccer defensive training drill',
-        'lisandro martinez tackle',
-        'varane manchester united defending',
-        'chiellini juventus defending',
-        'bonucci tackle',
-        'bremer defending'
+        'https://media.giphy.com/media/3o7TKwmnDgQb5jemjK/giphy.gif',  # Tackle
+        'https://media.giphy.com/media/xT9IgNxKAAT2h7oE1i/giphy.gif',  # Defense
+        'https://media.giphy.com/media/3o7TKwmnDgQb5jemjK/giphy.gif',  # Block
     ],
     'shooting': [
-        'lionel messi free kick',
-        'cristiano ronaldo bicycle kick',
-        'premier league striker goal',
-        'bruno fernandes goal',
-        'rashford free kick',
-        'manchester united goal celebration',
-        'vlahovic goal juventus',
-        'chiesa goal celebration'
+        'https://media.giphy.com/media/3o7TKRn9HVJ8Ezn98c/giphy.gif',  # Goal
+        'https://media.giphy.com/media/3o7TKMeCOV3oXSb5bq/giphy.gif',  # Shot
+        'https://media.giphy.com/media/3o7TKRn9HVJ8Ezn98c/giphy.gif',  # Strike
     ],
     'success': [
-        'messi world cup celebration 2022',
-        'ronaldo siuu celebration',
-        'champions league trophy celebration',
-        'manchester united treble celebration',
-        'cristiano ronaldo manchester united celebration',
-        'juventus scudetto celebration',
-        'del piero celebration',
-        'bruno fernandes goal celebration'
-    ]
+        'https://media.giphy.com/media/26BRBKqUiq586bRVm/giphy.gif',  # Celebration
+        'https://media.giphy.com/media/5GoVLqeAOo6PK/giphy.gif',  # Victory
+        'https://media.giphy.com/media/g9582DNuQppxC/giphy.gif',  # Win
+    ],
 }
-
-async def fetch_giphy_gif(search_term, limit=15):
-    """Fetch GIF from Giphy API with football-specific filtering"""
-    if not GIPHY_API_KEY:
-        print("⚠️ Giphy API key not found - skipping API call")
-        return None
-    
-    try:
-        url = "https://api.giphy.com/v1/gifs/search"
-        params = {
-            'api_key': GIPHY_API_KEY,
-            'q': search_term,
-            'limit': limit,
-            'rating': 'g',
-            'lang': 'en'
-        }
-        
-        print(f"🔍 Searching Giphy for: {search_term}")
-        
-        async with aiohttp.ClientSession() as session:
-            async with session.get(url, params=params, timeout=aiohttp.ClientTimeout(total=5)) as response:
-                if response.status == 200:
-                    data = await response.json()
-                    if data.get('data') and len(data['data']) > 0:
-                        result = random.choice(data['data'])
-                        gif_url = result['images']['original']['url']
-                        print(f"✅ Got Giphy GIF successfully!")
-                        return gif_url
-                    else:
-                        print("⚠️ Giphy returned no results for this search")
-                elif response.status == 401:
-                    print("❌ Giphy API key is invalid (401 Unauthorized)")
-                elif response.status == 429:
-                    print("⚠️ Giphy rate limit reached (429)")
-                else:
-                    print(f"⚠️ Giphy API error: HTTP {response.status}")
-        
-        return None
-    
-    except asyncio.TimeoutError:
-        print("⚠️ Giphy API timeout after 5 seconds")
-        return None
-    except Exception as e:
-        print(f"❌ Giphy API error: {e}")
-        return None
 
 
 async def get_training_gif(stat_trained, success_level='normal'):
-    """Get appropriate training GIF - Giphy first, fallback second"""
+    """Get appropriate training GIF from curated list"""
     
     # Determine category
     if success_level == 'success':
@@ -250,26 +151,8 @@ async def get_training_gif(stat_trained, success_level='normal'):
         }
         category = gif_map.get(stat_trained, 'intense')
     
-    print(f"🎬 Getting GIF for category: {category}")
-    
-    # Try Giphy API first
-    if GIPHY_API_KEY:
-        search_term = random.choice(GIPHY_SEARCH_TERMS[category])
-        print(f"🔍 Trying Giphy API with search: '{search_term}'")
-        gif_url = await fetch_giphy_gif(search_term)
-        
-        if gif_url:
-            print(f"✅ Using Giphy GIF: {gif_url[:80]}...")
-            return gif_url
-        else:
-            print(f"⚠️ Giphy failed for '{search_term}', using fallback")
-    else:
-        print("⚠️ No Giphy API key, using fallback directly")
-    
-    # Use curated fallback
-    fallback_url = FALLBACK_GIFS[category]
-    print(f"📦 Using fallback GIF: {fallback_url}")
-    return fallback_url
+    # Pick random from curated list
+    return random.choice(FOOTBALL_GIFS[category])
 
 
 # ============================================
@@ -297,37 +180,37 @@ class StatTrainingView(View):
         for stat in ['pace', 'shooting', 'passing', 'dribbling', 'defending', 'physical']:
             efficiency = position_efficiency.get(stat, 100)
             
-            # Calculate expected gains
+            # Calculate expected gains (now position-adjusted!)
             expected_gains = calculate_expected_gains(stat, total_points, position_efficiency, player)
             
-            # Get secondary stat abbreviations - FIXED!
-            secondary_stat_names = [s for s in expected_gains.keys() if s != stat]
-            secondary_abbrevs = [stat_abbrev[s] for s in secondary_stat_names]
-            
-            # Build compact label with secondary stats shown
+            # Build label showing actual expected gains
             primary_gain = expected_gains[stat]
             current_val = self.player[stat]
             
-            # Format: "Shooting (72) +1-2 → PHY/DRI/PAC"
+            # Show the stat with expected gains
             label = f"{stat.capitalize()} ({current_val}) +{primary_gain[0]}-{primary_gain[1]}"
+            
+            # Get secondary stats for this
+            secondary_stat_names = [s for s in expected_gains.keys() if s != stat]
+            secondary_abbrevs = [stat_abbrev[s] for s in secondary_stat_names]
+            
             if secondary_abbrevs:
-                # Join first 3 with slashes, keep under 100 char limit
                 secondary_display = "/".join(secondary_abbrevs[:3])
                 if len(secondary_abbrevs) > 3:
                     secondary_display += "..."
                 label += f" → {secondary_display}"
             
-            # Efficiency description
+            # Efficiency description with CLEAR warnings
             if efficiency >= 120:
-                description = "⭐ EXPERT +20%"
+                description = "⭐ EXPERT +20% | Perfect for your position!"
             elif efficiency >= 110:
-                description = "✓ Primary +10%"
+                description = "✓ Primary +10% | Great for your position"
             elif efficiency >= 100:
-                description = "○ Primary"
+                description = "○ Primary | Good for your position"
             elif efficiency >= 75:
-                description = "△ Secondary -25%"
+                description = "△ Secondary -25% | Not ideal"
             else:
-                description = "✗ Off-Position -50%"
+                description = "✗ Off-Position -50% | Very reduced gains!"
             
             options.append(
                 discord.SelectOption(
@@ -362,6 +245,19 @@ class StatTrainingView(View):
             description="**Here's what will improve from this session:**",
             color=discord.Color.blue()
         )
+        
+        # Show position efficiency warning if off-position
+        efficiency = self.position_efficiency[self.selected_stat]
+        if efficiency < 100:
+            if efficiency >= 75:
+                embed.description += f"\n\n⚠️ **Secondary Stat (-25%)** - Not your position's specialty"
+            else:
+                embed.description += f"\n\n❌ **Off-Position (-50%)** - Training outside your role gives reduced gains!"
+        elif efficiency > 100:
+            if efficiency >= 120:
+                embed.description += f"\n\n⭐ **Expert (+20%)** - Perfect for your position!"
+            else:
+                embed.description += f"\n\n✓ **Primary Stat (+10%)** - Good for your position"
         
         # Primary stat
         primary = expected_gains[self.selected_stat]
@@ -542,12 +438,27 @@ class TrainingCommands(commands.Cog):
         embed.add_field(
             name="💡 How It Works",
             value="Training is realistic! When you focus on one stat, related attributes also improve.\n\n"
-                  "**Example:** Training Shooting also improves:\n"
-                  "• Physical (shot power/strength)\n"
-                  "• Dribbling (close control)\n"
-                  "• Pace (positioning)\n"
-                  "• Passing (striking technique)\n\n"
-                  "**Every stat** has 3-4 related improvements!",
+                  "**Your position affects how effective training is:**\n"
+                  f"• {player['position']} training their EXPERT stats: +20% gains\n"
+                  f"• Training PRIMARY stats: Normal/+10% gains\n"
+                  f"• Training off-position stats: -25% to -50% gains\n\n"
+                  "**Example:** Strikers get +20% when training Shooting, but Defenders get -50%",
+            inline=False
+        )
+        
+        # ADD DETAILED BREAKDOWN OF WHAT EACH STAT IMPROVES
+        stat_relationships = get_training_stat_relationships()
+        relationships_guide = "**📋 What Each Stat Improves:**\n\n"
+        relationships_guide += "⚡ **Pace** → Physical, Dribbling, Defending, Passing\n"
+        relationships_guide += "🎯 **Shooting** → Physical, Dribbling, Pace, Passing\n"
+        relationships_guide += "🎨 **Passing** → Dribbling, Shooting, Physical, Defending\n"
+        relationships_guide += "⚽ **Dribbling** → Pace, Passing, Shooting, Physical\n"
+        relationships_guide += "🛡️ **Defending** → Physical, Pace, Passing, Dribbling\n"
+        relationships_guide += "💪 **Physical** → Pace, Defending, Shooting, Passing"
+        
+        embed.add_field(
+            name="✨ Multi-Stat Training Guide",
+            value=relationships_guide,
             inline=False
         )
 
@@ -583,7 +494,7 @@ class TrainingCommands(commands.Cog):
 
         # Apply primary stat gain
         current = player[selected_stat]
-        current_potential = player['potential']
+        current_potential = player['potential']  # Initialize here
         distance_from_potential = current_potential - current
 
         if distance_from_potential <= 0:
@@ -885,7 +796,26 @@ async def test_training_sandbox(interaction: discord.Interaction):
     
     embed.add_field(
         name="🧪 Sandbox Mode",
-        value="TEST - no database changes!\nYou'll see: selection → preview → results",
+        value="TEST - no database changes!\nYou'll see: selection → preview → results\n\n"
+              f"**Your Position: {fake_player['position']}**\n"
+              f"• Expert stats get +20% gains\n"
+              f"• Primary stats get normal/+10% gains\n"
+              f"• Off-position stats get -25% to -50% gains",
+        inline=False
+    )
+    
+    # ADD SAME RELATIONSHIP GUIDE AS REAL TRAINING
+    relationships_guide = "**📋 What Each Stat Improves:**\n\n"
+    relationships_guide += "⚡ **Pace** → Physical, Dribbling, Defending, Passing\n"
+    relationships_guide += "🎯 **Shooting** → Physical, Dribbling, Pace, Passing\n"
+    relationships_guide += "🎨 **Passing** → Dribbling, Shooting, Physical, Defending\n"
+    relationships_guide += "⚽ **Dribbling** → Pace, Passing, Shooting, Physical\n"
+    relationships_guide += "🛡️ **Defending** → Physical, Pace, Passing, Dribbling\n"
+    relationships_guide += "💪 **Physical** → Pace, Defending, Shooting, Passing"
+    
+    embed.add_field(
+        name="✨ Multi-Stat Training Guide",
+        value=relationships_guide,
         inline=False
     )
     
