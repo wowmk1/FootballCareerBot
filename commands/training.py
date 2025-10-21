@@ -124,32 +124,62 @@ GIPHY_SEARCH_TERMS = {
     'intense': [
         'premier league training ground',
         'soccer gym workout professional',
-        'champions league fitness training'
+        'champions league fitness training',
+        'manchester united training carrington',
+        'juventus training session',
+        'cristiano ronaldo manchester united gym',
+        'paul pogba juventus training',
+        'bruno fernandes training'
     ],
     'skill': [
         'messi dribbling skills',
         'neymar skill compilation',
-        'ronaldinho magic tricks'
+        'ronaldinho magic tricks',
+        'marcus rashford skills',
+        'antony manchester united tricks',
+        'paulo dybala juventus skills',
+        'federico chiesa dribbling',
+        'del piero magic'
     ],
     'cardio': [
         'soccer sprint training drill',
         'kylian mbappe running',
-        'premier league fitness test'
+        'premier league fitness test',
+        'manchester united sprint drill',
+        'rashford speed training',
+        'juventus fitness test',
+        'dusan vlahovic running',
+        'garnacho sprint'
     ],
     'defending': [
         'virgil van dijk defending',
         'sergio ramos tackle',
-        'soccer defensive training drill'
+        'soccer defensive training drill',
+        'lisandro martinez tackle',
+        'varane manchester united defending',
+        'chiellini juventus defending',
+        'bonucci tackle',
+        'bremer defending'
     ],
     'shooting': [
         'lionel messi free kick',
         'cristiano ronaldo bicycle kick',
-        'premier league striker goal'
+        'premier league striker goal',
+        'bruno fernandes goal',
+        'rashford free kick',
+        'manchester united goal celebration',
+        'vlahovic goal juventus',
+        'chiesa goal celebration'
     ],
     'success': [
         'messi world cup celebration 2022',
         'ronaldo siuu celebration',
-        'champions league trophy celebration'
+        'champions league trophy celebration',
+        'manchester united treble celebration',
+        'cristiano ronaldo manchester united celebration',
+        'juventus scudetto celebration',
+        'del piero celebration',
+        'bruno fernandes goal celebration'
     ]
 }
 
