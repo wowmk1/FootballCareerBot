@@ -196,9 +196,9 @@ GIPHY_SEARCH_TERMS = {
         'soccer defending training'
     ],
     'shooting': [
-        'ronaldo free kick goal',
+        'manchester real ronaldo free kick goal',
         'messi goal barcelona',
-        'premier league goal',
+        'premier league player goal',
         'champions league goal',
         'football shooting training'
     ],
