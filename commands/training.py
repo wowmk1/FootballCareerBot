@@ -112,14 +112,14 @@ elif os.getenv('GIPHY_API_KEY'):
 else:
     print("⚠️ No Giphy API key found - using fallback GIFs only")
 
-# Curated football GIFs - High quality fallbacks
+# Curated WORKING football GIFs - Verified URLs
 FALLBACK_GIFS = {
-    'intense': 'https://media1.tenor.com/m/8PXqXQZKY6UAAAAC/gym-training.gif',
-    'skill': 'https://media1.tenor.com/m/vHXPZmU-JQAAAAAC/cristiano-ronaldo-football.gif',
-    'cardio': 'https://media1.tenor.com/m/Pzd_yVGYGp8AAAAC/haaland-run.gif',
-    'defending': 'https://media1.tenor.com/m/NGL5rDZ_YbcAAAAC/van-dijk-tackle.gif',
-    'shooting': 'https://media1.tenor.com/m/uV9VDdqLUz4AAAAC/messi-goal.gif',
-    'success': 'https://media1.tenor.com/m/oqnSzC_FYukAAAAC/ronaldo-celebration.gif',
+    'intense': 'https://media.giphy.com/media/3oKIPqsXYcdjcBcXL2/giphy.gif',  # Ronaldo training
+    'skill': 'https://media.giphy.com/media/l0HlNQ03J5JxX6lva/giphy.gif',  # Messi dribbling
+    'cardio': 'https://media.giphy.com/media/xT9IgN8YKRhByRBzZm/giphy.gif',  # Running drills
+    'defending': 'https://media.giphy.com/media/3o7TKwmnDgQb5jemjK/giphy.gif',  # Defensive play
+    'shooting': 'https://media.giphy.com/media/3o7TKRn9HVJ8Ezn98c/giphy.gif',  # Goal scoring
+    'success': 'https://media.giphy.com/media/26BRBKqUiq586bRVm/giphy.gif',  # Celebration
 }
 
 # Ultra-specific search terms to avoid non-football results
@@ -195,20 +195,26 @@ async def get_training_gif(stat_trained, success_level='normal'):
         }
         category = gif_map.get(stat_trained, 'intense')
     
+    print(f"🎬 Getting GIF for category: {category}")
+    
     # Try Giphy API first
     if GIPHY_API_KEY:
         search_term = GIPHY_SEARCH_TERMS[category]
+        print(f"🔍 Trying Giphy API with search: '{search_term}'")
         gif_url = await fetch_giphy_gif(search_term)
         
         if gif_url:
+            print(f"✅ Using Giphy GIF: {gif_url[:80]}...")
             return gif_url
         else:
-            print(f"⚠️ Giphy failed, using fallback for {category}")
+            print(f"⚠️ Giphy failed for '{search_term}', using fallback")
     else:
-        print("⚠️ No Giphy API key, using fallback")
+        print("⚠️ No Giphy API key, using fallback directly")
     
     # Use curated fallback
-    return FALLBACK_GIFS[category]
+    fallback_url = FALLBACK_GIFS[category]
+    print(f"📦 Using fallback GIF: {fallback_url}")
+    return fallback_url
 
 
 # ============================================
@@ -239,17 +245,22 @@ class StatTrainingView(View):
             # Calculate expected gains
             expected_gains = calculate_expected_gains(stat, total_points, position_efficiency, player)
             
-            # Get secondary stat abbreviations
-            secondary_stats = [stat_abbrev[s] for s in expected_gains.keys() if s != stat]
+            # Get secondary stat abbreviations - FIXED!
+            secondary_stat_names = [s for s in expected_gains.keys() if s != stat]
+            secondary_abbrevs = [stat_abbrev[s] for s in secondary_stat_names]
             
-            # Build compact label
+            # Build compact label with secondary stats shown
             primary_gain = expected_gains[stat]
             current_val = self.player[stat]
             
-            # Shorter format: "Shooting (72) +1-2 → PHY/DRI/PAC"
+            # Format: "Shooting (72) +1-2 → PHY/DRI/PAC"
             label = f"{stat.capitalize()} ({current_val}) +{primary_gain[0]}-{primary_gain[1]}"
-            if secondary_stats:
-                label += f" → {'/'.join(secondary_stats[:3])}"
+            if secondary_abbrevs:
+                # Join first 3 with slashes, keep under 100 char limit
+                secondary_display = "/".join(secondary_abbrevs[:3])
+                if len(secondary_abbrevs) > 3:
+                    secondary_display += "..."
+                label += f" → {secondary_display}"
             
             # Efficiency description
             if efficiency >= 120:
