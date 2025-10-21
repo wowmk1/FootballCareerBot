@@ -147,7 +147,7 @@ async def fetch_giphy_gif(search_term, limit=10):
             'api_key': GIPHY_API_KEY,
             'q': search_term,
             'limit': limit,
-            'rating': 'g',  # Family friendly
+            'rating': 'pg-13',  # Family friendly
             'lang': 'en'
         }
         
