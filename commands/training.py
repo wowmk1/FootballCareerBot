@@ -122,14 +122,69 @@ FALLBACK_GIFS = {
     'success': 'https://media.giphy.com/media/26BRBKqUiq586bRVm/giphy.gif',  # Celebration
 }
 
-# Ultra-specific search terms to avoid non-football results
+# ✅ SOCCER-SPECIFIC SEARCH TERMS (Avoids American football & memes!)
+# Uses player names, league names, and technical terms for accurate results
 GIPHY_SEARCH_TERMS = {
-    'intense': 'soccer training gym workout football fitness',
-    'skill': 'football skills dribbling soccer tricks',
-    'cardio': 'football sprint training soccer running drill',
-    'defending': 'football tackle defending soccer defense',
-    'shooting': 'football goal soccer striker finish',
-    'success': 'football celebration goal soccer winner',
+    'intense': [
+        'premier league training ground',
+        'soccer gym workout professional',
+        'champions league fitness training',
+        'manchester united training carrington',
+        'juventus training session',
+        'cristiano ronaldo manchester united gym',
+        'paul pogba juventus training',
+        'bruno fernandes training'
+    ],
+    'skill': [
+        'messi dribbling skills',
+        'neymar skill compilation',
+        'ronaldinho magic tricks',
+        'marcus rashford skills',
+        'antony manchester united tricks',
+        'paulo dybala juventus skills',
+        'federico chiesa dribbling',
+        'del piero magic'
+    ],
+    'cardio': [
+        'soccer sprint training drill',
+        'kylian mbappe running',
+        'premier league fitness test',
+        'manchester united sprint drill',
+        'rashford speed training',
+        'juventus fitness test',
+        'dusan vlahovic running',
+        'garnacho sprint'
+    ],
+    'defending': [
+        'virgil van dijk defending',
+        'sergio ramos tackle',
+        'soccer defensive training drill',
+        'lisandro martinez tackle',
+        'varane manchester united defending',
+        'chiellini juventus defending',
+        'bonucci tackle',
+        'bremer defending'
+    ],
+    'shooting': [
+        'lionel messi free kick',
+        'cristiano ronaldo bicycle kick',
+        'premier league striker goal',
+        'bruno fernandes goal',
+        'rashford free kick',
+        'manchester united goal celebration',
+        'vlahovic goal juventus',
+        'chiesa goal celebration'
+    ],
+    'success': [
+        'messi world cup celebration 2022',
+        'ronaldo siuu celebration',
+        'champions league trophy celebration',
+        'manchester united treble celebration',
+        'cristiano ronaldo manchester united celebration',
+        'juventus scudetto celebration',
+        'del piero celebration',
+        'bruno fernandes goal celebration'
+    ]
 }
 
 async def fetch_giphy_gif(search_term, limit=15):
@@ -199,7 +254,7 @@ async def get_training_gif(stat_trained, success_level='normal'):
     
     # Try Giphy API first
     if GIPHY_API_KEY:
-        search_term = GIPHY_SEARCH_TERMS[category]
+        search_term = random.choice(GIPHY_SEARCH_TERMS[category])
         print(f"🔍 Trying Giphy API with search: '{search_term}'")
         gif_url = await fetch_giphy_gif(search_term)
         
