@@ -842,48 +842,132 @@ async def test_training_sandbox(interaction: discord.Interaction):
     
     new_overall = sum(updated_stats.values()) // 6
     
+    # === EXACT REPLICA OF REAL RESULTS SCREEN ===
     success_level = 'success' if sum(actual_gains.values()) >= 3 else 'normal'
     result_gif = await get_training_gif(selected_stat, success_level)
     
-    description = "🧪 **Sandbox Test Complete!**\n\nThis is how results look in real training!"
-    if sum(actual_gains.values()) >= 4:
-        description += "\n✨ Outstanding session!"
+    if not actual_gains:
+        title = "💪 Training Complete!"
+        description = "Hard work and dedication!\n⚠️ **Tough session today! Gains reduced.**"
+        color = discord.Color.orange()
+    elif sum(actual_gains.values()) >= 4:
+        title = "💪 Training Complete!"
+        description = "Hard work and dedication!"
+        color = discord.Color.gold()
+    else:
+        title = "💪 Training Complete!"
+        description = "Hard work and dedication!"
+        color = discord.Color.green()
     
+    # Add sandbox indicator to title only
     embed = discord.Embed(
-        title="🧪 SANDBOX RESULTS (Not Saved)",
+        title=f"{title} [🧪 SANDBOX TEST]",
         description=description,
-        color=discord.Color.purple()
+        color=color
     )
-    
     embed.set_image(url=result_gif)
-    
-    gains_text = ""
-    for stat, gain in actual_gains.items():
-        is_primary = stat == selected_stat
-        emoji = "⭐" if is_primary else "💡"
-        old_val = fake_player[stat]
-        new_val = updated_stats[stat]
+
+    # Progress to next OVR
+    if new_overall < 99:
+        next_ovr = new_overall + 1
+        total_stats = sum(updated_stats.values())
+        needed_for_next = (next_ovr * 6) - total_stats
+        progress = max(0, min(100, ((6 - needed_for_next) / 6) * 100))
         
-        gains_text += f"{emoji} **+{gain} {stat.capitalize()}** ({old_val} → {new_val})\n"
-    
-    embed.add_field(name="📈 Stat Gains", value=gains_text, inline=False)
-    
-    if new_overall > fake_player['overall_rating']:
+        progress_bar_length = 20
+        filled = int(progress / 100 * progress_bar_length)
+        progress_bar = "█" * filled + "░" * (progress_bar_length - filled)
+        
         embed.add_field(
-            name="⭐ Overall Rating",
-            value=f"{fake_player['overall_rating']} → **{new_overall}** (+{new_overall - fake_player['overall_rating']})",
-            inline=True
+            name=f"📊 Progress to {next_ovr} OVR",
+            value=f"{progress_bar} **{int(progress)}%**",
+            inline=False
         )
-    
-    embed.add_field(name="🔥 Streak", value=f"**{fake_player['training_streak']} days**", inline=True)
+
+    # Stat gains (EXACT SAME FORMAT)
+    if actual_gains:
+        gains_text = ""
+        for stat, gain in actual_gains.items():
+            is_primary = stat == selected_stat
+            emoji = "⭐" if is_primary else "💡"
+            new_val = updated_stats[stat]
+            old_val = fake_player[stat]
+            
+            milestone = ""
+            if new_val >= 90 and old_val < 90:
+                milestone = " 🔥 **WORLD CLASS!**"
+            elif new_val >= 80 and old_val < 80:
+                milestone = " ⚡ **ELITE!**"
+            elif new_val >= 70 and old_val < 70:
+                milestone = " ✨ **PROFESSIONAL!**"
+            
+            gains_text += f"{emoji} **+{gain} {stat.capitalize()}**{milestone}\n"
+        
+        past_potential = any(updated_stats[stat] >= fake_player['potential'] for stat in actual_gains.keys())
+        if past_potential:
+            gains_text += "\n✨ **Pushing beyond limits!**"
+    else:
+        gains_text = "⚠️ No gains this session - keep training!"
+
+    embed.add_field(name="📈 Stat Gains", value=gains_text, inline=False)
+
+    # Progress to 30-day streak
+    new_streak = fake_player['training_streak'] + 1
+    if new_streak < 30:
+        streak_progress = new_streak / 30
+        progress_bar_filled = int(streak_progress * 20)
+        streak_progress_bar = "█" * progress_bar_filled + "░" * (20 - progress_bar_filled)
+        embed.add_field(
+            name="🎯 Progress to 30-Day Streak",
+            value=f"{streak_progress_bar} **{new_streak}/30 days**\nUnlock: **+3 Potential** permanently!",
+            inline=False
+        )
+
+    # Simulated league comparison
+    league_avg = 71.7  # Fake average
+    diff = new_overall - league_avg
+    comparison = "above" if diff >= 0 else "below"
     
     embed.add_field(
-        name="✅ Test Summary",
-        value="• Stat selection ✓\n• Preview screen ✓\n• Results screen ✓\n• GIFs working ✓\n\n**No database changes!**",
+        name="📊 League Comparison",
+        value=f"**You:** {new_overall} | **League Avg:** {league_avg:.1f}\nYou are **{abs(diff):.1f} OVR {comparison}** average",
         inline=False
     )
+
+    # Two-column layout (EXACT SAME)
+    left_col = ""
+    right_col = ""
+
+    # Left: Streak & Morale
+    morale_multiplier = 1.1
+    morale_desc = "Delighted"
     
-    embed.set_footer(text="🧪 TEST COMPLETE | Real training: /train")
+    left_col += f"🔥 **Streak**\n{new_streak} days\n\n"
+    left_col += f"😊 **Morale Bonus**\n{morale_desc}\n**+30%** training gains!"
+
+    # Right: Potential Progress
+    distance = fake_player['potential'] - new_overall
+    if distance > 0:
+        right_col += f"🎯 **Potential Progress**\n**{distance} OVR** from potential ({fake_player['potential']})\n"
+        right_col += f"Estimated: ~{distance * 3} sessions\n\n"
+    else:
+        over_by = new_overall - fake_player['potential']
+        right_col += f"🚀 **Beyond Potential!**\n**+{over_by} OVR** above base!\n\n"
+
+    # Career & Next Session
+    years_left = config.RETIREMENT_AGE - fake_player['age']
+    right_col += f"⏳ **Career Time**\n{years_left} years left | Age {fake_player['age']}\n\n"
+    right_col += f"⏰ **Next Session**\n{config.TRAINING_COOLDOWN_HOURS}h"
+
+    if left_col:
+        embed.add_field(name="\u200b", value=left_col, inline=True)
+    if right_col:
+        embed.add_field(name="\u200b", value=right_col, inline=True)
+
+    # Footer (EXACT SAME)
+    age_multiplier = 1.0
+    league_modifier = 1.2
+    embed.set_footer(text=f"🧪 SANDBOX TEST | Age: {age_multiplier:.1f}x | Morale: {morale_multiplier:.1f}x | {fake_player['league']}: {league_modifier}x | Position: {efficiency:.1f}x")
     
     await interaction.edit_original_response(embed=embed, view=None)
 
