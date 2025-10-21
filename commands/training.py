@@ -80,15 +80,32 @@ def calculate_expected_gains(selected_stat, total_points, position_efficiency, p
     relationships = get_training_stat_relationships()
     expected_gains = {}
     
-    # Primary stat gets all points
-    primary_min = max(1, int(total_points * 0.7))
-    primary_max = max(2, int(total_points * 1.2))
+    # Apply position efficiency to total points
+    efficiency = position_efficiency.get(selected_stat, 100) / 100.0
+    adjusted_points = int(total_points * efficiency)
+    adjusted_points = max(1, adjusted_points)  # At least 1 point
+    
+    # Main focus stat - scale with adjusted points
+    # Off-position (50%): 0-1 points
+    # Secondary (75%): 1-2 points  
+    # Primary (100%): 1-2 points
+    # Expert (120%): 2-3 points
+    if adjusted_points <= 1:
+        primary_min = 0
+        primary_max = 1
+    elif adjusted_points <= 2:
+        primary_min = 1
+        primary_max = 2
+    else:
+        primary_min = max(1, int(adjusted_points * 0.7))
+        primary_max = max(2, int(adjusted_points * 1.2))
+    
     expected_gains[selected_stat] = (primary_min, primary_max, True)
     
-    # Secondary stats get percentage of points
+    # Secondary stats get percentage of adjusted points
     if selected_stat in relationships:
         for secondary_stat, percentage in relationships[selected_stat].items():
-            secondary_points = int(total_points * percentage)
+            secondary_points = int(adjusted_points * percentage)
             if secondary_points > 0:
                 sec_min = max(0, secondary_points - 1)
                 sec_max = secondary_points + 1
@@ -372,10 +389,10 @@ class StatTrainingView(View):
             else:
                 embed.description += f"\n\n✓ **Primary Stat (+10%)** - Good for your position"
         
-        # Primary stat
+        # Main training focus
         primary = expected_gains[self.selected_stat]
         embed.add_field(
-            name=f"⭐ PRIMARY: {self.selected_stat.capitalize()}",
+            name=f"🎯 MAIN FOCUS: {self.selected_stat.capitalize()}",
             value=f"Expected: **+{primary[0]}-{primary[1]} points**\n"
                   f"Current: {self.player[self.selected_stat]} → ~{self.player[self.selected_stat] + primary[1]}",
             inline=False
@@ -951,14 +968,27 @@ async def test_training_sandbox(interaction: discord.Interaction):
     relationships = get_training_stat_relationships()
     actual_gains = {}
     
-    primary_gain = random.randint(1, 3)
-    actual_gains[selected_stat] = primary_gain
+    # Calculate primary gain based on total_points (respects position efficiency)
+    # Off-position (1 point): 0-1 gain
+    # Secondary (1-2 points): 1-2 gain
+    # Primary (2 points): 1-2 gain
+    # Expert (3 points): 2-3 gain
+    if total_points <= 1:
+        primary_gain = random.randint(0, 1)
+    elif total_points == 2:
+        primary_gain = random.randint(1, 2)
+    else:
+        primary_gain = random.randint(max(1, total_points - 1), min(3, total_points + 1))
     
+    if primary_gain > 0:
+        actual_gains[selected_stat] = primary_gain
+    
+    # Secondary stats (also scaled by position-adjusted total_points)
     if selected_stat in relationships:
         for secondary_stat, percentage in relationships[selected_stat].items():
             secondary_points = int(total_points * percentage)
             if secondary_points > 0 and random.random() < 0.7:
-                sec_gain = random.randint(0, 2)
+                sec_gain = random.randint(0, min(2, secondary_points))
                 if sec_gain > 0:
                     actual_gains[secondary_stat] = sec_gain
     
