@@ -1,566 +1,634 @@
 """
-Season Management - Two Windows on Same Days
-12-2 PM EST: European (CL+EL) on European weeks
-3-5 PM EST: Domestic (always) - advances week after close
-
-✅ FIXED: Proper timezone handling and end detection
-✅ FIXED: Window closes at EXACT time (2:00 PM, 5:00 PM)
-✅ FIXED: European window only shows on actual European weeks
+Simplified /season command - shows fixed schedule with BOTH European and Domestic windows
+✅ FIXED: Shows European window (12-2pm) AND Domestic window (3-5pm) on European weeks
+✅ FIXED: Checks if players are participating in European competitions
 """
-import asyncio
-from datetime import datetime, timedelta, timezone
+import discord
+from discord import app_commands
+from discord.ext import commands
 from database import db
 import config
-import logging
-import discord
-
-try:
-    from zoneinfo import ZoneInfo
-except ImportError:
-    from backports.zoneinfo import ZoneInfo
-
-logger = logging.getLogger(__name__)
-
-EST = ZoneInfo('America/New_York')
-MATCH_DAYS = [0, 2, 5]
-EUROPEAN_START_HOUR = 12
-EUROPEAN_END_HOUR = 14
-DOMESTIC_START_HOUR = 15
-DOMESTIC_END_HOUR = 17
+from datetime import datetime
 
 
-def get_current_time_est():
-    return datetime.now(EST)
+class SeasonCommands(commands.Cog):
+    def __init__(self, bot):
+        self.bot = bot
 
+    @app_commands.command(name="season", description="View current season status and schedule")
+    async def season(self, interaction: discord.Interaction):
+        """View season information - SIMPLIFIED with fixed schedule"""
 
-def is_match_window_time(current_week=None):
-    """
-    Check if we're in a match window
-    
-    Args:
-        current_week: Current game week (required to detect European weeks)
-    
-    Returns:
-        (is_window_time, is_start, is_end, window_type)
-    """
-    now = get_current_time_est()
-    current_day = now.weekday()
-    current_hour = now.hour
-    current_minute = now.minute
-    
-    logger.info(f"Window check: {now.strftime('%A %I:%M %p EST')} (hour={current_hour}, min={current_minute})")
-    
-    if current_day not in MATCH_DAYS:
-        return False, False, False, None
-    
-    # ✅ FIXED: Check European window time (12-2 PM) ONLY if it's a European week
-    if EUROPEAN_START_HOUR <= current_hour < EUROPEAN_END_HOUR:
-        is_start = (current_hour == EUROPEAN_START_HOUR and current_minute < 5)
-        # Only return 'european' if current week is in EUROPEAN_MATCH_WEEKS
-        if current_week and current_week in config.EUROPEAN_MATCH_WEEKS:
-            logger.info(f"  Inside European window (is_start={is_start})")
-            return True, is_start, False, 'european'
-        else:
-            # It's 12-2 PM but NOT a European week - no window open
-            logger.info(f"  12-2 PM time but NOT a European week - no window")
-            return False, False, False, None
-    
-    if current_hour == EUROPEAN_END_HOUR and current_minute < 5:
-        # Only close European window if it's actually a European week
-        if current_week and current_week in config.EUROPEAN_MATCH_WEEKS:
-            logger.info(f"  European window CLOSING TIME")
-            return False, False, True, 'european'
-        else:
-            return False, False, False, None
-    
-    if DOMESTIC_START_HOUR <= current_hour < DOMESTIC_END_HOUR:
-        is_start = (current_hour == DOMESTIC_START_HOUR and current_minute < 5)
-        logger.info(f"  Inside Domestic window (is_start={is_start})")
-        return True, is_start, False, 'domestic'
-    
-    if current_hour == DOMESTIC_END_HOUR and current_minute < 5:
-        logger.info(f"  Domestic window CLOSING TIME")
-        return False, False, True, 'domestic'
-    
-    return False, False, False, None
+        state = await db.get_game_state()
 
-
-def should_send_warning(warning_type, current_week=None):
-    """
-    Check if we should send a warning
-    
-    Args:
-        warning_type: Type of warning to check
-        current_week: Current game week (required for European warnings)
-    """
-    now = get_current_time_est()
-    current_day = now.weekday()
-    current_hour = now.hour
-    current_minute = now.minute
-    
-    if current_day not in MATCH_DAYS:
-        return False
-    
-    # European warnings - only if it's a European week
-    if warning_type.startswith('european_'):
-        if not current_week or current_week not in config.EUROPEAN_MATCH_WEEKS:
-            return False
-    
-    if warning_type == 'european_1h':
-        return current_hour == 11 and current_minute < 5
-    elif warning_type == 'european_30m':
-        return current_hour == 11 and 30 <= current_minute < 35
-    elif warning_type == 'european_15m':
-        return current_hour == 11 and 45 <= current_minute < 50
-    elif warning_type == 'domestic_1h':
-        return current_hour == 14 and current_minute < 5
-    elif warning_type == 'domestic_30m':
-        return current_hour == 14 and 30 <= current_minute < 35
-    elif warning_type == 'domestic_15m':
-        return current_hour == 14 and 45 <= current_minute < 50
-    elif warning_type == 'domestic_closing':
-        return current_hour == 16 and 45 <= current_minute < 50
-    
-    return False
-
-
-def get_next_match_window():
-    now = get_current_time_est()
-    
-    for days_ahead in range(8):
-        check_date = now + timedelta(days=days_ahead)
-        
-        if check_date.weekday() in MATCH_DAYS:
-            european_time = check_date.replace(hour=EUROPEAN_START_HOUR, minute=0, second=0, microsecond=0)
-            if european_time > now:
-                return european_time
-            
-            domestic_time = check_date.replace(hour=DOMESTIC_START_HOUR, minute=0, second=0, microsecond=0)
-            if domestic_time > now:
-                return domestic_time
-    
-    days_until_monday = (7 - now.weekday()) % 7 or 7
-    next_monday = now + timedelta(days=days_until_monday)
-    return next_monday.replace(hour=EUROPEAN_START_HOUR, minute=0, second=0, microsecond=0)
-
-
-def format_time_for_user(dt_est, user_timezone=None):
-    if user_timezone:
-        try:
-            user_tz = ZoneInfo(user_timezone)
-            dt_user = dt_est.astimezone(user_tz)
-            return dt_user.strftime('%I:%M %p %Z')
-        except:
-            pass
-    return dt_est.strftime('%I:%M %p EST')
-
-
-async def open_match_window(window_type='domestic'):
-    logger.info(f"Opening {window_type} match window...")
-    
-    async with db.pool.acquire() as conn:
-        state = await conn.fetchrow('SELECT * FROM game_state')
-        current_week = state['current_week']
-        
-        if window_type == 'domestic':
-            await conn.execute("""
-                UPDATE fixtures 
-                SET playable = TRUE 
-                WHERE week_number = $1 AND played = FALSE
-            """, current_week)
-            logger.info(f"Domestic fixtures opened for Week {current_week}")
-        
-        elif window_type == 'european':
-            if current_week in config.EUROPEAN_MATCH_WEEKS:
-                await conn.execute("""
-                    UPDATE european_fixtures 
-                    SET playable = TRUE 
-                    WHERE week_number = $1 AND played = FALSE
-                """, current_week)
-                logger.info(f"European fixtures opened for Week {current_week}")
-        
-        await conn.execute("UPDATE game_state SET match_window_open = TRUE")
-
-
-async def close_match_window(window_type='domestic', bot=None):
-    logger.info(f"CLOSING {window_type} match window...")
-    
-    async with db.pool.acquire() as conn:
-        state = await conn.fetchrow('SELECT * FROM game_state')
-        current_week = state['current_week']
-        results = []
-        
-        if window_type == 'domestic':
-            unplayed = await conn.fetch("""
-                SELECT * FROM fixtures 
-                WHERE week_number = $1 AND played = FALSE AND playable = TRUE
-            """, current_week)
-            
-            logger.info(f"Simulating {len(unplayed)} unplayed matches...")
-            
-            from utils.match_engine import match_engine
-            
-            for fixture in unplayed:
-                result = await match_engine.simulate_npc_match(
-                    fixture['home_team_id'],
-                    fixture['away_team_id']
-                )
-                
-                await conn.execute("""
-                    UPDATE fixtures 
-                    SET home_score = $1, away_score = $2, played = TRUE, playable = FALSE
-                    WHERE fixture_id = $3
-                """, result['home_score'], result['away_score'], fixture['fixture_id'])
-                
-                await update_team_stats(conn, fixture['home_team_id'], result['home_score'], result['away_score'])
-                await update_team_stats(conn, fixture['away_team_id'], result['away_score'], result['home_score'])
-                
-                results.append({
-                    'home_team_name': result['home_team'],
-                    'away_team_name': result['away_team'],
-                    'home_score': result['home_score'],
-                    'away_score': result['away_score']
-                })
-                
-                await add_match_result_news(
-                    result['home_team'],
-                    result['away_team'],
-                    result['home_score'],
-                    result['away_score'],
-                    'match_news',
-                    current_week,
-                    competition='League'
-                )
-            
-            await conn.execute("UPDATE game_state SET match_window_open = FALSE")
-            logger.info(f"ADVANCING WEEK from {current_week} to {current_week + 1}")
-            await advance_week(bot=bot)
-        
-        elif window_type == 'european':
-            if current_week in config.EUROPEAN_MATCH_WEEKS:
-                from utils.european_competitions import close_european_window
-                await close_european_window(current_week, bot=bot, competition=None)
-            
-            await conn.execute("UPDATE game_state SET match_window_open = FALSE")
-    
-    return results
-
-
-async def update_team_stats(conn, team_id, goals_for, goals_against):
-    if goals_for > goals_against:
-        won, drawn, lost, points = 1, 0, 0, 3
-    elif goals_for == goals_against:
-        won, drawn, lost, points = 0, 1, 0, 1
-    else:
-        won, drawn, lost, points = 0, 0, 1, 0
-    
-    await conn.execute("""
-        UPDATE teams 
-        SET played = played + 1, won = won + $1, drawn = drawn + $2, lost = lost + $3,
-            goals_for = goals_for + $4, goals_against = goals_against + $5, points = points + $6
-        WHERE team_id = $7
-    """, won, drawn, lost, goals_for, goals_against, points, team_id)
-
-
-async def add_match_result_news(home_team, away_team, home_score, away_score, category, week_number, competition='League'):
-    if home_score > away_score:
-        margin = home_score - away_score
-        if margin >= 3:
-            headline = f"{home_team} Thrash {away_team} {home_score}-{away_score}"
-            importance = 7
-        else:
-            headline = f"{home_team} Beat {away_team} {home_score}-{away_score}"
-            importance = 5
-        content = f"{home_team} won {home_score}-{away_score} against {away_team}."
-    elif away_score > home_score:
-        margin = away_score - home_score
-        if margin >= 3:
-            headline = f"{away_team} Demolish {home_team} {away_score}-{home_score}"
-            importance = 7
-        else:
-            headline = f"{away_team} Win at {home_team} {away_score}-{home_score}"
-            importance = 5
-        content = f"{away_team} won {away_score}-{home_score} at {home_team}."
-    else:
-        headline = f"{home_team} {home_score}-{away_score} {away_team}"
-        importance = 4
-        content = f"{home_team} and {away_team} drew {home_score}-{away_score}."
-    
-    await db.add_news(headline=headline, content=content, category=category, user_id=None, importance=importance, week_number=week_number)
-
-
-async def advance_week(bot=None):
-    async with db.pool.acquire() as conn:
-        state = await conn.fetchrow('SELECT * FROM game_state')
-        current_week = state['current_week']
-        next_week = current_week + 1
-        
-        logger.info(f"ADVANCING: Week {current_week} to {next_week}")
-        
-        if next_week > config.SEASON_TOTAL_WEEKS:
-            await end_season(bot=bot)
-            return
-        
-        await conn.execute("UPDATE game_state SET current_week = $1", next_week)
-        
-        from utils import european_competitions as euro
-        
-        try:
-            if current_week == 18:
-                await euro.generate_knockout_draw('CL', 'r16', state['current_season'])
-                await euro.generate_knockout_draw('EL', 'r16', state['current_season'])
-            elif current_week == 24:
-                await euro.close_knockout_round('CL', 'r16', state['current_season'])
-                await euro.close_knockout_round('EL', 'r16', state['current_season'])
-                await euro.generate_knockout_draw('CL', 'quarters', state['current_season'])
-                await euro.generate_knockout_draw('EL', 'quarters', state['current_season'])
-            elif current_week == 30:
-                await euro.close_knockout_round('CL', 'quarters', state['current_season'])
-                await euro.close_knockout_round('EL', 'quarters', state['current_season'])
-                await euro.generate_knockout_draw('CL', 'semis', state['current_season'])
-                await euro.generate_knockout_draw('EL', 'semis', state['current_season'])
-            elif current_week == 36:
-                await euro.close_knockout_round('CL', 'semis', state['current_season'])
-                await euro.close_knockout_round('EL', 'semis', state['current_season'])
-                await euro.generate_knockout_draw('CL', 'final', state['current_season'])
-                await euro.generate_knockout_draw('EL', 'final', state['current_season'])
-            elif current_week == 38:
-                await euro.close_knockout_round('CL', 'final', state['current_season'])
-                await euro.close_knockout_round('EL', 'final', state['current_season'])
-        except Exception as e:
-            logger.error(f"Error in European progression: {e}")
-        
-        if next_week in config.TRANSFER_WINDOW_WEEKS:
-            try:
-                from utils.transfer_system import process_weekly_transfer_offers, simulate_npc_transfers
-                await process_weekly_transfer_offers(bot=bot)
-                await simulate_npc_transfers()
-            except Exception as e:
-                logger.error(f"Error in transfers: {e}")
-        
-        if bot:
-            try:
-                from utils.event_poster import post_weekly_news_digest
-                await post_weekly_news_digest(bot, current_week)
-            except:
-                pass
-
-
-async def end_season(bot=None):
-    async with db.pool.acquire() as conn:
-        state = await conn.fetchrow('SELECT * FROM game_state')
-        current_season = state['current_season']
-        
-        from utils.league_system import process_promotions_relegations
-        await process_promotions_relegations(bot=bot)
-        
-        await conn.execute("UPDATE teams SET played=0, won=0, drawn=0, lost=0, goals_for=0, goals_against=0, points=0")
-        await conn.execute("UPDATE players SET season_goals=0, season_assists=0, season_apps=0, season_motm=0")
-        
-        await db.age_all_players(bot=bot)
-        
-        from utils.fixture_generator import generate_all_fixtures
-        await generate_all_fixtures()
-        
-        from utils.european_competitions import draw_groups
-        await draw_groups(f"{current_season + 1}/{current_season + 2}")
-        
-        await conn.execute("UPDATE game_state SET current_season = current_season + 1, current_week = 1, match_window_open = FALSE")
-
-
-async def send_european_1h_warning(bot):
-    state = await db.get_game_state()
-    current_week = state['current_week']
-    
-    if current_week not in config.EUROPEAN_MATCH_WEEKS:
-        return
-    
-    async with db.pool.acquire() as conn:
-        players = await conn.fetch("""
-            SELECT DISTINCT p.user_id, p.player_name,
-                   f.competition,
-                   COALESCE(ht.team_name, eht.team_name) as home_name,
-                   COALESCE(at.team_name, eat.team_name) as away_name,
-                   f.stage, f.leg
-            FROM players p
-            JOIN teams t ON p.team_id = t.team_id
-            JOIN european_fixtures f ON (f.home_team_id = p.team_id OR f.away_team_id = p.team_id)
-            LEFT JOIN teams ht ON f.home_team_id = ht.team_id
-            LEFT JOIN teams at ON f.away_team_id = at.team_id
-            LEFT JOIN european_teams eht ON f.home_team_id = eht.team_id
-            LEFT JOIN european_teams eat ON f.away_team_id = eat.team_id
-            WHERE p.retired = FALSE AND p.team_id != 'free_agent'
-              AND f.week_number = $1 AND f.played = FALSE
-        """, current_week)
-    
-    for p in players:
-        try:
-            user = await bot.fetch_user(p['user_id'])
-            comp = "Champions League" if p['competition'] == 'CL' else "Europa League"
-            stage = p['stage'].title()
-            if p['leg'] and p['leg'] > 1:
-                stage += f" (Leg {p['leg']})"
-            
+        if not state['season_started']:
             embed = discord.Embed(
-                title=f"{comp} - 1 HOUR WARNING",
-                description=f"Your European match starts in 1 hour (12:00 PM EST)!",
+                title="Season Not Started",
+                description="Waiting for first player to join...\n\nUse `/start` to create your player and begin the season!",
+                color=discord.Color.orange()
+            )
+            await interaction.response.send_message(embed=embed)
+            return
+
+        embed = discord.Embed(
+            title=f"⚽ Season {state['current_season']}",
+            description=f"**Week {state['current_week']}/{config.SEASON_TOTAL_WEEKS}**",
+            color=discord.Color.blue()
+        )
+
+        # ============================================
+        # MATCH WINDOW STATUS - WITH EUROPEAN SUPPORT
+        # ============================================
+        from utils.season_manager import is_match_window_time, get_next_match_window, EST
+        
+        is_window_time, _, _, window_type = is_match_window_time()
+        window_open = state['match_window_open']
+        current_week = state['current_week']
+        
+        # Check if this is a European competition week
+        is_european_week = current_week in config.EUROPEAN_MATCH_WEEKS
+        
+        # Check if any players are in European competitions this week
+        has_european_players = False
+        if is_european_week:
+            async with db.pool.acquire() as conn:
+                result = await conn.fetchrow("""
+                    SELECT COUNT(*) as count
+                    FROM players p
+                    JOIN european_fixtures ef ON (ef.home_team_id = p.team_id OR ef.away_team_id = p.team_id)
+                    WHERE p.retired = FALSE 
+                    AND p.team_id != 'free_agent'
+                    AND ef.week_number = $1
+                    AND ef.played = FALSE
+                """, current_week)
+                has_european_players = result['count'] > 0
+        
+        # Get current time
+        now = datetime.now(EST)
+        
+        # Get next window info to use in all branches
+        next_window = get_next_match_window()
+        next_is_european = (next_window.hour == 12)  # If it's noon, it's European
+        
+        if is_european_week:
+            # EUROPEAN COMPETITION WEEK - Show both windows
+            if has_european_players:
+                # Players are participating - show both windows with clear separation
+                
+                # Show which window is currently open/next
+                if window_open and window_type == 'european':
+                    embed.add_field(
+                        name="🟢 EUROPEAN WINDOW: OPEN (Champions League/Europa League)",
+                        value=f"**Current Time:** {now.strftime('%I:%M %p EST')}\n"
+                              f"**Window:** 12:00 PM - 2:00 PM EST\n"
+                              f"**Closes in:** {((14 * 60) - (now.hour * 60 + now.minute))} minutes\n\n"
+                              f"🎮 Use `/play_match` to play your European match NOW!",
+                        inline=False
+                    )
+                    embed.add_field(
+                        name="⏰ DOMESTIC WINDOW: Later Today",
+                        value=f"**League matches:** 3:00 PM - 5:00 PM EST\n"
+                              f"Opens in {(15 - now.hour - 1)}h {(60 - now.minute)}m",
+                        inline=False
+                    )
+                elif window_open and window_type == 'domestic':
+                    embed.add_field(
+                        name="🟢 DOMESTIC WINDOW: OPEN (League Matches)",
+                        value=f"**Current Time:** {now.strftime('%I:%M %p EST')}\n"
+                              f"**Window:** 3:00 PM - 5:00 PM EST\n"
+                              f"**Closes in:** {((17 * 60) - (now.hour * 60 + now.minute))} minutes\n\n"
+                              f"🎮 Use `/play_match` to play your league match NOW!",
+                        inline=False
+                    )
+                    embed.add_field(
+                        name="✅ European Window: Closed",
+                        value=f"Champions League/Europa League matches (12-2 PM) have finished",
+                        inline=False
+                    )
+                else:
+                    # Both windows closed - show next window with full context
+                    # Calculate time until
+                    time_until = next_window - now
+                    days = time_until.days
+                    hours = time_until.seconds // 3600
+                    minutes = (time_until.seconds % 3600) // 60
+                    
+                    if days > 0:
+                        time_str = f"{days}d {hours}h {minutes}m"
+                    elif hours > 0:
+                        time_str = f"{hours}h {minutes}m"
+                    else:
+                        time_str = f"{minutes}m"
+                    
+                    day_name = next_window.strftime('%A')
+                    date_str = next_window.strftime('%B %d')
+                    
+                    # Use the pre-calculated next_is_european flag
+                    if next_is_european:
+                        window_name = "🏆 EUROPEAN WINDOW"
+                        window_desc = "Champions League/Europa League"
+                        window_time = "12:00 PM - 2:00 PM"
+                    else:
+                        window_name = "⚽ DOMESTIC WINDOW"
+                        window_desc = "League Matches"
+                        window_time = "3:00 PM - 5:00 PM"
+                    
+                    embed.add_field(
+                        name=f"🔴 Match Window: CLOSED",
+                        value=f"**Next Window:** {window_name}\n"
+                              f"**Competition:** {window_desc}\n"
+                              f"**Day:** {day_name}, {date_str}\n"
+                              f"**Time:** {window_time} EST\n"
+                              f"**Opens in:** {time_str}\n\n"
+                              f"⏰ Come back then to play your match!",
+                        inline=False
+                    )
+            else:
+                # European week but no user players participating
+                # Show BOTH that it's European day AND what the next window is
+                
+                # Add header showing it's European day
+                embed.add_field(
+                    name="🌍 EUROPEAN COMPETITION DAY",
+                    value=f"**Today's Schedule:**\n"
+                          f"🏆 12:00 PM - 2:00 PM: Champions League & Europa League *(NPC matches)*\n"
+                          f"⚽ 3:00 PM - 5:00 PM: Domestic League Matches *(Your match)*",
+                    inline=False
+                )
+                
+                # Calculate time info
+                time_until = next_window - now
+                days = time_until.days
+                hours = time_until.seconds // 3600
+                minutes = (time_until.seconds % 3600) // 60
+                
+                if days > 0:
+                    time_str = f"{days}d {hours}h"
+                elif hours > 0:
+                    time_str = f"{hours}h {minutes}m"
+                else:
+                    time_str = f"{minutes}m"
+                
+                # Show domestic window status specifically
+                if window_open and window_type == 'domestic':
+                    embed.add_field(
+                        name="🟢 YOUR WINDOW: OPEN (League Match)",
+                        value=f"**Current Time:** {now.strftime('%I:%M %p EST')}\n"
+                              f"**Closes:** 5:00 PM EST\n\n"
+                              f"🎮 Use `/play_match` to play your league match!",
+                        inline=False
+                    )
+                elif next_is_european:
+                    # Next window is European (which user isn't in)
+                    embed.add_field(
+                        name="⏰ Status: European Window Opens Soon",
+                        value=f"**European Window:** Opens in {time_str} at 12:00 PM EST\n"
+                              f"*(You're not participating)*\n\n"
+                              f"**Your League Match:** Opens at 3:00 PM EST",
+                        inline=False
+                    )
+                else:
+                    # Next window is Domestic (user's match)
+                    embed.add_field(
+                        name="🔴 YOUR WINDOW: CLOSED",
+                        value=f"**Next Window:** Domestic (League Match)\n"
+                              f"**Opens:** 3:00 PM EST ({time_str})\n\n"
+                              f"⏰ Come back then to play your match!",
+                        inline=False
+                    )
+        else:
+            # NORMAL WEEK - Only domestic window (no European matches today)
+            if window_open:
+                # Window is currently OPEN
+                embed.add_field(
+                    name="🟢 MATCH WINDOW: OPEN (League Matches)",
+                    value=f"**Current Time:** {now.strftime('%I:%M %p EST')}\n"
+                          f"**Window:** 3:00 PM - 5:00 PM EST\n"
+                          f"**Closes in:** {((17 * 60) - (now.hour * 60 + now.minute))} minutes\n\n"
+                          f"🎮 Use `/play_match` to play your match NOW!",
+                    inline=False
+                )
+            else:
+                # Window is CLOSED - show next window
+                day_name = next_window.strftime('%A')
+                date_str = next_window.strftime('%B %d')
+                
+                # Calculate time until
+                time_until = next_window - now
+                days = time_until.days
+                hours = time_until.seconds // 3600
+                minutes = (time_until.seconds % 3600) // 60
+                
+                if days > 0:
+                    time_str = f"{days}d {hours}h"
+                elif hours > 0:
+                    time_str = f"{hours}h {minutes}m"
+                else:
+                    time_str = f"{minutes}m"
+                
+                # Use the pre-calculated next_is_european flag
+                if next_is_european:
+                    # Next window is European day
+                    window_type_str = "🏆 EUROPEAN DAY"
+                    competition_str = "Champions League/Europa League at 12pm, League at 3pm"
+                    time_range = "12:00 PM - 2:00 PM (European), 3:00 PM - 5:00 PM (League)"
+                else:
+                    # Next window is regular domestic
+                    window_type_str = "⚽ DOMESTIC WINDOW"
+                    competition_str = "League Matches"
+                    time_range = "3:00 PM - 5:00 PM"
+                
+                embed.add_field(
+                    name="🔴 Match Window: CLOSED",
+                    value=f"**Next Window:** {window_type_str}\n"
+                          f"**Competition:** {competition_str}\n"
+                          f"**Day:** {day_name}, {date_str}\n"
+                          f"**Time:** {time_range} EST\n"
+                          f"**Opens in:** {time_str}\n\n"
+                          f"⏰ Come back then to play your match!",
+                    inline=False
+                )
+
+        # ============================================
+        # TRANSFER WINDOW STATUS
+        # ============================================
+        if current_week in config.TRANSFER_WINDOW_WEEKS:
+            # Window is ACTIVE
+            window_weeks = config.TRANSFER_WINDOW_WEEKS
+            if current_week in window_weeks[:3]:
+                window_name = "Winter Window"
+                end_week = window_weeks[2]
+            else:
+                window_name = "Summer Window"
+                end_week = window_weeks[5]
+            
+            embed.add_field(
+                name="🔥 TRANSFER WINDOW ACTIVE",
+                value=f"**{window_name}** (Weeks {window_weeks[0 if current_week <= 17 else 3]}-{end_week})\n"
+                      f"Closes: End of Week {end_week}\n\n"
+                      f"💼 Use `/offers` to view club interest!",
+                inline=False
+            )
+        else:
+            # Window is CLOSED - show when it opens
+            if current_week < 15:
+                opens_week = 15
+                window_name = "Winter Window"
+            elif current_week >= 17 and current_week < 30:
+                opens_week = 30
+                window_name = "Summer Window"
+            else:
+                opens_week = "Next season (Week 15)"
+                window_name = "Winter Window"
+            
+            embed.add_field(
+                name="💼 Transfer Window Closed",
+                value=f"**{window_name}** opens: Week {opens_week}\n"
+                      f"Weeks remaining: {opens_week - current_week if isinstance(opens_week, int) else 'N/A'}",
+                inline=False
+            )
+
+        # ============================================
+        # MATCH SCHEDULE INFO
+        # ============================================
+        schedule_text = f"**Mon/Wed/Sat** at 3:00-5:00 PM EST\n"
+        if is_european_week:
+            schedule_text = f"**European:** 12:00-2:00 PM EST\n**Domestic:** 3:00-5:00 PM EST\n"
+        
+        embed.add_field(
+            name="📅 Fixed Schedule",
+            value=f"{schedule_text}"
+                  f"**{config.MATCH_WINDOW_HOURS}h** window per match day\n"
+                  f"**{config.MATCH_EVENTS_PER_GAME_MIN}-{config.MATCH_EVENTS_PER_GAME_MAX}** key moments per match",
+            inline=True
+        )
+
+        # ============================================
+        # SEASON PROGRESS
+        # ============================================
+        async with db.pool.acquire() as conn:
+            result = await conn.fetchrow(
+                "SELECT COUNT(*) as count FROM fixtures WHERE played = TRUE"
+            )
+            played = result['count']
+
+            result = await conn.fetchrow(
+                "SELECT COUNT(*) as count FROM fixtures"
+            )
+            total = result['count']
+
+        if total > 0:
+            progress = (played / total) * 100
+
+            # Progress bar
+            bar_length = 10
+            filled = int((progress / 100) * bar_length)
+            bar = "█" * filled + "░" * (bar_length - filled)
+
+            embed.add_field(
+                name="📊 Season Progress",
+                value=f"{bar} {progress:.0f}%\n{played}/{total} matches played",
+                inline=True
+            )
+
+        embed.set_footer(text="Use /league fixtures to see your schedule!")
+
+        await interaction.response.send_message(embed=embed)
+
+    # Keep as method for /league to call
+    async def fixtures(self, interaction: discord.Interaction):
+        """View player's fixtures (called by /league command)"""
+
+        player = await db.get_player(interaction.user.id)
+
+        if not player:
+            await interaction.response.send_message(
+                "You haven't created a player yet! Use `/start` to begin.",
+                ephemeral=True
+            )
+            return
+
+        if player['team_id'] == 'free_agent':
+            await interaction.response.send_message(
+                "You're a free agent! Sign with a team to see fixtures.",
+                ephemeral=True
+            )
+            return
+
+        fixtures = await db.get_player_team_fixtures(interaction.user.id, limit=10)
+
+        if not fixtures:
+            await interaction.response.send_message(
+                "No upcoming fixtures found!",
+                ephemeral=True
+            )
+            return
+
+        team = await db.get_team(player['team_id'])
+
+        embed = discord.Embed(
+            title=f"{team['team_name']} Fixtures",
+            description=f"Upcoming matches for {player['player_name']}",
+            color=discord.Color.blue()
+        )
+
+        state = await db.get_game_state()
+        current_week = state['current_week']
+
+        for fixture in fixtures[:8]:
+            is_home = fixture['home_team_id'] == player['team_id']
+            opponent_id = fixture['away_team_id'] if is_home else fixture['home_team_id']
+
+            opponent = await db.get_team(opponent_id)
+            opponent_name = opponent['team_name'] if opponent else opponent_id
+
+            venue = "Home" if is_home else "Away"
+
+            status = ""
+            if fixture['playable']:
+                status = "**PLAYABLE NOW**"
+            elif fixture['week_number'] == current_week:
+                status = "This week"
+
+            embed.add_field(
+                name=f"Week {fixture['week_number']} - {venue}",
+                value=f"**vs {opponent_name}**\n{status}",
+                inline=False
+            )
+
+        embed.set_footer(text="Use /play_match when your match is playable!")
+
+        await interaction.response.send_message(embed=embed)
+
+    # Keep as method for /league to call
+    async def results(self, interaction: discord.Interaction):
+        """View recent results (called by /league command)"""
+
+        player = await db.get_player(interaction.user.id)
+
+        if not player:
+            await interaction.response.send_message(
+                "You haven't created a player yet! Use `/start` to begin.",
+                ephemeral=True
+            )
+            return
+
+        if player['team_id'] == 'free_agent':
+            async with db.pool.acquire() as conn:
+                rows = await conn.fetch(
+                    """SELECT * FROM fixtures 
+                       WHERE played = TRUE 
+                       ORDER BY week_number DESC 
+                       LIMIT 10"""
+                )
+                fixtures = [dict(row) for row in rows]
+
+            if not fixtures:
+                await interaction.response.send_message(
+                    "No matches played yet!",
+                    ephemeral=True
+                )
+                return
+
+            embed = discord.Embed(
+                title="Recent Results",
+                description="Latest match results across all leagues",
                 color=discord.Color.blue()
             )
-            embed.add_field(name="Match", value=f"{p['home_name']} vs {p['away_name']}\n{stage}", inline=False)
-            embed.add_field(name="Window", value="12:00 PM - 2:00 PM EST", inline=True)
-            await user.send(embed=embed)
-        except:
-            pass
+        else:
+            async with db.pool.acquire() as conn:
+                rows = await conn.fetch(
+                    """SELECT * FROM fixtures 
+                       WHERE (home_team_id = $1 OR away_team_id = $1) 
+                       AND played = TRUE 
+                       ORDER BY week_number DESC 
+                       LIMIT 10""",
+                    player['team_id']
+                )
+                fixtures = [dict(row) for row in rows]
+
+            if not fixtures:
+                await interaction.response.send_message(
+                    f"No matches played yet for your team!",
+                    ephemeral=True
+                )
+                return
+
+            team = await db.get_team(player['team_id'])
+            embed = discord.Embed(
+                title=f"{team['team_name']} - Recent Results",
+                description=f"Latest matches for {player['player_name']}'s team",
+                color=discord.Color.blue()
+            )
+
+        for fixture in fixtures[:8]:
+            home_team = await db.get_team(fixture['home_team_id'])
+            away_team = await db.get_team(fixture['away_team_id'])
+
+            home_name = home_team['team_name'] if home_team else fixture['home_team_id']
+            away_name = away_team['team_name'] if away_team else fixture['away_team_id']
+
+            home_score = fixture['home_score'] or 0
+            away_score = fixture['away_score'] or 0
+
+            if home_score > away_score:
+                result_emoji = "✅" if player and player['team_id'] == fixture['home_team_id'] else "❌"
+            elif away_score > home_score:
+                result_emoji = "✅" if player and player['team_id'] == fixture['away_team_id'] else "❌"
+            else:
+                result_emoji = "🟰"
+
+            if player and player['team_id'] not in ['free_agent'] and player['team_id'] in [fixture['home_team_id'],
+                                                                                            fixture['away_team_id']]:
+                result_text = result_emoji
+            else:
+                result_emoji = "⚽"
+                result_text = "⚽"
+
+            embed.add_field(
+                name=f"{result_text} Week {fixture['week_number']}",
+                value=f"**{home_name}** {home_score} - {away_score} **{away_name}**",
+                inline=False
+            )
+
+        await interaction.response.send_message(embed=embed)
+
+    @app_commands.command(name="season_review",
+                          description="View the season review with champions, awards, and your achievements")
+    async def season_review(self, interaction: discord.Interaction):
+        """View detailed season review"""
+
+        state = await db.get_game_state()
+
+        if state['season_started']:
+            await interaction.response.send_message(
+                "The season is still in progress! Use this command after the season ends.",
+                ephemeral=True
+            )
+            return
+
+        # Get league champions (from last completed season)
+        pl_table = await db.get_league_table('Premier League')
+        champ_table = await db.get_league_table('Championship')
+        l1_table = await db.get_league_table('League One')
+
+        embed = discord.Embed(
+            title=f"Season {config.CURRENT_SEASON} Review",
+            description="Final standings, awards, and achievements",
+            color=discord.Color.gold()
+        )
+
+        # Champions
+        champions_text = ""
+        if pl_table and pl_table[0]['points'] > 0:
+            champ = pl_table[0]
+            champions_text += f"**Premier League**: {champ['team_name']} ({champ['points']} pts)\n"
+        if champ_table and champ_table[0]['points'] > 0:
+            champ = champ_table[0]
+            champions_text += f"**Championship**: {champ['team_name']} ({champ['points']} pts)\n"
+        if l1_table and l1_table[0]['points'] > 0:
+            champ = l1_table[0]
+            champions_text += f"**League One**: {champ['team_name']} ({champ['points']} pts)\n"
+
+        if champions_text:
+            embed.add_field(name="🏆 Champions", value=champions_text, inline=False)
+
+        # Promotion and Relegation
+        if pl_table and len(pl_table) >= 3:
+            relegated = [t['team_name'] for t in pl_table[-3:]]
+            embed.add_field(
+                name="⬇️ Relegated from Premier League",
+                value="\n".join(relegated),
+                inline=True
+            )
+
+        if champ_table and len(champ_table) >= 2:
+            promoted = [t['team_name'] for t in champ_table[:2]]
+            embed.add_field(
+                name="⬆️ Promoted to Premier League",
+                value="\n".join(promoted),
+                inline=True
+            )
+
+        # Top Scorers
+        async with db.pool.acquire() as conn:
+            # User top scorers
+            user_scorers = await conn.fetch(
+                """SELECT p.player_name, p.season_goals, p.season_apps, t.team_name, p.league
+                   FROM players p
+                   LEFT JOIN teams t ON p.team_id = t.team_id
+                   WHERE p.season_goals > 0
+                   ORDER BY p.season_goals DESC
+                   LIMIT 5"""
+            )
+
+            # NPC top scorers
+            npc_scorers = await conn.fetch(
+                """SELECT n.player_name, n.season_goals, n.season_apps, t.team_name, t.league
+                   FROM npc_players n
+                   LEFT JOIN teams t ON n.team_id = t.team_id
+                   WHERE n.season_goals > 0
+                   ORDER BY n.season_goals DESC
+                   LIMIT 5"""
+            )
+
+        all_scorers = list(user_scorers) + list(npc_scorers)
+        all_scorers.sort(key=lambda x: x['season_goals'], reverse=True)
+
+        if all_scorers:
+            top_5 = all_scorers[:5]
+            scorers_text = ""
+            for i, scorer in enumerate(top_5, 1):
+                emoji = "🥇" if i == 1 else "🥈" if i == 2 else "🥉" if i == 3 else f"{i}."
+                team = scorer['team_name'] if scorer['team_name'] else 'Free Agent'
+                scorers_text += f"{emoji} {scorer['player_name']} - **{scorer['season_goals']}** goals ({team})\n"
+
+            embed.add_field(name="👟 Top Scorers", value=scorers_text, inline=False)
+
+        # Your achievements (if user has a player)
+        player = await db.get_player(interaction.user.id)
+        if player:
+            achievements = []
+
+            if player['season_goals'] > 0:
+                achievements.append(f"⚽ Goals: **{player['season_goals']}**")
+            if player['season_assists'] > 0:
+                achievements.append(f"🅰️ Assists: **{player['season_assists']}**")
+            if player['season_apps'] > 0:
+                achievements.append(f"👕 Appearances: **{player['season_apps']}**")
+                avg_rating = f"{player['season_rating']:.1f}"
+                achievements.append(f"⭐ Avg Rating: **{avg_rating}/10**")
+
+            # Check if player's team got promoted/relegated
+            if player['team_id'] != 'free_agent':
+                team = await db.get_team(player['team_id'])
+                if team:
+                    table = await db.get_league_table(team['league'])
+                    team_position = next((i + 1 for i, t in enumerate(table) if t['team_id'] == team['team_id']), None)
+
+                    if team_position:
+                        achievements.append(f"📊 Team Finish: **{team_position}** in {team['league']}")
+
+                        if team['league'] == 'Championship' and team_position <= 2:
+                            achievements.append("🎉 **PROMOTED TO PREMIER LEAGUE!**")
+                        elif team['league'] == 'League One' and team_position <= 2:
+                            achievements.append("🎉 **PROMOTED TO CHAMPIONSHIP!**")
+                        elif team['league'] == 'Premier League' and team_position >= len(pl_table) - 2:
+                            achievements.append("⬇️ **Relegated to Championship**")
+                        elif team['league'] == 'Championship' and team_position >= len(champ_table) - 2:
+                            achievements.append("⬇️ **Relegated to League One**")
+
+            if achievements:
+                embed.add_field(
+                    name=f"📈 Your Season - {player['player_name']}",
+                    value="\n".join(achievements),
+                    inline=False
+                )
+
+        embed.set_footer(text="Use /start to begin a new season!")
+
+        await interaction.response.send_message(embed=embed)
 
 
-async def send_european_30m_warning(bot):
-    state = await db.get_game_state()
-    current_week = state['current_week']
-    
-    if current_week not in config.EUROPEAN_MATCH_WEEKS:
-        return
-    
-    async with db.pool.acquire() as conn:
-        players = await conn.fetch("""
-            SELECT DISTINCT p.user_id,
-                   COALESCE(ht.team_name, eht.team_name) as home_name,
-                   COALESCE(at.team_name, eat.team_name) as away_name
-            FROM players p
-            JOIN european_fixtures f ON (f.home_team_id = p.team_id OR f.away_team_id = p.team_id)
-            LEFT JOIN teams ht ON f.home_team_id = ht.team_id
-            LEFT JOIN teams at ON f.away_team_id = at.team_id
-            LEFT JOIN european_teams eht ON f.home_team_id = eht.team_id
-            LEFT JOIN european_teams eat ON f.away_team_id = eat.team_id
-            WHERE p.retired = FALSE AND f.week_number = $1 AND f.played = FALSE
-        """, current_week)
-    
-    for p in players:
-        try:
-            user = await bot.fetch_user(p['user_id'])
-            embed = discord.Embed(title="European Match - 30 MINUTES!", description="Window opens in 30 minutes!", color=discord.Color.orange())
-            embed.add_field(name="Match", value=f"{p['home_name']} vs {p['away_name']}", inline=False)
-            await user.send(embed=embed)
-        except:
-            pass
-
-
-async def send_european_15m_warning(bot):
-    state = await db.get_game_state()
-    current_week = state['current_week']
-    
-    if current_week not in config.EUROPEAN_MATCH_WEEKS:
-        return
-    
-    async with db.pool.acquire() as conn:
-        players = await conn.fetch("""
-            SELECT DISTINCT p.user_id,
-                   COALESCE(ht.team_name, eht.team_name) as home_name,
-                   COALESCE(at.team_name, eat.team_name) as away_name
-            FROM players p
-            JOIN european_fixtures f ON (f.home_team_id = p.team_id OR f.away_team_id = p.team_id)
-            LEFT JOIN teams ht ON f.home_team_id = ht.team_id
-            LEFT JOIN teams at ON f.away_team_id = at.team_id
-            LEFT JOIN european_teams eht ON f.home_team_id = eht.team_id
-            LEFT JOIN european_teams eat ON f.away_team_id = eat.team_id
-            WHERE p.retired = FALSE AND f.week_number = $1 AND f.played = FALSE
-        """, current_week)
-    
-    for p in players:
-        try:
-            user = await bot.fetch_user(p['user_id'])
-            embed = discord.Embed(title="European Match - 15 MINUTES!", description="Be ready at 12:00 PM EST!", color=discord.Color.red())
-            await user.send(embed=embed)
-        except:
-            pass
-
-
-async def send_1h_warning(bot):
-    state = await db.get_game_state()
-    current_week = state['current_week']
-    
-    async with db.pool.acquire() as conn:
-        players = await conn.fetch("""
-            SELECT DISTINCT p.user_id, ht.team_name as home_name, at.team_name as away_name
-            FROM players p
-            JOIN fixtures f ON (f.home_team_id = p.team_id OR f.away_team_id = p.team_id)
-            JOIN teams ht ON f.home_team_id = ht.team_id
-            JOIN teams at ON f.away_team_id = at.team_id
-            WHERE p.retired = FALSE AND p.team_id != 'free_agent'
-              AND f.week_number = $1 AND f.played = FALSE
-        """, current_week)
-    
-    for p in players:
-        try:
-            user = await bot.fetch_user(p['user_id'])
-            embed = discord.Embed(title="LEAGUE MATCH - 1 HOUR WARNING", description="Your match starts in 1 hour (3:00 PM EST)!", color=discord.Color.orange())
-            embed.add_field(name="Match", value=f"{p['home_name']} vs {p['away_name']}", inline=False)
-            embed.add_field(name="Window", value="3:00 PM - 5:00 PM EST", inline=True)
-            await user.send(embed=embed)
-        except:
-            pass
-
-
-async def send_30m_warning(bot):
-    state = await db.get_game_state()
-    current_week = state['current_week']
-    
-    async with db.pool.acquire() as conn:
-        players = await conn.fetch("""
-            SELECT DISTINCT p.user_id, ht.team_name as home_name, at.team_name as away_name
-            FROM players p
-            JOIN fixtures f ON (f.home_team_id = p.team_id OR f.away_team_id = p.team_id)
-            JOIN teams ht ON f.home_team_id = ht.team_id
-            JOIN teams at ON f.away_team_id = at.team_id
-            WHERE p.retired = FALSE AND f.week_number = $1 AND f.played = FALSE
-        """, current_week)
-    
-    for p in players:
-        try:
-            user = await bot.fetch_user(p['user_id'])
-            embed = discord.Embed(title="LEAGUE MATCH - 30 MINUTES!", description="Window opens in 30 minutes!", color=discord.Color.orange())
-            await user.send(embed=embed)
-        except:
-            pass
-
-
-async def send_15m_warning(bot):
-    state = await db.get_game_state()
-    current_week = state['current_week']
-    
-    async with db.pool.acquire() as conn:
-        players = await conn.fetch("""
-            SELECT DISTINCT p.user_id
-            FROM players p
-            JOIN fixtures f ON (f.home_team_id = p.team_id OR f.away_team_id = p.team_id)
-            WHERE p.retired = FALSE AND f.week_number = $1 AND f.played = FALSE
-        """, current_week)
-    
-    for p in players:
-        try:
-            user = await bot.fetch_user(p['user_id'])
-            embed = discord.Embed(title="LEAGUE MATCH - 15 MINUTES!", description="Be ready at 3:00 PM EST!", color=discord.Color.red())
-            await user.send(embed=embed)
-        except:
-            pass
-
-
-async def send_closing_warning(bot):
-    state = await db.get_game_state()
-    current_week = state['current_week']
-    
-    async with db.pool.acquire() as conn:
-        players = await conn.fetch("""
-            SELECT DISTINCT p.user_id
-            FROM players p
-            JOIN fixtures f ON (f.home_team_id = p.team_id OR f.away_team_id = p.team_id)
-            WHERE p.retired = FALSE AND f.week_number = $1 AND f.played = FALSE
-        """, current_week)
-    
-    for p in players:
-        try:
-            user = await bot.fetch_user(p['user_id'])
-            embed = discord.Embed(title="WINDOW CLOSING - 15 MINUTES!", description="Last chance to play!", color=discord.Color.red())
-            embed.add_field(name="Action Required", value="Use /play_match NOW or match will be simulated!", inline=False)
-            await user.send(embed=embed)
-        except:
-            pass
+async def setup(bot):
+    await bot.add_cog(SeasonCommands(bot))
