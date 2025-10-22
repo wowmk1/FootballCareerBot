@@ -553,6 +553,7 @@ class FootballBot(commands.Bot):
 
         ✅ FIXED: Enhanced logging to debug window issues
         ✅ FIXED: Proper handling of 4-value return from is_match_window_time()
+        ✅ FIXED: Passes current_week to is_match_window_time()
         """
         try:
             from utils.season_manager import (
@@ -567,8 +568,9 @@ class FootballBot(commands.Bot):
                 logger.debug("⏸️ Season not started, skipping window check")
                 return
 
-            # ✅ Get window status (returns 4 values)
-            is_window_time, is_start_time, is_end_time, window_type = is_match_window_time()
+            # ✅ FIXED: Get window status (returns 4 values) - PASS current_week
+            current_week = state['current_week']
+            is_window_time, is_start_time, is_end_time, window_type = is_match_window_time(current_week=current_week)
             window_open = state['match_window_open']
 
             logger.info(
@@ -636,6 +638,7 @@ class FootballBot(commands.Bot):
         - European: 11:00 AM, 11:30 AM, 11:45 AM (before 12 PM open)
         - Domestic: 2:00 PM, 2:30 PM, 2:45 PM (before 3 PM open), 4:45 PM (before close)
         SELF-HEALING: Errors logged but task continues
+        ✅ FIXED: Passes current_week to all should_send_warning() calls
         """
         try:
             from utils.season_manager import (
@@ -654,27 +657,29 @@ class FootballBot(commands.Bot):
             if not state['season_started']:
                 return
 
-            # European warnings (11 AM, 11:30 AM, 11:45 AM)
-            if should_send_warning('european_1h'):
+            current_week = state['current_week']
+
+            # ✅ FIXED: European warnings (11 AM, 11:30 AM, 11:45 AM) - pass current_week
+            if should_send_warning('european_1h', current_week=current_week):
                 await send_european_1h_warning(self)
 
-            elif should_send_warning('european_30m'):
+            elif should_send_warning('european_30m', current_week=current_week):
                 await send_european_30m_warning(self)
 
-            elif should_send_warning('european_15m'):
+            elif should_send_warning('european_15m', current_week=current_week):
                 await send_european_15m_warning(self)
 
-            # Domestic warnings (2 PM, 2:30 PM, 2:45 PM, 4:45 PM)
-            elif should_send_warning('domestic_1h'):
+            # ✅ FIXED: Domestic warnings (2 PM, 2:30 PM, 2:45 PM, 4:45 PM) - pass current_week
+            elif should_send_warning('domestic_1h', current_week=current_week):
                 await send_1h_warning(self)
 
-            elif should_send_warning('domestic_30m'):
+            elif should_send_warning('domestic_30m', current_week=current_week):
                 await send_30m_warning(self)
 
-            elif should_send_warning('domestic_15m'):
+            elif should_send_warning('domestic_15m', current_week=current_week):
                 await send_15m_warning(self)
 
-            elif should_send_warning('domestic_closing'):
+            elif should_send_warning('domestic_closing', current_week=current_week):
                 await send_closing_warning(self)
 
         except Exception as e:
