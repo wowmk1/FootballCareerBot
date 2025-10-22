@@ -1,7 +1,7 @@
 """
-Simplified /season command - shows fixed schedule
-COMPLETE REPLACEMENT for commands/season.py
-✅ FIXED: Corrected unpacking of is_match_window_time() return values (4 instead of 3)
+Simplified /season command - shows fixed schedule with BOTH European and Domestic windows
+✅ FIXED: Shows European window (12-2pm) AND Domestic window (3-5pm) on European weeks
+✅ FIXED: Checks if players are participating in European competitions
 """
 import discord
 from discord import app_commands
@@ -36,58 +36,185 @@ class SeasonCommands(commands.Cog):
             color=discord.Color.blue()
         )
 
-        # MATCH WINDOW STATUS - Simplified
+        # ============================================
+        # MATCH WINDOW STATUS - WITH EUROPEAN SUPPORT
+        # ============================================
         from utils.season_manager import is_match_window_time, get_next_match_window, EST
         
-        # ✅ FIXED: Changed from 3 to 4 underscores to unpack all return values
         is_window_time, _, _, window_type = is_match_window_time()
         window_open = state['match_window_open']
+        current_week = state['current_week']
         
-        if window_open:
-            # Window is currently OPEN
-            now = datetime.now(EST)
-            
-            # Determine which window is open
-            window_name = "European" if window_type == 'european' else "Domestic"
-            close_time = "2:00 PM" if window_type == 'european' else "5:00 PM"
-            
-            embed.add_field(
-                name=f"🟢 {window_name} Match Window: OPEN",
-                value=f"**Current Time:** {now.strftime('%I:%M %p EST')}\n"
-                      f"**Closes:** {close_time} EST\n\n"
-                      f"🎮 Use `/play_match` to play your match!",
-                inline=False
-            )
-        else:
-            # Window is CLOSED - show next window
-            next_window = get_next_match_window()
-            day_name = next_window.strftime('%A')
-            date_str = next_window.strftime('%B %d')
-            
-            # Calculate time until
-            now = datetime.now(EST)
-            time_until = next_window - now
-            days = time_until.days
-            hours = time_until.seconds // 3600
-            
-            if days > 0:
-                time_str = f"**{days}d {hours}h**"
+        # Check if this is a European competition week
+        is_european_week = current_week in config.EUROPEAN_MATCH_WEEKS
+        
+        # Check if any players are in European competitions this week
+        has_european_players = False
+        if is_european_week:
+            async with db.pool.acquire() as conn:
+                result = await conn.fetchrow("""
+                    SELECT COUNT(*) as count
+                    FROM players p
+                    JOIN european_fixtures ef ON (ef.home_team_id = p.team_id OR ef.away_team_id = p.team_id)
+                    WHERE p.retired = FALSE 
+                    AND p.team_id != 'free_agent'
+                    AND ef.week_number = $1
+                    AND ef.played = FALSE
+                """, current_week)
+                has_european_players = result['count'] > 0
+        
+        # Get current time
+        now = datetime.now(EST)
+        
+        if is_european_week:
+            # EUROPEAN COMPETITION WEEK - Show both windows
+            if has_european_players:
+                # Players are participating - show both windows
+                embed.add_field(
+                    name="🌍 EUROPEAN COMPETITION WEEK",
+                    value=f"**Two Match Windows Today:**\n"
+                          f"🏆 European: 12:00 PM - 2:00 PM EST\n"
+                          f"⚽ Domestic: 3:00 PM - 5:00 PM EST",
+                    inline=False
+                )
+                
+                # Show which window is currently open
+                if window_open and window_type == 'european':
+                    embed.add_field(
+                        name="🟢 European Window: OPEN",
+                        value=f"**Current Time:** {now.strftime('%I:%M %p EST')}\n"
+                              f"**Closes:** 2:00 PM EST\n\n"
+                              f"🎮 Use `/play_match` to play your European match!",
+                        inline=False
+                    )
+                elif window_open and window_type == 'domestic':
+                    embed.add_field(
+                        name="🟢 Domestic Window: OPEN",
+                        value=f"**Current Time:** {now.strftime('%I:%M %p EST')}\n"
+                              f"**Closes:** 5:00 PM EST\n\n"
+                              f"🎮 Use `/play_match` to play your league match!",
+                        inline=False
+                    )
+                else:
+                    # Both windows closed - show next window
+                    next_window = get_next_match_window()
+                    if next_window.hour == 12:
+                        window_name = "European"
+                        window_time = "12:00 PM"
+                    else:
+                        window_name = "Domestic"
+                        window_time = "3:00 PM"
+                    
+                    # Calculate time until
+                    time_until = next_window - now
+                    days = time_until.days
+                    hours = time_until.seconds // 3600
+                    
+                    if days > 0:
+                        time_str = f"**{days}d {hours}h**"
+                    else:
+                        time_str = f"**{hours}h**"
+                    
+                    day_name = next_window.strftime('%A')
+                    date_str = next_window.strftime('%B %d')
+                    
+                    embed.add_field(
+                        name="🔴 Both Windows: CLOSED",
+                        value=f"**Next Window:** {window_name} - {day_name}, {date_str}\n"
+                              f"**Opens:** {window_time} EST ({time_str})\n\n"
+                              f"⏰ Come back then to play your match!",
+                        inline=False
+                    )
             else:
-                time_str = f"**{hours}h**"
-            
-            embed.add_field(
-                name="🔴 Match Window: CLOSED",
-                value=f"**Next Window:** {day_name}, {date_str}\n"
-                      f"**Opens:** 3:00 PM EST ({time_str})\n\n"
-                      f"⏰ Come back then to play your match!",
-                inline=False
-            )
+                # European week but no user players participating
+                embed.add_field(
+                    name="🌍 European Competition Day",
+                    value=f"European matches are taking place today (12-2 PM EST)\n"
+                          f"*(You're not participating this week)*",
+                    inline=False
+                )
+                
+                # Show domestic window status
+                if window_open and window_type == 'domestic':
+                    embed.add_field(
+                        name="🟢 Domestic Match Window: OPEN",
+                        value=f"**Current Time:** {now.strftime('%I:%M %p EST')}\n"
+                              f"**Closes:** 5:00 PM EST\n\n"
+                              f"🎮 Use `/play_match` to play your league match!",
+                        inline=False
+                    )
+                else:
+                    # Show next window
+                    next_window = get_next_match_window()
+                    day_name = next_window.strftime('%A')
+                    date_str = next_window.strftime('%B %d')
+                    
+                    # Calculate time until
+                    time_until = next_window - now
+                    days = time_until.days
+                    hours = time_until.seconds // 3600
+                    
+                    if days > 0:
+                        time_str = f"**{days}d {hours}h**"
+                    else:
+                        time_str = f"**{hours}h**"
+                    
+                    embed.add_field(
+                        name="🔴 Domestic Window: CLOSED",
+                        value=f"**Next Window:** {day_name}, {date_str}\n"
+                              f"**Opens:** 3:00 PM EST ({time_str})\n\n"
+                              f"⏰ Come back then to play your match!",
+                        inline=False
+                    )
+        else:
+            # NORMAL WEEK - Only domestic window
+            if window_open:
+                # Window is currently OPEN
+                embed.add_field(
+                    name="🟢 Match Window: OPEN",
+                    value=f"**Current Time:** {now.strftime('%I:%M %p EST')}\n"
+                          f"**Closes:** 5:00 PM EST\n\n"
+                          f"🎮 Use `/play_match` to play your match!",
+                    inline=False
+                )
+            else:
+                # Window is CLOSED - show next window
+                next_window = get_next_match_window()
+                day_name = next_window.strftime('%A')
+                date_str = next_window.strftime('%B %d')
+                
+                # Calculate time until
+                time_until = next_window - now
+                days = time_until.days
+                hours = time_until.seconds // 3600
+                
+                if days > 0:
+                    time_str = f"**{days}d {hours}h**"
+                else:
+                    time_str = f"**{hours}h**"
+                
+                # Determine if next window is European or Domestic
+                next_week_number = state['current_week']
+                if next_window.day != now.day:
+                    # Different day, might be next week
+                    if time_until.days >= 1:
+                        next_week_number = current_week + (1 if current_week < config.SEASON_TOTAL_WEEKS else 0)
+                
+                # Check if next window day has European matches
+                is_next_european = next_week_number in config.EUROPEAN_MATCH_WEEKS and next_window.hour == 12
+                window_desc = "European Window" if is_next_european else "Match Window"
+                
+                embed.add_field(
+                    name="🔴 Match Window: CLOSED",
+                    value=f"**Next {window_desc}:** {day_name}, {date_str}\n"
+                          f"**Opens:** {next_window.strftime('%I:%M %p')} EST ({time_str})\n\n"
+                          f"⏰ Come back then to play your match!",
+                    inline=False
+                )
 
         # ============================================
         # TRANSFER WINDOW STATUS
         # ============================================
-        current_week = state['current_week']
-        
         if current_week in config.TRANSFER_WINDOW_WEEKS:
             # Window is ACTIVE
             window_weeks = config.TRANSFER_WINDOW_WEEKS
@@ -123,18 +250,25 @@ class SeasonCommands(commands.Cog):
                       f"Weeks remaining: {opens_week - current_week if isinstance(opens_week, int) else 'N/A'}",
                 inline=False
             )
-        # ============================================
 
+        # ============================================
         # MATCH SCHEDULE INFO
+        # ============================================
+        schedule_text = f"**Mon/Wed/Sat** at 3:00-5:00 PM EST\n"
+        if is_european_week:
+            schedule_text = f"**European:** 12:00-2:00 PM EST\n**Domestic:** 3:00-5:00 PM EST\n"
+        
         embed.add_field(
             name="📅 Fixed Schedule",
-            value=f"**Mon/Wed/Sat** at 3:00-5:00 PM EST\n"
+            value=f"{schedule_text}"
                   f"**{config.MATCH_WINDOW_HOURS}h** window per match day\n"
                   f"**{config.MATCH_EVENTS_PER_GAME_MIN}-{config.MATCH_EVENTS_PER_GAME_MAX}** key moments per match",
             inline=True
         )
 
+        # ============================================
         # SEASON PROGRESS
+        # ============================================
         async with db.pool.acquire() as conn:
             result = await conn.fetchrow(
                 "SELECT COUNT(*) as count FROM fixtures WHERE played = TRUE"
