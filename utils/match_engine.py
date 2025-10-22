@@ -2630,6 +2630,15 @@ class MatchEngine:
                     motm = max(updated_participants, key=lambda p: p['match_rating'])
 
                     async with db.pool.acquire() as conn:
+                        # Mark MOTM in match_participants table
+                        await conn.execute("""
+                                           UPDATE match_participants
+                                           SET motm = TRUE
+                                           WHERE match_id = $1
+                                             AND user_id = $2
+                                           """, match_id, motm['user_id'])
+        
+                        # Update player career stats
                         await conn.execute("""
                                            UPDATE players
                                            SET season_motm = season_motm + 1,
