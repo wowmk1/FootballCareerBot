@@ -306,7 +306,7 @@ async def post_match_result_to_channel(bot, guild, fixture, home_score, away_sco
             
             if match_id:
                 motm = await conn.fetchrow("""
-                    SELECT p.player_name, mp.rating
+                    SELECT p.player_name, mp.match_rating
                     FROM match_participants mp
                     JOIN players p ON mp.user_id = p.user_id
                     WHERE mp.match_id = $1 AND mp.motm = TRUE
@@ -316,7 +316,7 @@ async def post_match_result_to_channel(bot, guild, fixture, home_score, away_sco
                 if motm:
                     embed.add_field(
                         name="⭐ Man of the Match",
-                        value=f"**{motm['player_name']}** ({motm['rating']:.1f} rating)",
+                        value=f"**{motm['player_name']}** ({motm['match_rating']:.1f} rating)",
                         inline=True
                     )
         
@@ -598,7 +598,7 @@ async def post_weekly_news_digest(bot, week_number: int):
                         
                         if match_id:
                             motm = await conn.fetchrow("""
-                                SELECT p.player_name, mp.rating
+                                SELECT p.player_name, mp.match_rating
                                 FROM match_participants mp
                                 JOIN players p ON mp.user_id = p.user_id
                                 WHERE mp.match_id = $1 AND mp.motm = TRUE
@@ -608,7 +608,7 @@ async def post_weekly_news_digest(bot, week_number: int):
                             if motm:
                                 motw_embed.add_field(
                                     name="⭐ Man of the Match",
-                                    value=f"**{motm['player_name']}** ({motm['rating']:.1f} rating)",
+                                    value=f"**{motm['player_name']}** ({motm['match_rating']:.1f} rating)",
                                     inline=True
                                 )
                         
