@@ -215,7 +215,7 @@ async def post_new_player_announcement(bot, guild, transfer_info):
     await post_transfer_news_to_channel(bot, guild, transfer_info)
 
 
-async def post_match_result_to_channel(bot, guild, fixture, home_score, away_score):
+async def post_match_result_to_channel(bot, guild, fixture, home_score, away_score, highlights_buffer=None):
     """
     Post match result to match-results channel WITH BEAUTIFUL CRESTS
     
@@ -225,6 +225,7 @@ async def post_match_result_to_channel(bot, guild, fixture, home_score, away_sco
         fixture: Fixture dict with home_team_id, away_team_id, week_number
         home_score: Home team score
         away_score: Away team score
+        highlights_buffer: Optional BytesIO buffer with animated highlights GIF
     """
     try:
         # Find match-results channel, fallback to general
@@ -326,27 +327,33 @@ async def post_match_result_to_channel(bot, guild, fixture, home_score, away_sco
             inline=True
         )
         
-        # Generate combined crests image
-        if home_crest or away_crest:
+        # Prepare files to send
+        files_to_send = []
+        
+        # Add highlights GIF if provided
+        if highlights_buffer:
+            highlights_file = discord.File(fp=highlights_buffer, filename="match_highlights.gif")
+            files_to_send.append(highlights_file)
+            embed.set_image(url="attachment://match_highlights.gif")
+        # Otherwise use combined crests image
+        elif home_crest or away_crest:
             crests_buffer = await generate_crests_image(home_crest, away_crest)
             if crests_buffer:
-                file = discord.File(fp=crests_buffer, filename="match_crests.png")
+                crests_file = discord.File(fp=crests_buffer, filename="match_crests.png")
+                files_to_send.append(crests_file)
                 embed.set_image(url="attachment://match_crests.png")
-                
-                # Set footer with away team
-                if away_crest:
-                    embed.set_footer(text=away_team['team_name'], icon_url=away_crest)
-                
-                await results_channel.send(embed=embed, file=file)
-                print(f"  ✅ Posted match result with crests to {guild.name}")
-                return
         
-        # Fallback without image
+        # Set footer with away team
         if away_crest:
             embed.set_footer(text=away_team['team_name'], icon_url=away_crest)
         
-        await results_channel.send(embed=embed)
-        print(f"  ✅ Posted match result to {guild.name}")
+        # Send with all files
+        if files_to_send:
+            await results_channel.send(embed=embed, files=files_to_send)
+            print(f"  ✅ Posted match result with {'highlights' if highlights_buffer else 'crests'} to {guild.name}")
+        else:
+            await results_channel.send(embed=embed)
+            print(f"  ✅ Posted match result to {guild.name}")
         
     except Exception as e:
         print(f"  ❌ Error posting match result to {guild.name}: {e}")
