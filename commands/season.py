@@ -2,6 +2,7 @@
 Simplified /season command - shows fixed schedule with BOTH European and Domestic windows
 ✅ FIXED: Shows European window (12-2pm) AND Domestic window (3-5pm) on European weeks
 ✅ FIXED: Checks if players are participating in European competitions
+✅ FIXED: Passes current_week to is_match_window_time function
 """
 import discord
 from discord import app_commands
@@ -41,9 +42,9 @@ class SeasonCommands(commands.Cog):
         # ============================================
         from utils.season_manager import is_match_window_time, get_next_match_window, EST
         
-        is_window_time, _, _, window_type = is_match_window_time()
-        window_open = state['match_window_open']
         current_week = state['current_week']
+        is_window_time, _, _, window_type = is_match_window_time(current_week=current_week)
+        window_open = state['match_window_open']
         
         # Check if this is a European competition week
         is_european_week = current_week in config.EUROPEAN_MATCH_WEEKS
