@@ -2310,6 +2310,24 @@ class MatchEngine:
                                  AND user_id = $3
                                """, rating_change, match_id, player['user_id'])
 
+        # Add static visualization during match
+        try:
+            from match_visualizer import generate_action_visualization
+
+            viz = generate_action_visualization(
+                action=action,
+                player=player,
+                defender=defender,
+                is_home=is_home,
+                success=success,
+                is_goal=is_goal,
+                animated=False
+            )
+
+            await channel.send(file=discord.File(fp=viz, filename="action.png"))
+        except Exception as e:
+            print(f"⚠️ Visualization error: {e}")
+
         # ✅ FIXED: Now defending_team is available for follow-up actions
         followup_result = await self.handle_followup_action(
             channel, action, success, player, attacking_team, defending_team, match_id, is_european
@@ -2670,7 +2688,22 @@ class MatchEngine:
 
         try:
             from utils.event_poster import post_match_result_to_channel
-            await post_match_result_to_channel(self.bot, channel.guild, fixture, home_score, away_score)
+            from match_highlights import MatchHighlightsGenerator
+
+            # Generate animated highlights
+            try:
+                highlights_buffer = await MatchHighlightsGenerator.generate_match_highlights(
+                    match_id=match_id,
+                    max_highlights=6,
+                    animated=True
+                )
+            except Exception as e:
+                print(f"⚠️ Could not generate highlights: {e}")
+                highlights_buffer = None
+
+            # Post result with highlights
+            await post_match_result_to_channel(self.bot, channel.guild, fixture, home_score, away_score,
+                                               highlights_buffer)
         except Exception as e:
             print(f"❌ Could not post match result: {e}")
 
