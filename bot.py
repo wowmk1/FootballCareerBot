@@ -486,6 +486,80 @@ class FootballBot(commands.Bot):
         except Exception as e:
             logger.warning(f"⚠️ Could not post match window notification: {e}")
 
+    async def notify_european_window_open(self):
+        """Notify guilds that European window is open (12 PM)"""
+        try:
+            state = await db.get_game_state()
+
+            for guild in self.guilds:
+                channel = discord.utils.get(guild.text_channels, name="match-results")
+                if not channel:
+                    channel = discord.utils.get(guild.text_channels, name="general")
+
+                if channel:
+                    embed = discord.Embed(
+                        title="🟢 EUROPEAN WINDOW OPEN!",
+                        description=f"**Week {state['current_week']}** Champions League & Europa League matches are now playable!\n\n"
+                                    f"Use `/play_match` to play your European match!",
+                        color=discord.Color.blue()
+                    )
+
+                    embed.add_field(
+                        name="🏆 Window Open",
+                        value="**12:00 PM - 2:00 PM EST**\n2 hour window",
+                        inline=True
+                    )
+
+                    embed.add_field(
+                        name="⚡ Quick Commands",
+                        value="`/play_match` - Play your match\n`/european` - Check fixtures",
+                        inline=True
+                    )
+
+                    # Find players with European matches
+                    async with db.pool.acquire() as conn:
+                        players = await conn.fetch("""
+                            SELECT DISTINCT p.user_id, p.player_name, t.team_name, f.competition
+                            FROM players p
+                            JOIN teams t ON p.team_id = t.team_id
+                            JOIN european_fixtures f ON (f.home_team_id = p.team_id OR f.away_team_id = p.team_id)
+                            WHERE p.retired = FALSE
+                              AND p.team_id != 'free_agent'
+                              AND f.week_number = $1
+                              AND f.played = FALSE
+                        """, state['current_week'])
+
+                    player_mentions = []
+                    for p in players:
+                        member = guild.get_member(p['user_id'])
+                        if member:
+                            comp_emoji = "🏆" if p['competition'] == 'CL' else "🌟"
+                            player_mentions.append(f"{comp_emoji} {member.mention} ({p['team_name']})")
+
+                    if player_mentions:
+                        mentions_text = "\n".join(player_mentions[:10])
+                        if len(player_mentions) > 10:
+                            mentions_text += f"\n*...and {len(player_mentions) - 10} more*"
+
+                        embed.add_field(
+                            name="👥 Players with European Matches",
+                            value=mentions_text,
+                            inline=False
+                        )
+
+                    embed.add_field(
+                        name="ℹ️ Domestic Matches",
+                        value="League matches open later at **3:00 PM EST**",
+                        inline=False
+                    )
+
+                    embed.set_footer(text="European window closes at 2:00 PM EST • Domestic opens at 3:00 PM!")
+
+                    await channel.send(embed=embed)
+                    logger.info(f"✅ Posted European window open notification to {guild.name}")
+        except Exception as e:
+            logger.warning(f"⚠️ Could not post European window notification: {e}")
+
     async def notify_match_window_closed(self, week_results):
         """Notify all guilds that match window has closed with results"""
         try:
@@ -526,6 +600,122 @@ class FootballBot(commands.Bot):
                     logger.info(f"✅ Posted window closed notification to {guild.name}")
         except Exception as e:
             logger.warning(f"⚠️ Could not post window closed notification: {e}")
+
+    async def notify_european_window_closed(self):
+        """Notify guilds that European window has closed (2 PM)"""
+        try:
+            state = await db.get_game_state()
+
+            for guild in self.guilds:
+                channel = discord.utils.get(guild.text_channels, name="match-results")
+                if not channel:
+                    channel = discord.utils.get(guild.text_channels, name="general")
+
+                if channel:
+                    embed = discord.Embed(
+                        title="🔴 EUROPEAN WINDOW CLOSED",
+                        description=f"**Week {state['current_week']}** European matches (12-2 PM) are complete!",
+                        color=discord.Color.blue()
+                    )
+
+                    # Get European results from this window
+                    async with db.pool.acquire() as conn:
+                        results = await conn.fetch("""
+                            SELECT 
+                                COALESCE(ht.team_name, eht.team_name) as home_team,
+                                COALESCE(at.team_name, eat.team_name) as away_team,
+                                f.home_score, f.away_score, f.competition
+                            FROM european_fixtures f
+                            LEFT JOIN teams ht ON f.home_team_id = ht.team_id
+                            LEFT JOIN teams at ON f.away_team_id = at.team_id
+                            LEFT JOIN european_teams eht ON f.home_team_id = eht.team_id
+                            LEFT JOIN european_teams eat ON f.away_team_id = eat.team_id
+                            WHERE f.week_number = $1 AND f.played = TRUE
+                            ORDER BY f.fixture_id DESC
+                            LIMIT 5
+                        """, state['current_week'])
+
+                    if results:
+                        results_text = ""
+                        for r in results:
+                            comp_emoji = "🏆" if r['competition'] == 'CL' else "🌟"
+                            results_text += f"{comp_emoji} **{r['home_team']}** {r['home_score']} - {r['away_score']} **{r['away_team']}**\n"
+
+                        embed.add_field(
+                            name="📊 European Results",
+                            value=results_text,
+                            inline=False
+                        )
+
+                    embed.add_field(
+                        name="⏰ Domestic Window Opens Soon",
+                        value=f"League matches open at **3:00 PM EST** (in 1 hour)\nUse `/season` to check your match!",
+                        inline=False
+                    )
+
+                    embed.set_footer(text="Domestic league matches open at 3:00 PM EST!")
+
+                    await channel.send(embed=embed)
+                    logger.info(f"✅ Posted European window closed notification to {guild.name}")
+        except Exception as e:
+            logger.warning(f"⚠️ Could not post European window closed notification: {e}")
+
+    async def notify_domestic_window_closed(self):
+        """Notify guilds that Domestic window has closed and week is advancing (5 PM)"""
+        try:
+            state = await db.get_game_state()
+            old_week = state['current_week']
+
+            for guild in self.guilds:
+                channel = discord.utils.get(guild.text_channels, name="match-results")
+                if not channel:
+                    channel = discord.utils.get(guild.text_channels, name="general")
+
+                if channel:
+                    embed = discord.Embed(
+                        title="🔴 DOMESTIC WINDOW CLOSED",
+                        description=f"**Week {old_week}** is complete!\n\n⏭️ Advancing to **Week {old_week + 1}**...",
+                        color=discord.Color.red()
+                    )
+
+                    # Get recent domestic results
+                    async with db.pool.acquire() as conn:
+                        results = await conn.fetch("""
+                            SELECT 
+                                ht.team_name as home_team,
+                                at.team_name as away_team,
+                                f.home_score, f.away_score
+                            FROM fixtures f
+                            JOIN teams ht ON f.home_team_id = ht.team_id
+                            JOIN teams at ON f.away_team_id = at.team_id
+                            WHERE f.week_number = $1 AND f.played = TRUE
+                            ORDER BY f.fixture_id DESC
+                            LIMIT 5
+                        """, old_week)
+
+                    if results:
+                        results_text = ""
+                        for r in results:
+                            results_text += f"⚽ **{r['home_team']}** {r['home_score']} - {r['away_score']} **{r['away_team']}**\n"
+
+                        embed.add_field(
+                            name="📊 Recent League Results",
+                            value=results_text,
+                            inline=False
+                        )
+
+                    embed.add_field(
+                        name=f"📅 Week {old_week + 1} Begins",
+                        value=f"Use `/season` to see when your next match is!\nUse `/league table` for updated standings!",
+                        inline=False
+                    )
+
+                    embed.set_footer(text=f"Week {old_week} complete • Week {old_week + 1} starts now!")
+
+                    await channel.send(embed=embed)
+                    logger.info(f"✅ Posted domestic window closed notification to {guild.name}")
+        except Exception as e:
+            logger.warning(f"⚠️ Could not post domestic window closed notification: {e}")
 
     # ============================================
     # SELF-HEALING BACKGROUND TASKS (FIXED)
@@ -581,9 +771,11 @@ class FootballBot(commands.Bot):
                 logger.info(f"🟢 OPENING {window_type.upper()} WINDOW NOW")
                 await open_match_window(window_type=window_type)
 
-                # Only notify for domestic windows
+                # ✅ Send notifications for both window types
                 if window_type == 'domestic':
                     await self.notify_match_window_open()
+                elif window_type == 'european':
+                    await self.notify_european_window_open()
 
                 time_text = "12-2 PM" if window_type == 'european' else "3-5 PM"
                 await self.change_presence(
@@ -595,6 +787,12 @@ class FootballBot(commands.Bot):
             elif is_end_time and window_open and window_type:
                 logger.info(f"🔴 CLOSING {window_type.upper()} WINDOW NOW")
                 await close_match_window(window_type=window_type, bot=self)
+
+                # ✅ NEW: Send notifications when windows close
+                if window_type == 'european':
+                    await self.notify_european_window_closed()
+                elif window_type == 'domestic':
+                    await self.notify_domestic_window_closed()
 
                 # Update status after closing
                 state = await db.get_game_state()
