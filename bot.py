@@ -153,6 +153,36 @@ class FootballBot(commands.Bot):
                     logger.info("✅ career_motm column already exists")
         except Exception as e:
             logger.warning(f"⚠️ Migration warning: {e}")
+
+        # ============================================
+        # AUTO-MIGRATE: Add motm column to match_participants  <-- ADD THIS NEW BLOCK
+        # ============================================
+        try:
+            async with db.pool.acquire() as conn:
+                result = await conn.fetchrow("""
+                    SELECT column_name
+                    FROM information_schema.columns
+                    WHERE table_name = 'match_participants'
+                      AND column_name = 'motm'
+                """)
+
+                if not result:
+                    logger.info("📋 Adding motm column to match_participants...")
+                    await conn.execute("""
+                        ALTER TABLE match_participants
+                        ADD COLUMN motm BOOLEAN DEFAULT FALSE
+                    """)
+                    await conn.execute("""
+                        UPDATE match_participants
+                        SET motm = FALSE
+                        WHERE motm IS NULL
+                    """)
+                    logger.info("✅ motm column added to match_participants")
+                else:
+                    logger.info("✅ motm column already exists in match_participants")
+        except Exception as e:
+            logger.warning(f"⚠️ Migration warning: {e}")
+        
         # ============================================
         # END AUTO-MIGRATE
         # ============================================
