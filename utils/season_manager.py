@@ -5,7 +5,7 @@ Season Management - Two Windows on Same Days
 
 ✅ FIXED: Proper timezone handling and end detection
 ✅ FIXED: Window closes at EXACT time (2:00 PM, 5:00 PM)
-✅ FIXED: All syntax errors resolved
+✅ FIXED: European window only shows on actual European weeks
 """
 import asyncio
 from datetime import datetime, timedelta, timezone
@@ -33,7 +33,16 @@ def get_current_time_est():
     return datetime.now(EST)
 
 
-def is_match_window_time():
+def is_match_window_time(current_week=None):
+    """
+    Check if we're in a match window
+    
+    Args:
+        current_week: Current game week (required to detect European weeks)
+    
+    Returns:
+        (is_window_time, is_start, is_end, window_type)
+    """
     now = get_current_time_est()
     current_day = now.weekday()
     current_hour = now.hour
@@ -44,14 +53,25 @@ def is_match_window_time():
     if current_day not in MATCH_DAYS:
         return False, False, False, None
     
+    # ✅ FIXED: Check European window time (12-2 PM) ONLY if it's a European week
     if EUROPEAN_START_HOUR <= current_hour < EUROPEAN_END_HOUR:
         is_start = (current_hour == EUROPEAN_START_HOUR and current_minute < 5)
-        logger.info(f"  Inside European window (is_start={is_start})")
-        return True, is_start, False, 'european'
+        # Only return 'european' if current week is in EUROPEAN_MATCH_WEEKS
+        if current_week and current_week in config.EUROPEAN_MATCH_WEEKS:
+            logger.info(f"  Inside European window (is_start={is_start})")
+            return True, is_start, False, 'european'
+        else:
+            # It's 12-2 PM but NOT a European week - no window open
+            logger.info(f"  12-2 PM time but NOT a European week - no window")
+            return False, False, False, None
     
     if current_hour == EUROPEAN_END_HOUR and current_minute < 5:
-        logger.info(f"  European window CLOSING TIME")
-        return False, False, True, 'european'
+        # Only close European window if it's actually a European week
+        if current_week and current_week in config.EUROPEAN_MATCH_WEEKS:
+            logger.info(f"  European window CLOSING TIME")
+            return False, False, True, 'european'
+        else:
+            return False, False, False, None
     
     if DOMESTIC_START_HOUR <= current_hour < DOMESTIC_END_HOUR:
         is_start = (current_hour == DOMESTIC_START_HOUR and current_minute < 5)
@@ -65,7 +85,14 @@ def is_match_window_time():
     return False, False, False, None
 
 
-def should_send_warning(warning_type):
+def should_send_warning(warning_type, current_week=None):
+    """
+    Check if we should send a warning
+    
+    Args:
+        warning_type: Type of warning to check
+        current_week: Current game week (required for European warnings)
+    """
     now = get_current_time_est()
     current_day = now.weekday()
     current_hour = now.hour
@@ -73,6 +100,11 @@ def should_send_warning(warning_type):
     
     if current_day not in MATCH_DAYS:
         return False
+    
+    # European warnings - only if it's a European week
+    if warning_type.startswith('european_'):
+        if not current_week or current_week not in config.EUROPEAN_MATCH_WEEKS:
+            return False
     
     if warning_type == 'european_1h':
         return current_hour == 11 and current_minute < 5
