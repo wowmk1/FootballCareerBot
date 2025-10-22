@@ -1311,7 +1311,7 @@ class MatchEngine:
         """Position-specific actions"""
         position_events = {
             'ST': ['shoot', 'header', 'hold_up_play', 'run_in_behind', 'pass'],
-            'W': ['dribble', 'cross', 'cut_inside', 'shoot', 'track_back'],
+            'W': ['dribble', 'cross', 'cut_inside', 'shoot', 'pass'],
             'CAM': ['shoot', 'through_ball', 'key_pass', 'dribble', 'long_ball'],
             'CM': ['pass', 'through_ball', 'long_ball', 'tackle', 'shoot'],
             'CDM': ['tackle', 'interception', 'pass', 'block', 'cover'],
