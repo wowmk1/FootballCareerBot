@@ -211,6 +211,7 @@ class FootballBot(commands.Bot):
             'commands.organized',
             'commands.achievements',
             'commands.european',
+            'commands.viz_test_cog',
         ]
 
         for cog in cogs:
