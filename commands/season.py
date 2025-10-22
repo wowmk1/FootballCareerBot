@@ -79,31 +79,30 @@ class SeasonCommands(commands.Cog):
                 # Show which window is currently open/next
                 if window_open and window_type == 'european':
                     embed.add_field(
-                        name="🟢 EUROPEAN WINDOW: OPEN (Champions League/Europa League)",
-                        value=f"**Current Time:** {now.strftime('%I:%M %p EST')}\n"
+                        name="🟢 YOUR MATCH: OPEN NOW",
+                        value=f"**Match Type:** European (Champions/Europa League)\n"
                               f"**Window:** 12:00 PM - 2:00 PM EST\n"
                               f"**Closes in:** {((14 * 60) - (now.hour * 60 + now.minute))} minutes\n\n"
-                              f"🎮 Use `/play_match` to play your European match NOW!",
+                              f"🎮 Use `/play_match` NOW!",
                         inline=False
                     )
                     embed.add_field(
-                        name="⏰ DOMESTIC WINDOW: Later Today",
-                        value=f"**League matches:** 3:00 PM - 5:00 PM EST\n"
-                              f"Opens in {(15 - now.hour - 1)}h {(60 - now.minute)}m",
+                        name="⏰ League Match Later",
+                        value=f"Your domestic league match opens at 3:00 PM EST (in {(15 - now.hour - 1)}h {(60 - now.minute)}m)",
                         inline=False
                     )
                 elif window_open and window_type == 'domestic':
                     embed.add_field(
-                        name="🟢 DOMESTIC WINDOW: OPEN (League Matches)",
-                        value=f"**Current Time:** {now.strftime('%I:%M %p EST')}\n"
+                        name="🟢 YOUR MATCH: OPEN NOW",
+                        value=f"**Match Type:** League (Domestic)\n"
                               f"**Window:** 3:00 PM - 5:00 PM EST\n"
                               f"**Closes in:** {((17 * 60) - (now.hour * 60 + now.minute))} minutes\n\n"
-                              f"🎮 Use `/play_match` to play your league match NOW!",
+                              f"🎮 Use `/play_match` NOW!",
                         inline=False
                     )
                     embed.add_field(
-                        name="✅ European Window: Closed",
-                        value=f"Champions League/Europa League matches (12-2 PM) have finished",
+                        name="✅ European Match Complete",
+                        value=f"Your Champions/Europa League match (12-2 PM) is finished",
                         inline=False
                     )
                 else:
@@ -115,7 +114,7 @@ class SeasonCommands(commands.Cog):
                     minutes = (time_until.seconds % 3600) // 60
                     
                     if days > 0:
-                        time_str = f"{days}d {hours}h {minutes}m"
+                        time_str = f"{days}d {hours}h"
                     elif hours > 0:
                         time_str = f"{hours}h {minutes}m"
                     else:
@@ -126,36 +125,27 @@ class SeasonCommands(commands.Cog):
                     
                     # Use the pre-calculated next_is_european flag
                     if next_is_european:
-                        window_name = "🏆 EUROPEAN WINDOW"
-                        window_desc = "Champions League/Europa League"
-                        window_time = "12:00 PM - 2:00 PM"
+                        embed.add_field(
+                            name=f"🔴 YOUR NEXT MATCH: CLOSED",
+                            value=f"**Match Type:** European (Champions/Europa League)\n"
+                                  f"**Day:** {day_name}, {date_str}\n"
+                                  f"**Opens:** 12:00 PM EST (in {time_str})\n\n"
+                                  f"⏰ Your European match comes first!\n"
+                                  f"💡 League match follows at 3:00 PM",
+                            inline=False
+                        )
                     else:
-                        window_name = "⚽ DOMESTIC WINDOW"
-                        window_desc = "League Matches"
-                        window_time = "3:00 PM - 5:00 PM"
-                    
-                    embed.add_field(
-                        name=f"🔴 Match Window: CLOSED",
-                        value=f"**Next Window:** {window_name}\n"
-                              f"**Competition:** {window_desc}\n"
-                              f"**Day:** {day_name}, {date_str}\n"
-                              f"**Time:** {window_time} EST\n"
-                              f"**Opens in:** {time_str}\n\n"
-                              f"⏰ Come back then to play your match!",
-                        inline=False
-                    )
+                        embed.add_field(
+                            name=f"🔴 YOUR NEXT MATCH: CLOSED",
+                            value=f"**Match Type:** League (Domestic)\n"
+                                  f"**Day:** {day_name}, {date_str}\n"
+                                  f"**Opens:** 3:00 PM EST (in {time_str})\n\n"
+                                  f"⏰ Come back then to play!",
+                            inline=False
+                        )
             else:
                 # European week but no user players participating
                 # Show BOTH that it's European day AND what the next window is
-                
-                # Add header showing it's European day
-                embed.add_field(
-                    name="🌍 EUROPEAN COMPETITION DAY",
-                    value=f"**Today's Schedule:**\n"
-                          f"🏆 12:00 PM - 2:00 PM: Champions League & Europa League *(NPC matches)*\n"
-                          f"⚽ 3:00 PM - 5:00 PM: Domestic League Matches *(Your match)*",
-                    inline=False
-                )
                 
                 # Calculate time info
                 time_until = next_window - now
@@ -170,31 +160,54 @@ class SeasonCommands(commands.Cog):
                 else:
                     time_str = f"{minutes}m"
                 
+                # Calculate time until domestic window (3 PM)
+                day_name = next_window.strftime('%A')
+                domestic_window_time = next_window.replace(hour=15, minute=0, second=0, microsecond=0)
+                
+                # If next window is European (12 PM), we need to calculate to domestic (3 PM same day)
+                if next_is_european:
+                    time_until_domestic = domestic_window_time - now
+                    days_domestic = time_until_domestic.days
+                    hours_domestic = time_until_domestic.seconds // 3600
+                    minutes_domestic = (time_until_domestic.seconds % 3600) // 60
+                    
+                    if days_domestic > 0:
+                        domestic_time_str = f"{days_domestic}d {hours_domestic}h"
+                    elif hours_domestic > 0:
+                        domestic_time_str = f"{hours_domestic}h {minutes_domestic}m"
+                    else:
+                        domestic_time_str = f"{minutes_domestic}m"
+                else:
+                    domestic_time_str = time_str
+                
                 # Show domestic window status specifically
                 if window_open and window_type == 'domestic':
                     embed.add_field(
-                        name="🟢 YOUR WINDOW: OPEN (League Match)",
-                        value=f"**Current Time:** {now.strftime('%I:%M %p EST')}\n"
-                              f"**Closes:** 5:00 PM EST\n\n"
-                              f"🎮 Use `/play_match` to play your league match!",
+                        name="🟢 YOUR MATCH: OPEN NOW",
+                        value=f"**Match Type:** League (Domestic)\n"
+                              f"**Window:** 3:00 PM - 5:00 PM EST\n"
+                              f"**Closes in:** {((17 * 60) - (now.hour * 60 + now.minute))} minutes\n\n"
+                              f"🎮 Use `/play_match` NOW!",
                         inline=False
                     )
-                elif next_is_european:
-                    # Next window is European (which user isn't in)
                     embed.add_field(
-                        name="⏰ Status: European Window Opens Soon",
-                        value=f"**European Window:** Opens in {time_str} at 12:00 PM EST\n"
-                              f"*(You're not participating)*\n\n"
-                              f"**Your League Match:** Opens at 3:00 PM EST",
+                        name="ℹ️ European Matches Today",
+                        value=f"Champions League & Europa League matches (12-2 PM) also today, but you're not participating.",
                         inline=False
                     )
                 else:
-                    # Next window is Domestic (user's match)
+                    # Window closed - show YOUR match info prominently
                     embed.add_field(
-                        name="🔴 YOUR WINDOW: CLOSED",
-                        value=f"**Next Window:** Domestic (League Match)\n"
-                              f"**Opens:** 3:00 PM EST ({time_str})\n\n"
-                              f"⏰ Come back then to play your match!",
+                        name="🔴 YOUR MATCH: CLOSED",
+                        value=f"**Match Type:** League (Domestic)\n"
+                              f"**Day:** {day_name}\n"
+                              f"**Opens:** 3:00 PM EST (in {domestic_time_str})\n\n"
+                              f"⏰ Come back then to play!",
+                        inline=False
+                    )
+                    embed.add_field(
+                        name="ℹ️ European Day",
+                        value=f"Champions League & Europa League matches also on {day_name} (12-2 PM), but you're not participating.",
                         inline=False
                     )
         else:
@@ -202,11 +215,11 @@ class SeasonCommands(commands.Cog):
             if window_open:
                 # Window is currently OPEN
                 embed.add_field(
-                    name="🟢 MATCH WINDOW: OPEN (League Matches)",
-                    value=f"**Current Time:** {now.strftime('%I:%M %p EST')}\n"
+                    name="🟢 YOUR MATCH: OPEN NOW",
+                    value=f"**Match Type:** League (Domestic)\n"
                           f"**Window:** 3:00 PM - 5:00 PM EST\n"
                           f"**Closes in:** {((17 * 60) - (now.hour * 60 + now.minute))} minutes\n\n"
-                          f"🎮 Use `/play_match` to play your match NOW!",
+                          f"🎮 Use `/play_match` NOW!",
                     inline=False
                 )
             else:
@@ -227,28 +240,42 @@ class SeasonCommands(commands.Cog):
                 else:
                     time_str = f"{minutes}m"
                 
+                # Calculate time until YOUR match (always 3 PM for non-European participating players)
+                domestic_window_time = next_window.replace(hour=15, minute=0, second=0, microsecond=0)
+                
                 # Use the pre-calculated next_is_european flag
                 if next_is_european:
-                    # Next window is European day
-                    window_type_str = "🏆 EUROPEAN DAY"
-                    competition_str = "Champions League/Europa League at 12pm, League at 3pm"
-                    time_range = "12:00 PM - 2:00 PM (European), 3:00 PM - 5:00 PM (League)"
+                    # Next match day has European matches, but player's match is still at 3 PM
+                    time_until_your_match = domestic_window_time - now
+                    days_your = time_until_your_match.days
+                    hours_your = time_until_your_match.seconds // 3600
+                    minutes_your = (time_until_your_match.seconds % 3600) // 60
+                    
+                    if days_your > 0:
+                        your_time_str = f"{days_your}d {hours_your}h"
+                    elif hours_your > 0:
+                        your_time_str = f"{hours_your}h {minutes_your}m"
+                    else:
+                        your_time_str = f"{minutes_your}m"
+                    
+                    embed.add_field(
+                        name="🔴 YOUR MATCH: CLOSED",
+                        value=f"**Match Type:** League (Domestic)\n"
+                              f"**Day:** {day_name}, {date_str}\n"
+                              f"**Opens:** 3:00 PM EST (in {your_time_str})\n\n"
+                              f"ℹ️ European matches also on {day_name} (12-2 PM)",
+                        inline=False
+                    )
                 else:
-                    # Next window is regular domestic
-                    window_type_str = "⚽ DOMESTIC WINDOW"
-                    competition_str = "League Matches"
-                    time_range = "3:00 PM - 5:00 PM"
-                
-                embed.add_field(
-                    name="🔴 Match Window: CLOSED",
-                    value=f"**Next Window:** {window_type_str}\n"
-                          f"**Competition:** {competition_str}\n"
-                          f"**Day:** {day_name}, {date_str}\n"
-                          f"**Time:** {time_range} EST\n"
-                          f"**Opens in:** {time_str}\n\n"
-                          f"⏰ Come back then to play your match!",
-                    inline=False
-                )
+                    # Regular domestic window only
+                    embed.add_field(
+                        name="🔴 YOUR MATCH: CLOSED",
+                        value=f"**Match Type:** League (Domestic)\n"
+                              f"**Day:** {day_name}, {date_str}\n"
+                              f"**Opens:** 3:00 PM EST (in {time_str})\n\n"
+                              f"⏰ Come back then to play!",
+                        inline=False
+                    )
 
         # ============================================
         # TRANSFER WINDOW STATUS
