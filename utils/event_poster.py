@@ -1,6 +1,7 @@
 """
 Event Poster - PREMIUM MULTI-EMBED NEWS SYSTEM WITH BEAUTIFUL CRESTS
 Posts beautiful, themed news embeds to Discord channels with side-by-side team crests
+✅ FIXED: UPCOMING FIXTURES now checks if players actually participate in European matches
 """
 import discord
 from database import db
@@ -503,6 +504,7 @@ async def post_weekly_news_digest(bot, week_number: int):
     """
     🆕 PREMIUM MULTI-EMBED WEEKLY NEWS DIGEST WITH CRESTS
     Posts 5-7 separate themed embeds for comprehensive coverage
+    ✅ FIXED: UPCOMING FIXTURES checks if players participate in European matches
     """
     try:
         state = await db.get_game_state()
@@ -874,12 +876,11 @@ async def post_weekly_news_digest(bot, week_number: int):
                     
                     embeds_to_send.append(transfer_embed)
                 
-                # 7️⃣ UPCOMING FIXTURES
+                # 7️⃣ UPCOMING FIXTURES - ✅ FIXED: Now checks if players participate in European matches
                 from utils.season_manager import get_next_match_window
                 try:
                     next_window = get_next_match_window()
                     day_name = next_window.strftime('%A')
-                    time_str = next_window.strftime('%I:%M %p EST')
                     
                     fixtures_embed = discord.Embed(
                         title="📅 UPCOMING FIXTURES",
@@ -887,19 +888,54 @@ async def post_weekly_news_digest(bot, week_number: int):
                         color=discord.Color.green()
                     )
                     
-                    fixtures_embed.add_field(
-                        name="⏰ Next Match Window",
-                        value=f"**{day_name}**\nKickoff at **{time_str}**",
-                        inline=True
-                    )
+                    is_european_week = state['current_week'] in config.EUROPEAN_MATCH_WEEKS
                     
-                    if state['current_week'] in config.EUROPEAN_MATCH_WEEKS:
+                    # ✅ FIXED: Check if any players have European matches
+                    has_european_players = False
+                    if is_european_week:
+                        european_count = await conn.fetchval("""
+                            SELECT COUNT(DISTINCT p.user_id)
+                            FROM players p
+                            JOIN european_fixtures ef ON (ef.home_team_id = p.team_id OR ef.away_team_id = p.team_id)
+                            WHERE p.retired = FALSE 
+                            AND p.team_id != 'free_agent'
+                            AND ef.week_number = $1
+                            AND ef.played = FALSE
+                        """, state['current_week'])
+                        has_european_players = european_count > 0
+                    
+                    if is_european_week:
+                        if has_european_players:
+                            # Some players have European matches - show 12 PM
+                            fixtures_embed.add_field(
+                                name="⏰ Next Match Window",
+                                value=f"**{day_name}**\nKickoff at **12:00 PM EST**",
+                                inline=True
+                            )
+                            fixtures_embed.add_field(
+                                name="🏆 European Week",
+                                value="CL/EL matches at **12 PM**\nDomestic at **3 PM**",
+                                inline=True
+                            )
+                        else:
+                            # European week but no user players participating - show 3 PM
+                            fixtures_embed.add_field(
+                                name="⏰ Next Match Window",
+                                value=f"**{day_name}**\nKickoff at **3:00 PM EST**\n*(Domestic only)*",
+                                inline=True
+                            )
+                            fixtures_embed.add_field(
+                                name="🏆 European Week",
+                                value="CL/EL matches at **12 PM** *(NPC matches)*\nDomestic at **3 PM**",
+                                inline=True
+                            )
+                    else:
+                        # Normal week - domestic only, always 3 PM
                         fixtures_embed.add_field(
-                            name="🏆 European Week",
-                            value="CL/EL matches at **12 PM**\nDomestic at **3 PM**",
+                            name="⏰ Next Match Window",
+                            value=f"**{day_name}**\nKickoff at **3:00 PM EST**",
                             inline=True
                         )
-                    else:
                         fixtures_embed.add_field(
                             name="⚽ Domestic Only",
                             value="League matches at **3 PM**",
