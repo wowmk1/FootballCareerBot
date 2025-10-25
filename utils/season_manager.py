@@ -6,6 +6,7 @@ Season Management - Two Windows on Same Days
 ✅ FIXED: Proper timezone handling and end detection
 ✅ FIXED: Window closes at EXACT time (2:00 PM, 5:00 PM)
 ✅ FIXED: European window only shows on actual European weeks
+✅ FIXED: Prevents duplicate window closes
 """
 import asyncio
 from datetime import datetime, timedelta, timezone
@@ -188,6 +189,12 @@ async def close_match_window(window_type='domestic', bot=None):
     async with db.pool.acquire() as conn:
         state = await conn.fetchrow('SELECT * FROM game_state')
         current_week = state['current_week']
+        
+        # ✅ CRITICAL FIX: Prevent duplicate closes
+        if not state['match_window_open']:
+            logger.warning(f"Window already closed for week {current_week}, skipping duplicate close")
+            return []
+        
         results = []
         
         if window_type == 'domestic':
