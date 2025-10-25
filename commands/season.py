@@ -3,6 +3,7 @@ Simplified /season command - shows fixed schedule with BOTH European and Domesti
 ✅ FIXED: Shows European window (12-2pm) AND Domestic window (3-5pm) on European weeks
 ✅ FIXED: Checks if players are participating in European competitions
 ✅ FIXED: Passes current_week to is_match_window_time function
+✅ FIXED: Only shows European matches on actual European weeks
 """
 import discord
 from discord import app_commands
@@ -67,9 +68,10 @@ class SeasonCommands(commands.Cog):
         # Get current time
         now = datetime.now(EST)
         
-        # Get next window info to use in all branches
-        next_window = get_next_match_window()
-        next_is_european = (next_window.hour == 12)  # If it's noon, it's European
+        # ✅ FIXED: Pass current_week to get_next_match_window
+        next_window = get_next_match_window(current_week=current_week)
+        # ✅ FIXED: Check if next window is actually on a European week, not just the hour
+        next_is_european = (next_window.hour == 12 and current_week in config.EUROPEAN_MATCH_WEEKS)
         
         if is_european_week:
             # EUROPEAN COMPETITION WEEK - Show both windows
@@ -240,42 +242,15 @@ class SeasonCommands(commands.Cog):
                 else:
                     time_str = f"{minutes}m"
                 
-                # Calculate time until YOUR match (always 3 PM for non-European participating players)
-                domestic_window_time = next_window.replace(hour=15, minute=0, second=0, microsecond=0)
-                
-                # Use the pre-calculated next_is_european flag
-                if next_is_european:
-                    # Next match day has European matches, but player's match is still at 3 PM
-                    time_until_your_match = domestic_window_time - now
-                    days_your = time_until_your_match.days
-                    hours_your = time_until_your_match.seconds // 3600
-                    minutes_your = (time_until_your_match.seconds % 3600) // 60
-                    
-                    if days_your > 0:
-                        your_time_str = f"{days_your}d {hours_your}h"
-                    elif hours_your > 0:
-                        your_time_str = f"{hours_your}h {minutes_your}m"
-                    else:
-                        your_time_str = f"{minutes_your}m"
-                    
-                    embed.add_field(
-                        name="🔴 YOUR MATCH: CLOSED",
-                        value=f"**Match Type:** League (Domestic)\n"
-                              f"**Day:** {day_name}, {date_str}\n"
-                              f"**Opens:** 3:00 PM EST (in {your_time_str})\n\n"
-                              f"ℹ️ European matches also on {day_name} (12-2 PM)",
-                        inline=False
-                    )
-                else:
-                    # Regular domestic window only
-                    embed.add_field(
-                        name="🔴 YOUR MATCH: CLOSED",
-                        value=f"**Match Type:** League (Domestic)\n"
-                              f"**Day:** {day_name}, {date_str}\n"
-                              f"**Opens:** 3:00 PM EST (in {time_str})\n\n"
-                              f"⏰ Come back then to play!",
-                        inline=False
-                    )
+                # ✅ FIXED: Regular domestic window only - no European message
+                embed.add_field(
+                    name="🔴 YOUR MATCH: CLOSED",
+                    value=f"**Match Type:** League (Domestic)\n"
+                          f"**Day:** {day_name}, {date_str}\n"
+                          f"**Opens:** 3:00 PM EST (in {time_str})\n\n"
+                          f"⏰ Come back then to play!",
+                    inline=False
+                )
 
         # ============================================
         # TRANSFER WINDOW STATUS
