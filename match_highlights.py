@@ -6,7 +6,7 @@ import discord
 from PIL import Image, ImageDraw, ImageFont
 import io
 from typing import List, Dict, Optional
-from match_visualizer_complete import MatchVisualizer, CoordinateMapper
+from match_visualizer import MatchVisualizer, CoordinateMapper
 from database import db
 
 
