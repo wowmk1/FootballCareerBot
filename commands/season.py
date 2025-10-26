@@ -68,8 +68,8 @@ class SeasonCommands(commands.Cog):
         # Get current time
         now = datetime.now(EST)
         
-        # ✅ FIXED: Pass current_week to get_next_match_window
-        next_window = get_next_match_window(current_week=current_week)
+        # Get next match window
+        next_window = get_next_match_window()
         # ✅ FIXED: Check if next window is actually on a European week, not just the hour
         next_is_european = (next_window.hour == 12 and current_week in config.EUROPEAN_MATCH_WEEKS)
         
