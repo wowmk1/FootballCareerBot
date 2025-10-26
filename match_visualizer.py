@@ -1,6 +1,6 @@
 """
-Match Action Visualizer - COMPLETE WITH ANIMATION
-Includes both static images (for live match) and smooth animations (for highlights)
+Match Action Visualizer - WITH ASSET CACHING
+Loads images once and caches them to avoid Imgur rate limiting
 """
 from PIL import Image, ImageDraw, ImageFont
 import io
@@ -101,7 +101,7 @@ class CoordinateMapper:
 class MatchVisualizer:
     """Create match action visualizations - static and animated"""
     
-    # ASSET PATHS - These can be URLs or local file paths
+    # ASSET PATHS
     STADIUM_IMAGE_PATH = "https://i.imgur.com/7kJf34C.jpeg"
     PLAYER_HOME_PATH = "https://i.imgur.com/9KXzzpq.png"  # RED
     PLAYER_AWAY_PATH = "https://i.imgur.com/5pTYlbS.png"  # BLUE
@@ -126,22 +126,29 @@ class MatchVisualizer:
     FAIL_COLOR = '#ff0000'
     GOAL_GOLD = '#FFD700'
     
+    # ✅ CACHE - Assets loaded once and reused
+    _assets_cache = None
+    
     @staticmethod
     def load_image_from_path_or_url(path: str) -> Image.Image:
         """Load image from either local path or URL"""
         if path.startswith('http://') or path.startswith('https://'):
-            # Load from URL
             response = requests.get(path, timeout=10)
             response.raise_for_status()
             return Image.open(io.BytesIO(response.content))
         else:
-            # Load from local file
             return Image.open(path)
     
     @staticmethod
     def load_assets():
-        """Load all visual assets from URLs or local paths"""
+        """Load all visual assets (cached after first load to avoid rate limiting)"""
+        # ✅ Return cached assets if already loaded
+        if MatchVisualizer._assets_cache is not None:
+            return MatchVisualizer._assets_cache
+        
         try:
+            print("🔄 Loading assets from Imgur (first time only)...")
+            
             stadium = MatchVisualizer.load_image_from_path_or_url(MatchVisualizer.STADIUM_IMAGE_PATH).convert('RGB')
             player_home = MatchVisualizer.load_image_from_path_or_url(MatchVisualizer.PLAYER_HOME_PATH).convert('RGBA')
             player_away = MatchVisualizer.load_image_from_path_or_url(MatchVisualizer.PLAYER_AWAY_PATH).convert('RGBA')
@@ -151,7 +158,8 @@ class MatchVisualizer:
             goalie_away = MatchVisualizer.load_image_from_path_or_url(MatchVisualizer.GOALIE_AWAY_PATH).convert('RGBA')
             ball = MatchVisualizer.load_image_from_path_or_url(MatchVisualizer.BALL_PATH).convert('RGBA')
             
-            return {
+            # ✅ Cache the assets
+            MatchVisualizer._assets_cache = {
                 'stadium': stadium,
                 'player_home': player_home,
                 'player_away': player_away,
@@ -161,6 +169,10 @@ class MatchVisualizer:
                 'goalie_away': goalie_away,
                 'ball': ball
             }
+            
+            print("✅ Assets loaded and cached! Future calls will be instant.")
+            return MatchVisualizer._assets_cache
+            
         except Exception as e:
             raise Exception(f"Failed to load assets. Check URLs/paths are correct. Error: {e}")
     
@@ -261,7 +273,7 @@ class MatchVisualizer:
                           is_goal: bool = False) -> Image.Image:
         """Create STATIC action image (for live match updates)"""
         
-        assets = MatchVisualizer.load_assets()
+        assets = MatchVisualizer.load_assets()  # Uses cache after first call
         stadium = assets['stadium']
         
         overlay = Image.new('RGBA', stadium.size, (0, 0, 0, 0))
@@ -367,7 +379,7 @@ class MatchVisualizer:
                                is_goal: bool = False, frames: int = 15) -> List[Image.Image]:
         """Create ANIMATED action frames (for highlights GIF)"""
         
-        assets = MatchVisualizer.load_assets()
+        assets = MatchVisualizer.load_assets()  # Uses cache after first call
         stadium = assets['stadium']
         
         sx, sy = MatchVisualizer.map_coordinates(*start_pos)
@@ -392,31 +404,23 @@ class MatchVisualizer:
         animation_frames = []
         
         for frame_num in range(frames):
-            # Create frame
             img = stadium.copy().convert('RGBA')
             overlay = Image.new('RGBA', img.size, (0, 0, 0, 0))
             draw = ImageDraw.Draw(overlay, 'RGBA')
             
-            # Progress (0 to 1)
             progress = frame_num / (frames - 1)
+            eased = progress * progress * (3 - 2 * progress)
             
-            # Easing function for smooth movement
-            eased = progress * progress * (3 - 2 * progress)  # Smoothstep
-            
-            # Current ball position
             if action in ['dribble', 'cut_inside']:
-                # Curved path
                 current_x = sx + (ex - sx) * eased
                 current_y = sy + (ey - sy) * eased + 25 * (4 * eased * (1-eased))
             else:
-                # Straight path
                 current_x = sx + (ex - sx) * eased
                 current_y = sy + (ey - sy) * eased
             
             # Draw trail
             if frame_num > 0:
                 if action in ['dribble', 'cut_inside']:
-                    # Curved trail
                     for i in range(frame_num + 1):
                         t = i / frames
                         trail_x = sx + (ex - sx) * t
@@ -425,14 +429,13 @@ class MatchVisualizer:
                             draw.ellipse([trail_x-r, trail_y-r, trail_x+r, trail_y+r],
                                        fill=f'{action_color}{60:02x}')
                 else:
-                    # Straight trail
                     for i in range(2, 0, -1):
                         alpha = 40 + i * 20
                         draw.line([sx, sy, current_x, current_y],
                                 fill=f'{action_color}{alpha:02x}', width=4 + i * 2)
                     draw.line([sx, sy, current_x, current_y], fill=action_color, width=4)
             
-            # Glow at goal (increases as ball gets closer)
+            # Glow at goal
             if action in ['shoot', 'header'] and progress > 0.5:
                 glow_intensity = int((progress - 0.5) * 2 * 60)
                 for r in range(30, 10, -3):
@@ -441,7 +444,7 @@ class MatchVisualizer:
             
             img = Image.alpha_composite(img, overlay)
             
-            # Add player (stays at start)
+            # Add player
             player_size = int(100 * start_scale)
             player_scaled = player_cutout.resize((player_size, player_size), Image.Resampling.LANCZOS)
             player_clean = MatchVisualizer.remove_grass(player_scaled)
@@ -464,7 +467,7 @@ class MatchVisualizer:
                 defender_y = dy - defender_size
                 img.paste(defender_clean, (defender_x, defender_y), defender_clean)
             
-            # Add ball at current position with pulsing effect
+            # Add ball with pulsing
             current_pitch_y = start_pos[1] + (end_pos[1] - start_pos[1]) * progress
             ball_scale = MatchVisualizer.get_scale_factor(current_pitch_y)
             pulse = 1.0 + 0.15 * math.sin(progress * math.pi)
@@ -556,7 +559,7 @@ def generate_action_visualization(action: str, player: Dict, defender: Optional[
             format='GIF',
             save_all=True,
             append_images=frames[1:],
-            duration=70,  # 70ms per frame
+            duration=70,
             loop=0
         )
         buffer.seek(0)
@@ -579,38 +582,3 @@ def generate_action_visualization(action: str, player: Dict, defender: Optional[
         img.save(buffer, format='PNG')
         buffer.seek(0)
         return buffer
-
-
-if __name__ == "__main__":
-    # Example: Static image for live match
-    player = {'player_name': 'Haaland', 'position': 'ST'}
-    
-    static_buffer = generate_action_visualization(
-        action='shoot',
-        player=player,
-        defender=None,
-        is_home=True,
-        success=True,
-        is_goal=True,
-        animated=False  # Static for live match
-    )
-    
-    with open('live_goal.png', 'wb') as f:
-        f.write(static_buffer.read())
-    
-    # Example: Animated GIF for highlights
-    animated_buffer = generate_action_visualization(
-        action='shoot',
-        player=player,
-        defender={'player_name': 'Van Dijk'},
-        is_home=True,
-        success=True,
-        is_goal=True,
-        animated=True  # Animated for highlights
-    )
-    
-    with open('highlights_goal.gif', 'wb') as f:
-        f.write(animated_buffer.read())
-    
-    print("✓ Static PNG created: live_goal.png")
-    print("✓ Animated GIF created: highlights_goal.gif")
