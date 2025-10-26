@@ -183,6 +183,97 @@ class FootballBot(commands.Bot):
         except Exception as e:
             logger.warning(f"⚠️ Migration warning: {e}")
         
+        # Add this to bot.py in the setup_hook method, after the other migrations
+
+        # ============================================
+        # AUTO-SETUP: Image Cache for Visualizations
+        # ============================================
+        try:
+            async with db.pool.acquire() as conn:
+                # Check if image_cache table exists
+                result = await conn.fetchrow("""
+                    SELECT EXISTS (
+                        SELECT FROM information_schema.tables 
+                        WHERE table_name = 'image_cache'
+                    )
+                """)
+                
+                if not result['exists']:
+                    logger.info("📋 Creating image_cache table...")
+                    
+                    # Create table
+                    await conn.execute("""
+                        CREATE TABLE image_cache (
+                            image_key VARCHAR(50) PRIMARY KEY,
+                            image_data BYTEA NOT NULL,
+                            image_format VARCHAR(10) NOT NULL,
+                            width INTEGER NOT NULL,
+                            height INTEGER NOT NULL,
+                            cached_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                            last_accessed TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                            file_size INTEGER NOT NULL
+                        )
+                    """)
+                    
+                    await conn.execute("""
+                        CREATE INDEX idx_image_cache_last_accessed 
+                        ON image_cache(last_accessed)
+                    """)
+                    
+                    logger.info("✅ image_cache table created")
+                    
+                    # Now download and cache images
+                    logger.info("🖼️ Downloading images from Imgur...")
+                    
+                    import requests
+                    from PIL import Image
+                    import io
+                    
+                    IMAGE_URLS = {
+                        'stadium': 'https://i.imgur.com/7kJf34C.jpeg',
+                        'player_home': 'https://i.imgur.com/9KXzzpq.png',
+                        'player_away': 'https://i.imgur.com/5pTYlbS.png',
+                        'defender_home': 'https://i.imgur.com/GgpU26d.png',
+                        'defender_away': 'https://i.imgur.com/Z8pibql.png',
+                        'goalie_home': 'https://i.imgur.com/4j6Vnva.png',
+                        'goalie_away': 'https://i.imgur.com/LcaDRG1.png',
+                        'ball': 'https://i.imgur.com/39woCj8.png'
+                    }
+                    
+                    for key, url in IMAGE_URLS.items():
+                        try:
+                            # Download image
+                            response = requests.get(url, timeout=30)
+                            response.raise_for_status()
+                            
+                            # Load with PIL
+                            img = Image.open(io.BytesIO(response.content))
+                            
+                            # Convert to bytes
+                            buffer = io.BytesIO()
+                            img_format = img.format or 'PNG'
+                            img.save(buffer, format=img_format)
+                            image_bytes = buffer.getvalue()
+                            
+                            # Insert into database
+                            await conn.execute("""
+                                INSERT INTO image_cache 
+                                (image_key, image_data, image_format, width, height, file_size)
+                                VALUES ($1, $2, $3, $4, $5, $6)
+                            """, key, image_bytes, img_format, img.width, img.height, len(image_bytes))
+                            
+                            logger.info(f"  ✅ Cached '{key}' ({len(image_bytes) // 1024} KB)")
+                            
+                        except Exception as e:
+                            logger.error(f"  ❌ Failed to cache '{key}': {e}")
+                    
+                    logger.info("✅ Image cache setup complete!")
+                else:
+                    logger.info("✅ image_cache table already exists")
+                    
+        except Exception as e:
+            logger.warning(f"⚠️ Image cache setup warning: {e}")
+        
         # ============================================
         # END AUTO-MIGRATE
         # ============================================
