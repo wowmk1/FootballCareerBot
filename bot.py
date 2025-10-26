@@ -203,6 +203,7 @@ class FootballBot(commands.Bot):
                 if result['exists']:
                     count = await conn.fetchval("SELECT COUNT(*) FROM image_cache")
         
+                # FORCE RELOAD if table empty OR doesn't exist
                 if not result['exists'] or count == 0:
                     logger.info("📋 Creating/reloading image_cache table...")
             
@@ -226,62 +227,68 @@ class FootballBot(commands.Bot):
                     """)
             
                     logger.info("✅ image_cache table created")
-                    
-                    # Now download and cache images
-                    logger.info("🖼️ Downloading images from Imgur...")
-                    
-                    import requests
-                    from PIL import Image
-                    import io
-                    
-                    IMAGE_URLS = {
-                        'stadium': 'https://raw.githubusercontent.com/wowmk1/FootballCareerBot/main/assets/stadium.jpg',
-                        'player_home': 'https://raw.githubusercontent.com/wowmk1/FootballCareerBot/main/assets/player_home.png',
-                        'player_away': 'https://raw.githubusercontent.com/wowmk1/FootballCareerBot/main/assets/player_away.png',
-                        'defender_home': 'https://raw.githubusercontent.com/wowmk1/FootballCareerBot/main/assets/defender_home.png',
-                        'defender_away': 'https://raw.githubusercontent.com/wowmk1/FootballCareerBot/main/assets/defender_away.png',
-                        'goalie_home': 'https://raw.githubusercontent.com/wowmk1/FootballCareerBot/main/assets/goalie_home.png',
-                        'goalie_away': 'https://raw.githubusercontent.com/wowmk1/FootballCareerBot/main/assets/goalie_away.png',
-                        'ball': 'https://raw.githubusercontent.com/wowmk1/FootballCareerBot/main/assets/ball.png'
-                    }
-                    
-                    for key, url in IMAGE_URLS.items():
+        
+                # CHECK FOR MISSING IMAGES (always runs)
+                logger.info("🔍 Checking for missing images...")
+        
+                import requests
+                from PIL import Image
+                import io
+        
+                IMAGE_URLS = {
+                    'stadium': 'https://raw.githubusercontent.com/wowmk1/FootballCareerBot/main/assets/stadium.jpg',
+                    'player_home': 'https://raw.githubusercontent.com/wowmk1/FootballCareerBot/main/assets/player_home.png',
+                    'player_away': 'https://raw.githubusercontent.com/wowmk1/FootballCareerBot/main/assets/player_away.png',
+                    'defender_home': 'https://raw.githubusercontent.com/wowmk1/FootballCareerBot/main/assets/defender_home.png',
+                    'defender_away': 'https://raw.githubusercontent.com/wowmk1/FootballCareerBot/main/assets/defender_away.png',
+                    'goalie_home': 'https://raw.githubusercontent.com/wowmk1/FootballCareerBot/main/assets/goalie_home.png',
+                    'goalie_away': 'https://raw.githubusercontent.com/wowmk1/FootballCareerBot/main/assets/goalie_away.png',
+                    'ball': 'https://raw.githubusercontent.com/wowmk1/FootballCareerBot/main/assets/ball.png'
+                }
+        
+                for key, url in IMAGE_URLS.items():
+                    # Check if this specific image exists
+                    exists = await conn.fetchval(
+                        "SELECT EXISTS(SELECT 1 FROM image_cache WHERE image_key = $1)", key
+                    )
+            
+                    if not exists:
+                        logger.info(f"  📥 Downloading missing image: {key}")
                         try:
                             # Download image
                             response = requests.get(url, timeout=30)
                             response.raise_for_status()
-                            
+                    
                             # Load with PIL
                             img = Image.open(io.BytesIO(response.content))
-                            
+                    
                             # Convert to bytes
                             buffer = io.BytesIO()
                             img_format = img.format or 'PNG'
                             img.save(buffer, format=img_format)
                             image_bytes = buffer.getvalue()
-                            
+                    
                             # Insert into database
                             await conn.execute("""
                                 INSERT INTO image_cache 
                                 (image_key, image_data, image_format, width, height, file_size)
                                 VALUES ($1, $2, $3, $4, $5, $6)
                             """, key, image_bytes, img_format, img.width, img.height, len(image_bytes))
-                            
-                            logger.info(f"  ✅ Cached '{key}' ({len(image_bytes) // 1024} KB)")
-                            
+                    
+                            logger.info(f"    ✅ Cached '{key}' ({len(image_bytes) // 1024} KB)")
+                    
                         except Exception as e:
-                            logger.error(f"  ❌ Failed to cache '{key}': {e}")
-                    
-                    logger.info("✅ Image cache setup complete!")
-                else:
-                    logger.info("✅ image_cache table already exists")
-                    
+                            logger.error(f"    ❌ Failed to cache '{key}': {e}")
+        
+                final_count = await conn.fetchval("SELECT COUNT(*) FROM image_cache")
+                logger.info(f"✅ Image cache ready! ({final_count}/8 images)")
+                
         except Exception as e:
             logger.warning(f"⚠️ Image cache setup warning: {e}")
         
-        # ============================================
-        # END AUTO-MIGRATE
-        # ============================================
+                # ============================================
+                # END AUTO-MIGRATE
+                # ============================================
 
         await self.initialize_data()
         await self.load_cogs()
