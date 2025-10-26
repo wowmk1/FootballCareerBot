@@ -230,14 +230,14 @@ class FootballBot(commands.Bot):
                     import io
                     
                     IMAGE_URLS = {
-                        'stadium': 'https://i.imgur.com/7kJf34C.jpeg',
-                        'player_home': 'https://i.imgur.com/9KXzzpq.png',
-                        'player_away': 'https://i.imgur.com/5pTYlbS.png',
-                        'defender_home': 'https://i.imgur.com/GgpU26d.png',
-                        'defender_away': 'https://i.imgur.com/Z8pibql.png',
-                        'goalie_home': 'https://i.imgur.com/4j6Vnva.png',
-                        'goalie_away': 'https://i.imgur.com/LcaDRG1.png',
-                        'ball': 'https://i.imgur.com/39woCj8.png'
+                        'stadium': 'https://raw.githubusercontent.com/wowmk1/FootballCareerBot/main/assets/stadium.jpg',
+                        'player_home': 'https://raw.githubusercontent.com/wowmk1/FootballCareerBot/main/assets/player_home.png',
+                        'player_away': 'https://raw.githubusercontent.com/wowmk1/FootballCareerBot/main/assets/player_away.png',
+                        'defender_home': 'https://raw.githubusercontent.com/wowmk1/FootballCareerBot/main/assets/defender_home.png',
+                        'defender_away': 'https://raw.githubusercontent.com/wowmk1/FootballCareerBot/main/assets/defender_away.png',
+                        'goalie_home': 'https://raw.githubusercontent.com/wowmk1/FootballCareerBot/main/assets/goalie_home.png',
+                        'goalie_away': 'https://raw.githubusercontent.com/wowmk1/FootballCareerBot/main/assets/goalie_away.png',
+                        'ball': 'https://raw.githubusercontent.com/wowmk1/FootballCareerBot/main/assets/ball.png'
                     }
                     
                     for key, url in IMAGE_URLS.items():
