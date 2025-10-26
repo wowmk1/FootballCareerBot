@@ -1,33 +1,30 @@
 """
-Post-Match Highlights Generator
-Creates animated GIF compilation of key match moments
-
-✅ UPDATED: Works with new MatchVisualizer (no animation yet - static frames)
+Post-Match Highlights Generator - FINAL WITH ANIMATION
+Creates animated GIF with moving ball for all goals
 """
 import discord
 from PIL import Image, ImageDraw, ImageFont
 import io
 from typing import List, Dict, Optional
-from match_visualizer_final import MatchVisualizer, CoordinateMapper, generate_action_visualization
+from match_visualizer_complete import MatchVisualizer, CoordinateMapper
 from database import db
+
 
 class MatchHighlightsGenerator:
     """Generate animated highlights reel after match completion"""
     
     @staticmethod
-    async def generate_match_highlights(match_id: int, max_highlights: int = 6,
-                                       animated: bool = False) -> Optional[io.BytesIO]:
+    async def generate_match_highlights(match_id: int, max_highlights: int = 6) -> Optional[io.BytesIO]:
         """
-        Generate highlights from match actions
+        Generate ANIMATED highlights from match actions
+        Each goal gets 15 frames of smooth ball movement
         
         Args:
             match_id: The match ID
             max_highlights: Maximum number of actions to include (default 6)
-            animated: If True, creates animated GIF. If False, creates static compilation
-                      NOTE: Animation not yet implemented with new visualizer
             
         Returns:
-            BytesIO buffer with GIF/PNG, or None if no highlights
+            BytesIO buffer with animated GIF (15 frames per goal), or None
         """
         
         # Fetch key moments from match
@@ -68,18 +65,18 @@ class MatchHighlightsGenerator:
         if not highlights:
             return None
         
-        # Convert to action representations
-        action_frames = []
-        total_frames_added = 0
+        # Collect ALL animated frames
+        all_frames = []
+        total_actions_added = 0
         
         for i, highlight in enumerate(highlights):
             # Stop if we've reached max_highlights
-            if total_frames_added >= max_highlights:
+            if total_actions_added >= max_highlights:
                 break
             
-            # ✅ Create one frame for EACH goal scored by this player
+            # ✅ Create ANIMATED frames for EACH goal scored by this player
             if highlight['goals_scored'] > 0:
-                goals_to_show = min(highlight['goals_scored'], max_highlights - total_frames_added)
+                goals_to_show = min(highlight['goals_scored'], max_highlights - total_actions_added)
                 
                 for goal_num in range(goals_to_show):
                     action = 'shoot'
@@ -99,8 +96,8 @@ class MatchHighlightsGenerator:
                         action, player['position'], is_home
                     )
                     
-                    # Create static frame using new visualizer
-                    img = MatchVisualizer.create_action_image(
+                    # ✅ Create 15 animated frames for this goal
+                    goal_frames = MatchVisualizer.create_action_animation(
                         action=action,
                         player_name=player['player_name'],
                         player_position=player['position'],
@@ -109,24 +106,26 @@ class MatchHighlightsGenerator:
                         end_pos=(end_x, end_y),
                         is_home=is_home,
                         success=success,
-                        is_goal=is_goal
+                        is_goal=is_goal,
+                        frames=15  # 15 frames per goal
                     )
                     
-                    action_frames.append(img)
-                    total_frames_added += 1
+                    # Add all frames from this goal to the compilation
+                    all_frames.extend(goal_frames)
+                    total_actions_added += 1
                     
-                    if total_frames_added >= max_highlights:
+                    if total_actions_added >= max_highlights:
                         break
                 
                 continue
             
             # Handle assists (if no goals)
-            if highlight['assists'] > 0 and total_frames_added < max_highlights:
+            if highlight['assists'] > 0 and total_actions_added < max_highlights:
                 action = 'pass'
                 success = True
                 is_goal = False
             # Handle high-rated moments (if no goals/assists)
-            elif total_frames_added < max_highlights:
+            elif total_actions_added < max_highlights:
                 action = ['dribble', 'tackle', 'pass', 'interception'][i % 4]
                 success = True
                 is_goal = False
@@ -146,8 +145,8 @@ class MatchHighlightsGenerator:
                 action, player['position'], is_home
             )
             
-            # Create frame
-            img = MatchVisualizer.create_action_image(
+            # Create animated frames
+            action_frames = MatchVisualizer.create_action_animation(
                 action=action,
                 player_name=player['player_name'],
                 player_position=player['position'],
@@ -156,23 +155,24 @@ class MatchHighlightsGenerator:
                 end_pos=(end_x, end_y),
                 is_home=is_home,
                 success=success,
-                is_goal=is_goal
+                is_goal=is_goal,
+                frames=12  # Fewer frames for non-goals
             )
             
-            action_frames.append(img)
-            total_frames_added += 1
+            all_frames.extend(action_frames)
+            total_actions_added += 1
         
-        if not action_frames:
+        if not all_frames:
             return None
         
-        # Create compilation as animated GIF (each frame holds for duration)
+        # Create final animated GIF
         buffer = io.BytesIO()
-        action_frames[0].save(
+        all_frames[0].save(
             buffer,
             format='GIF',
             save_all=True,
-            append_images=action_frames[1:],
-            duration=2000,  # 2 seconds per goal/action
+            append_images=all_frames[1:],
+            duration=70,  # 70ms per frame (smooth animation)
             loop=0
         )
         buffer.seek(0)
@@ -181,10 +181,10 @@ class MatchHighlightsGenerator:
     @staticmethod
     async def generate_top_moment_animation(match_id: int) -> Optional[io.BytesIO]:
         """
-        Generate image of the single best moment (MOTM or top goal)
+        Generate animated GIF of the single best moment (MOTM or top goal)
         
         Returns:
-            BytesIO buffer with PNG of best moment
+            BytesIO buffer with animated GIF
         """
         
         async with db.pool.acquire() as conn:
@@ -221,7 +221,7 @@ class MatchHighlightsGenerator:
             if not top_moment:
                 return None
         
-        # Generate visualization for this moment
+        # Generate animation for this moment
         action = 'shoot' if top_moment['goals_scored'] > 0 else 'pass'
         is_home = top_moment['team_id'] == match['home_team_id']
         
@@ -230,23 +230,41 @@ class MatchHighlightsGenerator:
             'position': top_moment['position']
         }
         
-        # Use the main function
-        buffer = generate_action_visualization(
-            action=action,
-            player=player,
-            defender=None,
-            is_home=is_home,
-            success=True,
-            is_goal=top_moment['goals_scored'] > 0
+        start_x, start_y, end_x, end_y = CoordinateMapper.get_action_coordinates(
+            action, player['position'], is_home
         )
         
+        # Create animated frames
+        frames = MatchVisualizer.create_action_animation(
+            action=action,
+            player_name=player['player_name'],
+            player_position=player['position'],
+            defender_name=None,
+            start_pos=(start_x, start_y),
+            end_pos=(end_x, end_y),
+            is_home=is_home,
+            success=True,
+            is_goal=top_moment['goals_scored'] > 0,
+            frames=20  # Full animation for best moment
+        )
+        
+        # Save as GIF
+        buffer = io.BytesIO()
+        frames[0].save(
+            buffer,
+            format='GIF',
+            save_all=True,
+            append_images=frames[1:],
+            duration=70,
+            loop=0
+        )
+        buffer.seek(0)
         return buffer
 
 
 class MatchActionLogger:
     """
     Store action details during match for post-match replay generation
-    This gives us more detailed highlights with exact actions that happened
     """
     
     def __init__(self):
@@ -258,14 +276,14 @@ class MatchActionLogger:
         
         action_data should contain:
             - action: str
-            - player: dict
+            - player: dict with 'player_name' and 'position'
             - defender: dict or None
             - is_home: bool
             - success: bool
             - is_goal: bool
             - minute: int
-            - start_pos: tuple (optional, will be generated if not provided)
-            - end_pos: tuple (optional, will be generated if not provided)
+            - start_pos: tuple (optional)
+            - end_pos: tuple (optional)
         """
         if match_id not in self.match_actions:
             self.match_actions[match_id] = []
@@ -294,8 +312,8 @@ class MatchActionLogger:
     async def generate_detailed_highlights(self, match_id: int, 
                                           max_actions: int = 8) -> Optional[io.BytesIO]:
         """
-        Generate highlights from logged actions
-        This is more accurate than database-based highlights
+        Generate ANIMATED highlights from logged actions
+        Most accurate - uses exact actions that happened
         """
         actions = self.get_match_actions(match_id)
         
@@ -308,7 +326,7 @@ class MatchActionLogger:
             if a.get('is_goal') or a.get('success', True)
         ]
         
-        # Sort by importance (goals first, then successful actions)
+        # Sort by importance
         important_actions.sort(
             key=lambda x: (
                 x.get('is_goal', False),
@@ -324,12 +342,12 @@ class MatchActionLogger:
         if not selected_actions:
             return None
         
-        # Generate frames for each action
+        # Generate animated frames for each action
         all_frames = []
         
         for action_data in selected_actions:
-            # Create action visualization
-            img = MatchVisualizer.create_action_image(
+            # Create animated frames
+            action_frames = MatchVisualizer.create_action_animation(
                 action=action_data['action'],
                 player_name=action_data['player']['player_name'],
                 player_position=action_data['player']['position'],
@@ -338,12 +356,13 @@ class MatchActionLogger:
                 end_pos=action_data['end_pos'],
                 is_home=action_data['is_home'],
                 success=action_data['success'],
-                is_goal=action_data.get('is_goal', False)
+                is_goal=action_data.get('is_goal', False),
+                frames=15
             )
             
-            all_frames.append(img)
+            all_frames.extend(action_frames)
             
-            # Add separator frame with player name and minute
+            # Add separator frame
             separator = Image.new('RGB', (1408, 768), color='#000000')
             draw = ImageDraw.Draw(separator)
             try:
@@ -356,7 +375,9 @@ class MatchActionLogger:
             text_width = bbox[2] - bbox[0]
             draw.text(((1408 - text_width) // 2, 350), text, fill='white', font=font)
             
-            all_frames.append(separator)
+            # Hold separator for 3 frames
+            for _ in range(3):
+                all_frames.append(separator.copy())
         
         # Create final GIF
         if not all_frames:
@@ -368,7 +389,7 @@ class MatchActionLogger:
             format='GIF',
             save_all=True,
             append_images=all_frames[1:],
-            duration=2000,  # 2 seconds per frame
+            duration=70,
             loop=0
         )
         buffer.seek(0)
@@ -376,52 +397,53 @@ class MatchActionLogger:
         return buffer
 
 
-# Global instance for logging actions during matches
+# Global instance
 match_action_logger = MatchActionLogger()
 
 
-# Example usage
-async def example_usage():
-    """Example of how to use the highlights generator"""
+# Example usage for Discord bot
+async def example_discord_usage(channel):
+    """
+    Example of how to use in your Discord bot
+    """
+    match_id = 123
     
-    # During a match, log actions:
-    match_action_logger.log_action(
-        match_id=123,
-        action_data={
-            'action': 'shoot',
-            'player': {'player_name': 'Haaland', 'position': 'ST'},
-            'defender': {'player_name': 'Van Dijk'},
-            'is_home': True,
-            'success': True,
-            'is_goal': True,
-            'minute': 34
-        }
-    )
-    
-    # After match ends, generate highlights:
+    # After match ends, generate animated highlights
+    print("Generating animated highlights...")
     highlights_gif = await MatchHighlightsGenerator.generate_match_highlights(
-        match_id=123,
-        max_highlights=6
+        match_id=match_id,
+        max_highlights=6  # Up to 6 goals with moving ball
     )
     
     if highlights_gif:
-        # Send to Discord
+        # Send animated GIF to Discord
         await channel.send(
-            content="⚽ **Match Highlights!**",
+            content="⚽ **Match Highlights!** (with animated goals)",
             file=discord.File(highlights_gif, 'highlights.gif')
         )
+        print(f"✓ Sent animated highlights GIF")
     
-    # Or generate detailed highlights from logged actions:
-    detailed_gif = await match_action_logger.generate_detailed_highlights(
-        match_id=123,
-        max_actions=8
-    )
+    # Or send single best moment
+    top_moment_gif = await MatchHighlightsGenerator.generate_top_moment_animation(match_id)
     
-    if detailed_gif:
+    if top_moment_gif:
         await channel.send(
-            content="🎬 **Full Match Replay!**",
-            file=discord.File(detailed_gif, 'replay.gif')
+            content="🌟 **Man of the Match Moment!**",
+            file=discord.File(top_moment_gif, 'motm.gif')
         )
-    
-    # Clear logged actions after sending
-    match_action_logger.clear_match_actions(123)
+        print(f"✓ Sent MOTM animated GIF")
+
+
+if __name__ == "__main__":
+    print("Match Highlights Generator with Animation")
+    print("==========================================")
+    print()
+    print("Features:")
+    print("  ✓ Animated GIF with moving ball for each goal")
+    print("  ✓ Combines multiple goals into one GIF")
+    print("  ✓ 15 frames per goal = smooth animation")
+    print("  ✓ Example: 6 goals = 90 frames total")
+    print()
+    print("Usage:")
+    print("  highlights = await MatchHighlightsGenerator.generate_match_highlights(match_id)")
+    print("  await channel.send(file=discord.File(highlights, 'highlights.gif'))")
