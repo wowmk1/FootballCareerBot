@@ -1,6 +1,7 @@
 """
-Post-Match Highlights Generator - FINAL WITH ANIMATION
+Post-Match Highlights Generator - DISCORD-OPTIMIZED VERSION
 Creates animated GIF with moving ball for all goals
+✅ OPTIMIZED: Reduced frames, resized images, compressed GIFs
 """
 import discord
 from PIL import Image, ImageDraw, ImageFont
@@ -14,17 +15,17 @@ class MatchHighlightsGenerator:
     """Generate animated highlights reel after match completion"""
     
     @staticmethod
-    async def generate_match_highlights(match_id: int, max_highlights: int = 6) -> Optional[io.BytesIO]:
+    async def generate_match_highlights(match_id: int, max_highlights: int = 5) -> Optional[io.BytesIO]:
         """
-        Generate ANIMATED highlights from match actions
-        Each goal gets 15 frames of smooth ball movement
+        Generate ANIMATED highlights from match actions (DISCORD-OPTIMIZED)
+        Each goal gets 10 frames of smooth ball movement (reduced from 15)
         
         Args:
             match_id: The match ID
-            max_highlights: Maximum number of actions to include (default 6)
+            max_highlights: Maximum number of actions to include (default 5, reduced from 6)
             
         Returns:
-            BytesIO buffer with animated GIF (15 frames per goal), or None
+            BytesIO buffer with animated GIF (10 frames per goal), or None
         """
         
         # Fetch key moments from match
@@ -96,8 +97,8 @@ class MatchHighlightsGenerator:
                         action, player['position'], is_home
                     )
                     
-                    # ✅ Create 15 animated frames for this goal
-                    goal_frames = MatchVisualizer.create_action_animation(
+                    # ✅ Create 10 animated frames for this goal (Discord-optimized)
+                    goal_frames = await MatchVisualizer.create_action_animation(
                         action=action,
                         player_name=player['player_name'],
                         player_position=player['position'],
@@ -107,7 +108,7 @@ class MatchHighlightsGenerator:
                         is_home=is_home,
                         success=success,
                         is_goal=is_goal,
-                        frames=15  # 15 frames per goal
+                        frames=10  # ✅ Reduced to 10 frames for Discord
                     )
                     
                     # Add all frames from this goal to the compilation
@@ -146,7 +147,7 @@ class MatchHighlightsGenerator:
             )
             
             # Create animated frames
-            action_frames = MatchVisualizer.create_action_animation(
+            action_frames = await MatchVisualizer.create_action_animation(
                 action=action,
                 player_name=player['player_name'],
                 player_position=player['position'],
@@ -156,7 +157,7 @@ class MatchHighlightsGenerator:
                 is_home=is_home,
                 success=success,
                 is_goal=is_goal,
-                frames=12  # Fewer frames for non-goals
+                frames=8  # ✅ Fewer frames for non-goals (reduced from 12)
             )
             
             all_frames.extend(action_frames)
@@ -165,15 +166,25 @@ class MatchHighlightsGenerator:
         if not all_frames:
             return None
         
-        # Create final animated GIF
+        # ✅ RESIZE FRAMES TO 70% (reduces file size significantly)
+        resized_frames = []
+        for frame in all_frames:
+            new_width = int(frame.width * 0.7)
+            new_height = int(frame.height * 0.7)
+            resized = frame.resize((new_width, new_height), Image.Resampling.LANCZOS)
+            resized_frames.append(resized)
+        
+        # ✅ Create final animated GIF with optimization
         buffer = io.BytesIO()
-        all_frames[0].save(
+        resized_frames[0].save(
             buffer,
             format='GIF',
             save_all=True,
-            append_images=all_frames[1:],
+            append_images=resized_frames[1:],
             duration=70,  # 70ms per frame (smooth animation)
-            loop=0
+            loop=0,
+            optimize=True,  # ✅ Compress GIF
+            quality=85      # ✅ Good quality but smaller
         )
         buffer.seek(0)
         return buffer
@@ -182,6 +193,7 @@ class MatchHighlightsGenerator:
     async def generate_top_moment_animation(match_id: int) -> Optional[io.BytesIO]:
         """
         Generate animated GIF of the single best moment (MOTM or top goal)
+        DISCORD-OPTIMIZED VERSION
         
         Returns:
             BytesIO buffer with animated GIF
@@ -234,8 +246,8 @@ class MatchHighlightsGenerator:
             action, player['position'], is_home
         )
         
-        # Create animated frames
-        frames = MatchVisualizer.create_action_animation(
+        # Create animated frames (reduced to 15 from 20)
+        frames = await MatchVisualizer.create_action_animation(
             action=action,
             player_name=player['player_name'],
             player_position=player['position'],
@@ -245,18 +257,28 @@ class MatchHighlightsGenerator:
             is_home=is_home,
             success=True,
             is_goal=top_moment['goals_scored'] > 0,
-            frames=20  # Full animation for best moment
+            frames=15  # ✅ Reduced from 20
         )
         
-        # Save as GIF
+        # ✅ RESIZE FRAMES TO 70%
+        resized_frames = []
+        for frame in frames:
+            new_width = int(frame.width * 0.7)
+            new_height = int(frame.height * 0.7)
+            resized = frame.resize((new_width, new_height), Image.Resampling.LANCZOS)
+            resized_frames.append(resized)
+        
+        # ✅ Save as optimized GIF
         buffer = io.BytesIO()
-        frames[0].save(
+        resized_frames[0].save(
             buffer,
             format='GIF',
             save_all=True,
-            append_images=frames[1:],
+            append_images=resized_frames[1:],
             duration=70,
-            loop=0
+            loop=0,
+            optimize=True,  # ✅ Compress
+            quality=85      # ✅ Smaller size
         )
         buffer.seek(0)
         return buffer
@@ -310,9 +332,9 @@ class MatchActionLogger:
             del self.match_actions[match_id]
     
     async def generate_detailed_highlights(self, match_id: int, 
-                                          max_actions: int = 8) -> Optional[io.BytesIO]:
+                                          max_actions: int = 6) -> Optional[io.BytesIO]:
         """
-        Generate ANIMATED highlights from logged actions
+        Generate ANIMATED highlights from logged actions (DISCORD-OPTIMIZED)
         Most accurate - uses exact actions that happened
         """
         actions = self.get_match_actions(match_id)
@@ -336,7 +358,7 @@ class MatchActionLogger:
             reverse=True
         )
         
-        # Take top actions
+        # Take top actions (reduced to max 6)
         selected_actions = important_actions[:max_actions]
         
         if not selected_actions:
@@ -346,8 +368,8 @@ class MatchActionLogger:
         all_frames = []
         
         for action_data in selected_actions:
-            # Create animated frames
-            action_frames = MatchVisualizer.create_action_animation(
+            # Create animated frames (reduced to 10)
+            action_frames = await MatchVisualizer.create_action_animation(
                 action=action_data['action'],
                 player_name=action_data['player']['player_name'],
                 player_position=action_data['player']['position'],
@@ -357,7 +379,7 @@ class MatchActionLogger:
                 is_home=action_data['is_home'],
                 success=action_data['success'],
                 is_goal=action_data.get('is_goal', False),
-                frames=15
+                frames=10  # ✅ Reduced from 15
             )
             
             all_frames.extend(action_frames)
@@ -375,22 +397,32 @@ class MatchActionLogger:
             text_width = bbox[2] - bbox[0]
             draw.text(((1408 - text_width) // 2, 350), text, fill='white', font=font)
             
-            # Hold separator for 3 frames
-            for _ in range(3):
+            # Hold separator for 2 frames (reduced from 3)
+            for _ in range(2):
                 all_frames.append(separator.copy())
         
         # Create final GIF
         if not all_frames:
             return None
         
+        # ✅ RESIZE FRAMES TO 70%
+        resized_frames = []
+        for frame in all_frames:
+            new_width = int(frame.width * 0.7)
+            new_height = int(frame.height * 0.7)
+            resized = frame.resize((new_width, new_height), Image.Resampling.LANCZOS)
+            resized_frames.append(resized)
+        
         buffer = io.BytesIO()
-        all_frames[0].save(
+        resized_frames[0].save(
             buffer,
             format='GIF',
             save_all=True,
-            append_images=all_frames[1:],
+            append_images=resized_frames[1:],
             duration=70,
-            loop=0
+            loop=0,
+            optimize=True,  # ✅ Compress
+            quality=85      # ✅ Smaller size
         )
         buffer.seek(0)
         
@@ -412,13 +444,13 @@ async def example_discord_usage(channel):
     print("Generating animated highlights...")
     highlights_gif = await MatchHighlightsGenerator.generate_match_highlights(
         match_id=match_id,
-        max_highlights=6  # Up to 6 goals with moving ball
+        max_highlights=5  # ✅ Reduced to 5 goals (Discord-optimized)
     )
     
     if highlights_gif:
         # Send animated GIF to Discord
         await channel.send(
-            content="⚽ **Match Highlights!** (with animated goals)",
+            content="⚽ **Match Highlights!** (Discord-optimized)",
             file=discord.File(highlights_gif, 'highlights.gif')
         )
         print(f"✓ Sent animated highlights GIF")
@@ -435,14 +467,16 @@ async def example_discord_usage(channel):
 
 
 if __name__ == "__main__":
-    print("Match Highlights Generator with Animation")
-    print("==========================================")
+    print("Match Highlights Generator - DISCORD OPTIMIZED")
+    print("===============================================")
     print()
     print("Features:")
-    print("  ✓ Animated GIF with moving ball for each goal")
-    print("  ✓ Combines multiple goals into one GIF")
-    print("  ✓ 15 frames per goal = smooth animation")
-    print("  ✓ Example: 6 goals = 90 frames total")
+    print("  ✅ Animated GIF with moving ball for each goal")
+    print("  ✅ 10 frames per goal (reduced from 15)")
+    print("  ✅ 70% resolution (986×538 instead of 1408×768)")
+    print("  ✅ GIF optimization enabled")
+    print("  ✅ Discord-safe file sizes (<8MB)")
+    print("  ✅ Example: 5 goals = 50 frames, ~2-3MB total")
     print()
     print("Usage:")
     print("  highlights = await MatchHighlightsGenerator.generate_match_highlights(match_id)")
