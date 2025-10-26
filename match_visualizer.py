@@ -1,12 +1,13 @@
 """
-Match Action Visualizer - WITH ASSET CACHING
-Loads images once and caches them to avoid Imgur rate limiting
+Match Action Visualizer - WITH POSTGRESQL CACHING
+Loads images from PostgreSQL database for instant access
 """
 from PIL import Image, ImageDraw, ImageFont
 import io
 import random
 import math
-import requests
+import asyncpg
+import os
 from typing import Tuple, Optional, Dict, List
 
 
@@ -17,22 +18,10 @@ class CoordinateMapper:
     PITCH_WIDTH = 80
     
     POSITIONS = {
-        'GK': (10, 40),
-        'CB': (25, 40),
-        'LCB': (25, 30),
-        'RCB': (25, 50),
-        'FB': (25, 20),
-        'LB': (25, 15),
-        'RB': (25, 65),
-        'CDM': (40, 40),
-        'CM': (55, 40),
-        'LCM': (55, 30),
-        'RCM': (55, 50),
-        'CAM': (70, 40),
-        'W': (60, 15),
-        'LW': (60, 15),
-        'RW': (60, 65),
-        'ST': (90, 40),
+        'GK': (10, 40), 'CB': (25, 40), 'LCB': (25, 30), 'RCB': (25, 50),
+        'FB': (25, 20), 'LB': (25, 15), 'RB': (25, 65), 'CDM': (40, 40),
+        'CM': (55, 40), 'LCM': (55, 30), 'RCM': (55, 50), 'CAM': (70, 40),
+        'W': (60, 15), 'LW': (60, 15), 'RW': (60, 65), 'ST': (90, 40),
     }
     
     @staticmethod
@@ -99,17 +88,7 @@ class CoordinateMapper:
 
 
 class MatchVisualizer:
-    """Create match action visualizations - static and animated"""
-    
-    # ASSET PATHS
-    STADIUM_IMAGE_PATH = "https://i.imgur.com/7kJf34C.jpeg"
-    PLAYER_HOME_PATH = "https://i.imgur.com/9KXzzpq.png"  # RED
-    PLAYER_AWAY_PATH = "https://i.imgur.com/5pTYlbS.png"  # BLUE
-    DEFENDER_HOME_PATH = "https://i.imgur.com/GgpU26d.png"  # RED
-    DEFENDER_AWAY_PATH = "https://i.imgur.com/Z8pibql.png"  # BLUE
-    GOALIE_HOME_PATH = "https://i.imgur.com/4j6Vnva.png"  # RED
-    GOALIE_AWAY_PATH = "https://i.imgur.com/LcaDRG1.png"  # BLUE
-    BALL_PATH = "https://i.imgur.com/39woCj8.png"
+    """Create match action visualizations with PostgreSQL caching"""
     
     # Goal positions
     LEFT_GOAL_X = 158
@@ -126,39 +105,59 @@ class MatchVisualizer:
     FAIL_COLOR = '#ff0000'
     GOAL_GOLD = '#FFD700'
     
-    # ✅ CACHE - Assets loaded once and reused
+    # In-memory cache (loaded from database once per session)
     _assets_cache = None
+    _db_pool = None
     
     @staticmethod
-    def load_image_from_path_or_url(path: str) -> Image.Image:
-        """Load image from either local path or URL"""
-        if path.startswith('http://') or path.startswith('https://'):
-            response = requests.get(path, timeout=10)
-            response.raise_for_status()
-            return Image.open(io.BytesIO(response.content))
-        else:
-            return Image.open(path)
+    async def init_db_pool():
+        """Initialize database connection pool"""
+        if MatchVisualizer._db_pool is None:
+            from database import db  # Your existing db module
+            MatchVisualizer._db_pool = db.pool
     
     @staticmethod
-    def load_assets():
-        """Load all visual assets (cached after first load to avoid rate limiting)"""
-        # ✅ Return cached assets if already loaded
+    async def load_image_from_db(image_key: str) -> Image.Image:
+        """Load image from PostgreSQL database"""
+        await MatchVisualizer.init_db_pool()
+        
+        async with MatchVisualizer._db_pool.acquire() as conn:
+            # Update last accessed timestamp
+            row = await conn.fetchrow("""
+                UPDATE image_cache 
+                SET last_accessed = CURRENT_TIMESTAMP 
+                WHERE image_key = $1
+                RETURNING image_data, image_format
+            """, image_key)
+            
+            if not row:
+                raise Exception(f"Image '{image_key}' not found in cache! Run setup_image_cache.py first.")
+            
+            # Convert bytes to PIL Image
+            image = Image.open(io.BytesIO(row['image_data']))
+            return image
+    
+    @staticmethod
+    async def load_assets():
+        """Load all visual assets from database (cached in memory after first load)"""
+        # Return memory cache if already loaded
         if MatchVisualizer._assets_cache is not None:
             return MatchVisualizer._assets_cache
         
         try:
-            print("🔄 Loading assets from Imgur (first time only)...")
+            print("🔄 Loading assets from PostgreSQL...")
             
-            stadium = MatchVisualizer.load_image_from_path_or_url(MatchVisualizer.STADIUM_IMAGE_PATH).convert('RGB')
-            player_home = MatchVisualizer.load_image_from_path_or_url(MatchVisualizer.PLAYER_HOME_PATH).convert('RGBA')
-            player_away = MatchVisualizer.load_image_from_path_or_url(MatchVisualizer.PLAYER_AWAY_PATH).convert('RGBA')
-            defender_home = MatchVisualizer.load_image_from_path_or_url(MatchVisualizer.DEFENDER_HOME_PATH).convert('RGBA')
-            defender_away = MatchVisualizer.load_image_from_path_or_url(MatchVisualizer.DEFENDER_AWAY_PATH).convert('RGBA')
-            goalie_home = MatchVisualizer.load_image_from_path_or_url(MatchVisualizer.GOALIE_HOME_PATH).convert('RGBA')
-            goalie_away = MatchVisualizer.load_image_from_path_or_url(MatchVisualizer.GOALIE_AWAY_PATH).convert('RGBA')
-            ball = MatchVisualizer.load_image_from_path_or_url(MatchVisualizer.BALL_PATH).convert('RGBA')
+            # Load all images from database
+            stadium = (await MatchVisualizer.load_image_from_db('stadium')).convert('RGB')
+            player_home = (await MatchVisualizer.load_image_from_db('player_home')).convert('RGBA')
+            player_away = (await MatchVisualizer.load_image_from_db('player_away')).convert('RGBA')
+            defender_home = (await MatchVisualizer.load_image_from_db('defender_home')).convert('RGBA')
+            defender_away = (await MatchVisualizer.load_image_from_db('defender_away')).convert('RGBA')
+            goalie_home = (await MatchVisualizer.load_image_from_db('goalie_home')).convert('RGBA')
+            goalie_away = (await MatchVisualizer.load_image_from_db('goalie_away')).convert('RGBA')
+            ball = (await MatchVisualizer.load_image_from_db('ball')).convert('RGBA')
             
-            # ✅ Cache the assets
+            # Cache in memory
             MatchVisualizer._assets_cache = {
                 'stadium': stadium,
                 'player_home': player_home,
@@ -170,11 +169,11 @@ class MatchVisualizer:
                 'ball': ball
             }
             
-            print("✅ Assets loaded and cached! Future calls will be instant.")
+            print("✅ Assets loaded from database and cached in memory!")
             return MatchVisualizer._assets_cache
             
         except Exception as e:
-            raise Exception(f"Failed to load assets. Check URLs/paths are correct. Error: {e}")
+            raise Exception(f"Failed to load assets from database. Error: {e}\nDid you run setup_image_cache.py?")
     
     @staticmethod
     def map_coordinates(pitch_x: float, pitch_y: float) -> Tuple[int, int]:
@@ -267,13 +266,13 @@ class MatchVisualizer:
             draw.line([points[i], points[i+1]], fill=color, width=4)
     
     @staticmethod
-    def create_action_image(action: str, player_name: str, player_position: str,
+    async def create_action_image(action: str, player_name: str, player_position: str,
                           defender_name: Optional[str], start_pos: Tuple[float, float],
                           end_pos: Tuple[float, float], is_home: bool, success: bool, 
                           is_goal: bool = False) -> Image.Image:
-        """Create STATIC action image (for live match updates)"""
+        """Create STATIC action image"""
         
-        assets = MatchVisualizer.load_assets()  # Uses cache after first call
+        assets = await MatchVisualizer.load_assets()
         stadium = assets['stadium']
         
         overlay = Image.new('RGBA', stadium.size, (0, 0, 0, 0))
@@ -373,13 +372,13 @@ class MatchVisualizer:
         return stadium
     
     @staticmethod
-    def create_action_animation(action: str, player_name: str, player_position: str,
+    async def create_action_animation(action: str, player_name: str, player_position: str,
                                defender_name: Optional[str], start_pos: Tuple[float, float],
                                end_pos: Tuple[float, float], is_home: bool, success: bool, 
                                is_goal: bool = False, frames: int = 15) -> List[Image.Image]:
-        """Create ANIMATED action frames (for highlights GIF)"""
+        """Create ANIMATED action frames"""
         
-        assets = MatchVisualizer.load_assets()  # Uses cache after first call
+        assets = await MatchVisualizer.load_assets()
         stadium = assets['stadium']
         
         sx, sy = MatchVisualizer.map_coordinates(*start_pos)
@@ -393,7 +392,6 @@ class MatchVisualizer:
         else:
             action_color = MatchVisualizer.SUCCESS_COLOR if success else MatchVisualizer.FAIL_COLOR
         
-        # Select player cutout
         is_goalie = action in ['save', 'claim_cross'] or player_position == 'GK'
         
         if is_goalie:
@@ -435,7 +433,6 @@ class MatchVisualizer:
                                 fill=f'{action_color}{alpha:02x}', width=4 + i * 2)
                     draw.line([sx, sy, current_x, current_y], fill=action_color, width=4)
             
-            # Glow at goal
             if action in ['shoot', 'header'] and progress > 0.5:
                 glow_intensity = int((progress - 0.5) * 2 * 60)
                 for r in range(30, 10, -3):
@@ -467,7 +464,7 @@ class MatchVisualizer:
                 defender_y = dy - defender_size
                 img.paste(defender_clean, (defender_x, defender_y), defender_clean)
             
-            # Add ball with pulsing
+            # Add ball
             current_pitch_y = start_pos[1] + (end_pos[1] - start_pos[1]) * progress
             ball_scale = MatchVisualizer.get_scale_factor(current_pitch_y)
             pulse = 1.0 + 0.15 * math.sin(progress * math.pi)
@@ -493,7 +490,6 @@ class MatchVisualizer:
             draw.rectangle([10, 60, 280, 100], fill='#000000bb', outline='white', width=2)
             draw.text((20, 66), action_text, fill=action_color, font=font_med)
             
-            # Show result on last 3 frames
             if frame_num >= frames - 3:
                 if is_goal:
                     result_text = "⚽ GOAL!"
@@ -513,11 +509,11 @@ class MatchVisualizer:
         return animation_frames
 
 
-def generate_action_visualization(action: str, player: Dict, defender: Optional[Dict],
+async def generate_action_visualization(action: str, player: Dict, defender: Optional[Dict],
                                  is_home: bool, success: bool, is_goal: bool = False,
                                  animated: bool = False) -> io.BytesIO:
     """
-    Generate action visualization
+    Generate action visualization (async version for database)
     
     Args:
         action: Action type
@@ -526,7 +522,7 @@ def generate_action_visualization(action: str, player: Dict, defender: Optional[
         is_home: True for home (RED), False for away (BLUE)
         success: Whether action succeeded
         is_goal: Whether it's a goal
-        animated: If True, returns GIF with moving ball. If False, static PNG
+        animated: If True, returns GIF. If False, static PNG
     
     Returns:
         BytesIO buffer with PNG or GIF
@@ -538,8 +534,7 @@ def generate_action_visualization(action: str, player: Dict, defender: Optional[
     defender_name = defender['player_name'] if defender else None
     
     if animated:
-        # Generate animated frames
-        frames = MatchVisualizer.create_action_animation(
+        frames = await MatchVisualizer.create_action_animation(
             action=action,
             player_name=player['player_name'],
             player_position=player['position'],
@@ -552,7 +547,6 @@ def generate_action_visualization(action: str, player: Dict, defender: Optional[
             frames=15
         )
         
-        # Save as GIF
         buffer = io.BytesIO()
         frames[0].save(
             buffer,
@@ -565,8 +559,7 @@ def generate_action_visualization(action: str, player: Dict, defender: Optional[
         buffer.seek(0)
         return buffer
     else:
-        # Static image
-        img = MatchVisualizer.create_action_image(
+        img = await MatchVisualizer.create_action_image(
             action=action,
             player_name=player['player_name'],
             player_position=player['position'],
