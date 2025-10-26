@@ -4,4 +4,5 @@ asyncpg==0.29.0
 pytz==2023.3
 aiohttp==3.9.1
 Pillow
+requests
 tzdata
