@@ -197,18 +197,18 @@ class FootballBot(commands.Bot):
                         WHERE table_name = 'image_cache'
                     )
                 """)
-                
+        
+                # FIX: Check count BEFORE using it in the condition
+                count = 0
+                if result['exists']:
+                    count = await conn.fetchval("SELECT COUNT(*) FROM image_cache")
+        
                 if not result['exists'] or count == 0:
-                    logger.info("📋 Creating image_cache table...")
-    
-                # OR check if table is empty (FORCE RELOAD)
-                count = await conn.fetchval("SELECT COUNT(*) FROM image_cache")
-                if count == 0:
-                    logger.info("🔄 Table empty, will reload images...")
-                    
+                    logger.info("📋 Creating/reloading image_cache table...")
+            
                     # Create table
                     await conn.execute("""
-                        CREATE TABLE image_cache (
+                        CREATE TABLE IF NOT EXISTS image_cache (
                             image_key VARCHAR(50) PRIMARY KEY,
                             image_data BYTEA NOT NULL,
                             image_format VARCHAR(10) NOT NULL,
@@ -219,12 +219,12 @@ class FootballBot(commands.Bot):
                             file_size INTEGER NOT NULL
                         )
                     """)
-                    
+            
                     await conn.execute("""
-                        CREATE INDEX idx_image_cache_last_accessed 
+                        CREATE INDEX IF NOT EXISTS idx_image_cache_last_accessed 
                         ON image_cache(last_accessed)
                     """)
-                    
+            
                     logger.info("✅ image_cache table created")
                     
                     # Now download and cache images
