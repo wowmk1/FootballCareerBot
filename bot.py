@@ -198,8 +198,13 @@ class FootballBot(commands.Bot):
                     )
                 """)
                 
-                if not result['exists']:
+                if not result['exists'] or count == 0:
                     logger.info("📋 Creating image_cache table...")
+    
+                # OR check if table is empty (FORCE RELOAD)
+                count = await conn.fetchval("SELECT COUNT(*) FROM image_cache")
+                if count == 0:
+                    logger.info("🔄 Table empty, will reload images...")
                     
                     # Create table
                     await conn.execute("""
