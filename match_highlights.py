@@ -1,6 +1,8 @@
 """
 Post-Match Highlights Generator
 Creates animated GIF compilation of key match moments
+
+✅ FIXED: Now creates 1 frame PER GOAL, not per player
 """
 import discord
 from PIL import Image
@@ -60,30 +62,106 @@ class MatchHighlightsGenerator:
                     mp.goals_scored DESC,
                     mp.assists DESC,
                     mp.match_rating DESC
-                LIMIT $2
-            """, match_id, max_highlights)
+                LIMIT 10
+            """, match_id)
         
         if not highlights:
             return None
         
         # Convert to action representations
         action_frames = []
+        total_frames_added = 0
         
         for i, highlight in enumerate(highlights):
-            # Determine action type based on stats
+            # Stop if we've reached max_highlights
+            if total_frames_added >= max_highlights:
+                break
+            
+            # ✅ FIXED: Create one frame for EACH goal scored by this player
             if highlight['goals_scored'] > 0:
-                action = 'shoot'
-                success = True
-                is_goal = True
-            elif highlight['assists'] > 0:
+                # Loop through each goal this player scored
+                goals_to_show = min(highlight['goals_scored'], max_highlights - total_frames_added)
+                
+                for goal_num in range(goals_to_show):
+                    action = 'shoot'
+                    success = True
+                    is_goal = True
+                    
+                    is_home = highlight['team_id'] == match['home_team_id']
+                    
+                    player = {
+                        'player_name': highlight['player_name'],
+                        'position': highlight['position'],
+                        'user_id': highlight['user_id']
+                    }
+                    
+                    # Generate this goal frame
+                    start_x, start_y, end_x, end_y = CoordinateMapper.get_action_coordinates(
+                        action, player['position'], is_home
+                    )
+                    
+                    if animated:
+                        gif_buffer = SimpleAnimator.create_action_gif(
+                            action=action,
+                            player_name=player['player_name'],
+                            player_position=player['position'],
+                            defender_name=None,
+                            start_pos=(start_x, start_y),
+                            end_pos=(end_x, end_y),
+                            success=success,
+                            is_goal=is_goal,
+                            frames=10
+                        )
+                        
+                        gif_buffer.seek(0)
+                        gif_img = Image.open(gif_buffer)
+                        
+                        frames_for_action = []
+                        try:
+                            while True:
+                                frames_for_action.append(gif_img.copy())
+                                gif_img.seek(gif_img.tell() + 1)
+                        except EOFError:
+                            pass
+                        
+                        action_frames.extend(frames_for_action)
+                    else:
+                        from match_visualizer import QuickMatchVisualizer
+                        
+                        img = QuickMatchVisualizer.create_action_image(
+                            action=action,
+                            player_name=player['player_name'],
+                            player_position=player['position'],
+                            defender_name=None,
+                            start_pos=(start_x, start_y),
+                            end_pos=(end_x, end_y),
+                            success=success,
+                            is_goal=is_goal
+                        )
+                        
+                        action_frames.append(img)
+                    
+                    total_frames_added += 1
+                    
+                    # Stop if we've reached max
+                    if total_frames_added >= max_highlights:
+                        break
+                
+                # Skip the rest of the loop since we handled all goals for this player
+                continue
+            
+            # Handle assists (if no goals)
+            if highlight['assists'] > 0 and total_frames_added < max_highlights:
                 action = 'pass'
                 success = True
                 is_goal = False
-            else:
-                # High-rated moment - varied action
+            # Handle high-rated moments (if no goals/assists)
+            elif total_frames_added < max_highlights:
                 action = ['dribble', 'tackle', 'pass', 'interception'][i % 4]
                 success = True
                 is_goal = False
+            else:
+                continue
             
             is_home = highlight['team_id'] == match['home_team_id']
             
@@ -142,6 +220,8 @@ class MatchHighlightsGenerator:
                 )
                 
                 action_frames.append(img)
+            
+            total_frames_added += 1
         
         if not action_frames:
             return None
