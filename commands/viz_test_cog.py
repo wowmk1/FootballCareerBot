@@ -73,9 +73,9 @@ class VizTestCog(commands.Cog):
                 'position': 'GK'
             }
             
-            # Test 1: Successful Shot
+            # Test 1: Successful Shot - ✅ ADDED AWAIT
             await channel.send("⚡ **Generating:** Successful shot...")
-            viz_shot = generate_action_visualization(
+            viz_shot = await generate_action_visualization(
                 action='shoot',
                 player=test_player,
                 defender=test_defender,
@@ -96,9 +96,9 @@ class VizTestCog(commands.Cog):
             await channel.send(embed=embed1, file=discord.File(fp=viz_shot, filename="shot_success.png"))
             await asyncio.sleep(2)
             
-            # Test 2: GOAL
+            # Test 2: GOAL - ✅ ADDED AWAIT
             await channel.send("⚽ **Generating:** GOAL!")
-            viz_goal = generate_action_visualization(
+            viz_goal = await generate_action_visualization(
                 action='shoot',
                 player=test_player,
                 defender=test_defender,
@@ -118,10 +118,10 @@ class VizTestCog(commands.Cog):
             await channel.send(embed=embed2, file=discord.File(fp=viz_goal, filename="goal.png"))
             await asyncio.sleep(2)
             
-            # Test 3: Failed Action
+            # Test 3: Failed Action - ✅ ADDED AWAIT
             await channel.send("❌ **Generating:** Failed pass...")
             test_player['position'] = 'CM'
-            viz_fail = generate_action_visualization(
+            viz_fail = await generate_action_visualization(
                 action='pass',
                 player=test_player,
                 defender=test_defender,
@@ -140,10 +140,10 @@ class VizTestCog(commands.Cog):
             await channel.send(embed=embed3, file=discord.File(fp=viz_fail, filename="pass_fail.png"))
             await asyncio.sleep(2)
             
-            # Test 4: Winger Dribble
+            # Test 4: Winger Dribble - ✅ ADDED AWAIT
             await channel.send("💨 **Generating:** Winger dribble...")
             test_player['position'] = 'W'
-            viz_dribble = generate_action_visualization(
+            viz_dribble = await generate_action_visualization(
                 action='dribble',
                 player=test_player,
                 defender=test_defender,
@@ -173,9 +173,10 @@ class VizTestCog(commands.Cog):
             await channel.send(embed=section2_embed)
             await asyncio.sleep(2)
             
+            # ✅ ADDED AWAIT
             await channel.send("🎞️ **Generating animated GIF... (2 seconds)**")
             test_player['position'] = 'ST'
-            viz_animated = generate_action_visualization(
+            viz_animated = await generate_action_visualization(
                 action='shoot',
                 player=test_player,
                 defender=test_defender,
