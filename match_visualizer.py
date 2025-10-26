@@ -6,6 +6,7 @@ from PIL import Image, ImageDraw, ImageFont
 import io
 import random
 import math
+import requests
 from typing import Tuple, Optional, Dict, List
 
 
@@ -100,7 +101,7 @@ class CoordinateMapper:
 class MatchVisualizer:
     """Create match action visualizations - static and animated"""
     
-    # ASSET PATHS
+    # ASSET PATHS - These can be URLs or local file paths
     STADIUM_IMAGE_PATH = "https://i.imgur.com/7kJf34C.jpeg"
     PLAYER_HOME_PATH = "https://i.imgur.com/9KXzzpq.png"  # RED
     PLAYER_AWAY_PATH = "https://i.imgur.com/5pTYlbS.png"  # BLUE
@@ -126,26 +127,42 @@ class MatchVisualizer:
     GOAL_GOLD = '#FFD700'
     
     @staticmethod
+    def load_image_from_path_or_url(path: str) -> Image.Image:
+        """Load image from either local path or URL"""
+        if path.startswith('http://') or path.startswith('https://'):
+            # Load from URL
+            response = requests.get(path, timeout=10)
+            response.raise_for_status()
+            return Image.open(io.BytesIO(response.content))
+        else:
+            # Load from local file
+            return Image.open(path)
+    
+    @staticmethod
     def load_assets():
-        stadium = Image.open(MatchVisualizer.STADIUM_IMAGE_PATH).convert('RGB')
-        player_home = Image.open(MatchVisualizer.PLAYER_HOME_PATH).convert('RGBA')
-        player_away = Image.open(MatchVisualizer.PLAYER_AWAY_PATH).convert('RGBA')
-        defender_home = Image.open(MatchVisualizer.DEFENDER_HOME_PATH).convert('RGBA')
-        defender_away = Image.open(MatchVisualizer.DEFENDER_AWAY_PATH).convert('RGBA')
-        goalie_home = Image.open(MatchVisualizer.GOALIE_HOME_PATH).convert('RGBA')
-        goalie_away = Image.open(MatchVisualizer.GOALIE_AWAY_PATH).convert('RGBA')
-        ball = Image.open(MatchVisualizer.BALL_PATH).convert('RGBA')
-        
-        return {
-            'stadium': stadium,
-            'player_home': player_home,
-            'player_away': player_away,
-            'defender_home': defender_home,
-            'defender_away': defender_away,
-            'goalie_home': goalie_home,
-            'goalie_away': goalie_away,
-            'ball': ball
-        }
+        """Load all visual assets from URLs or local paths"""
+        try:
+            stadium = MatchVisualizer.load_image_from_path_or_url(MatchVisualizer.STADIUM_IMAGE_PATH).convert('RGB')
+            player_home = MatchVisualizer.load_image_from_path_or_url(MatchVisualizer.PLAYER_HOME_PATH).convert('RGBA')
+            player_away = MatchVisualizer.load_image_from_path_or_url(MatchVisualizer.PLAYER_AWAY_PATH).convert('RGBA')
+            defender_home = MatchVisualizer.load_image_from_path_or_url(MatchVisualizer.DEFENDER_HOME_PATH).convert('RGBA')
+            defender_away = MatchVisualizer.load_image_from_path_or_url(MatchVisualizer.DEFENDER_AWAY_PATH).convert('RGBA')
+            goalie_home = MatchVisualizer.load_image_from_path_or_url(MatchVisualizer.GOALIE_HOME_PATH).convert('RGBA')
+            goalie_away = MatchVisualizer.load_image_from_path_or_url(MatchVisualizer.GOALIE_AWAY_PATH).convert('RGBA')
+            ball = MatchVisualizer.load_image_from_path_or_url(MatchVisualizer.BALL_PATH).convert('RGBA')
+            
+            return {
+                'stadium': stadium,
+                'player_home': player_home,
+                'player_away': player_away,
+                'defender_home': defender_home,
+                'defender_away': defender_away,
+                'goalie_home': goalie_home,
+                'goalie_away': goalie_away,
+                'ball': ball
+            }
+        except Exception as e:
+            raise Exception(f"Failed to load assets. Check URLs/paths are correct. Error: {e}")
     
     @staticmethod
     def map_coordinates(pitch_x: float, pitch_y: float) -> Tuple[int, int]:
