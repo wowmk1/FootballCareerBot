@@ -2,13 +2,13 @@
 Post-Match Highlights Generator
 Creates animated GIF compilation of key match moments
 
-✅ FIXED: Now creates 1 frame PER GOAL, not per player
+✅ UPDATED: Works with new MatchVisualizer (no animation yet - static frames)
 """
 import discord
-from PIL import Image
+from PIL import Image, ImageDraw, ImageFont
 import io
 from typing import List, Dict, Optional
-from match_visualizer import SimpleAnimator, CoordinateMapper
+from match_visualizer_final import MatchVisualizer, CoordinateMapper, generate_action_visualization
 from database import db
 
 class MatchHighlightsGenerator:
@@ -16,17 +16,18 @@ class MatchHighlightsGenerator:
     
     @staticmethod
     async def generate_match_highlights(match_id: int, max_highlights: int = 6,
-                                       animated: bool = True) -> Optional[io.BytesIO]:
+                                       animated: bool = False) -> Optional[io.BytesIO]:
         """
-        Generate animated highlights from match actions
+        Generate highlights from match actions
         
         Args:
             match_id: The match ID
             max_highlights: Maximum number of actions to include (default 6)
             animated: If True, creates animated GIF. If False, creates static compilation
+                      NOTE: Animation not yet implemented with new visualizer
             
         Returns:
-            BytesIO buffer with GIF, or None if no highlights
+            BytesIO buffer with GIF/PNG, or None if no highlights
         """
         
         # Fetch key moments from match
@@ -43,7 +44,6 @@ class MatchHighlightsGenerator:
                 return None
             
             # Get key actions from match_participants
-            # (Goals, assists, high-rated moments)
             highlights = await conn.fetch("""
                 SELECT 
                     mp.user_id,
@@ -77,9 +77,8 @@ class MatchHighlightsGenerator:
             if total_frames_added >= max_highlights:
                 break
             
-            # ✅ FIXED: Create one frame for EACH goal scored by this player
+            # ✅ Create one frame for EACH goal scored by this player
             if highlight['goals_scored'] > 0:
-                # Loop through each goal this player scored
                 goals_to_show = min(highlight['goals_scored'], max_highlights - total_frames_added)
                 
                 for goal_num in range(goals_to_show):
@@ -95,59 +94,30 @@ class MatchHighlightsGenerator:
                         'user_id': highlight['user_id']
                     }
                     
-                    # Generate this goal frame
+                    # Generate coordinates
                     start_x, start_y, end_x, end_y = CoordinateMapper.get_action_coordinates(
                         action, player['position'], is_home
                     )
                     
-                    if animated:
-                        gif_buffer = SimpleAnimator.create_action_gif(
-                            action=action,
-                            player_name=player['player_name'],
-                            player_position=player['position'],
-                            defender_name=None,
-                            start_pos=(start_x, start_y),
-                            end_pos=(end_x, end_y),
-                            success=success,
-                            is_goal=is_goal,
-                            frames=10
-                        )
-                        
-                        gif_buffer.seek(0)
-                        gif_img = Image.open(gif_buffer)
-                        
-                        frames_for_action = []
-                        try:
-                            while True:
-                                frames_for_action.append(gif_img.copy())
-                                gif_img.seek(gif_img.tell() + 1)
-                        except EOFError:
-                            pass
-                        
-                        action_frames.extend(frames_for_action)
-                    else:
-                        from match_visualizer import QuickMatchVisualizer
-                        
-                        img = QuickMatchVisualizer.create_action_image(
-                            action=action,
-                            player_name=player['player_name'],
-                            player_position=player['position'],
-                            defender_name=None,
-                            start_pos=(start_x, start_y),
-                            end_pos=(end_x, end_y),
-                            success=success,
-                            is_goal=is_goal
-                        )
-                        
-                        action_frames.append(img)
+                    # Create static frame using new visualizer
+                    img = MatchVisualizer.create_action_image(
+                        action=action,
+                        player_name=player['player_name'],
+                        player_position=player['position'],
+                        defender_name=None,
+                        start_pos=(start_x, start_y),
+                        end_pos=(end_x, end_y),
+                        is_home=is_home,
+                        success=success,
+                        is_goal=is_goal
+                    )
                     
+                    action_frames.append(img)
                     total_frames_added += 1
                     
-                    # Stop if we've reached max
                     if total_frames_added >= max_highlights:
                         break
                 
-                # Skip the rest of the loop since we handled all goals for this player
                 continue
             
             # Handle assists (if no goals)
@@ -176,114 +146,45 @@ class MatchHighlightsGenerator:
                 action, player['position'], is_home
             )
             
-            # Generate frame
-            if animated:
-                # Generate animated sequence for this action
-                gif_buffer = SimpleAnimator.create_action_gif(
-                    action=action,
-                    player_name=player['player_name'],
-                    player_position=player['position'],
-                    defender_name=None,
-                    start_pos=(start_x, start_y),
-                    end_pos=(end_x, end_y),
-                    success=success,
-                    is_goal=is_goal,
-                    frames=10  # Shorter for compilation
-                )
-                
-                # Extract frames from the GIF
-                gif_buffer.seek(0)
-                gif_img = Image.open(gif_buffer)
-                
-                frames_for_action = []
-                try:
-                    while True:
-                        frames_for_action.append(gif_img.copy())
-                        gif_img.seek(gif_img.tell() + 1)
-                except EOFError:
-                    pass
-                
-                action_frames.extend(frames_for_action)
-            else:
-                # Static compilation - create one frame per action
-                from match_visualizer import QuickMatchVisualizer
-                
-                img = QuickMatchVisualizer.create_action_image(
-                    action=action,
-                    player_name=player['player_name'],
-                    player_position=player['position'],
-                    defender_name=None,
-                    start_pos=(start_x, start_y),
-                    end_pos=(end_x, end_y),
-                    success=success,
-                    is_goal=is_goal
-                )
-                
-                action_frames.append(img)
+            # Create frame
+            img = MatchVisualizer.create_action_image(
+                action=action,
+                player_name=player['player_name'],
+                player_position=player['position'],
+                defender_name=None,
+                start_pos=(start_x, start_y),
+                end_pos=(end_x, end_y),
+                is_home=is_home,
+                success=success,
+                is_goal=is_goal
+            )
             
+            action_frames.append(img)
             total_frames_added += 1
         
         if not action_frames:
             return None
         
-        # Create compilation
-        if animated:
-            # Save as animated GIF
-            buffer = io.BytesIO()
-            action_frames[0].save(
-                buffer,
-                format='GIF',
-                save_all=True,
-                append_images=action_frames[1:],
-                duration=100,  # 100ms per frame
-                loop=0
-            )
-            buffer.seek(0)
-            return buffer
-        else:
-            # Create grid of static images
-            return MatchHighlightsGenerator._create_static_grid(action_frames)
-    
-    @staticmethod
-    def _create_static_grid(images: List[Image.Image], cols: int = 3) -> io.BytesIO:
-        """Create a grid of images"""
-        if not images:
-            return None
-        
-        # Calculate grid dimensions
-        n_images = len(images)
-        rows = (n_images + cols - 1) // cols
-        
-        # Get image size (assuming all same size)
-        img_width, img_height = images[0].size
-        
-        # Create grid
-        grid_width = img_width * cols
-        grid_height = img_height * rows
-        grid = Image.new('RGB', (grid_width, grid_height), color='#1a1a1a')
-        
-        # Paste images
-        for idx, img in enumerate(images):
-            row = idx // cols
-            col = idx % cols
-            x = col * img_width
-            y = row * img_height
-            grid.paste(img, (x, y))
-        
-        # Save to buffer
+        # Create compilation as animated GIF (each frame holds for duration)
         buffer = io.BytesIO()
-        grid.save(buffer, format='PNG')
+        action_frames[0].save(
+            buffer,
+            format='GIF',
+            save_all=True,
+            append_images=action_frames[1:],
+            duration=2000,  # 2 seconds per goal/action
+            loop=0
+        )
         buffer.seek(0)
         return buffer
     
     @staticmethod
     async def generate_top_moment_animation(match_id: int) -> Optional[io.BytesIO]:
         """
-        Generate animated GIF of the single best moment (MOTM or top goal)
-        Faster than full highlights - just one action animated
+        Generate image of the single best moment (MOTM or top goal)
         
         Returns:
-            BytesIO buffer with animated GIF of best moment
+            BytesIO buffer with PNG of best moment
         """
         
         async with db.pool.acquire() as conn:
@@ -320,7 +221,7 @@ class MatchHighlightsGenerator:
             if not top_moment:
                 return None
         
-        # Generate animation for this moment
+        # Generate visualization for this moment
         action = 'shoot' if top_moment['goals_scored'] > 0 else 'pass'
         is_home = top_moment['team_id'] == match['home_team_id']
         
@@ -329,23 +230,17 @@ class MatchHighlightsGenerator:
             'position': top_moment['position']
         }
         
-        start_x, start_y, end_x, end_y = CoordinateMapper.get_action_coordinates(
-            action, player['position'], is_home
-        )
-        
-        gif_buffer = SimpleAnimator.create_action_gif(
+        # Use the main function
+        buffer = generate_action_visualization(
             action=action,
-            player_name=player['player_name'],
-            player_position=player['position'],
-            defender_name=None,
-            start_pos=(start_x, start_y),
-            end_pos=(end_x, end_y),
+            player=player,
+            defender=None,
+            is_home=is_home,
             success=True,
-            is_goal=top_moment['goals_scored'] > 0,
-            frames=15  # Full animation for best moment
+            is_goal=top_moment['goals_scored'] > 0
         )
         
-        return gif_buffer
+        return buffer
 
 
 class MatchActionLogger:
@@ -369,11 +264,21 @@ class MatchActionLogger:
             - success: bool
             - is_goal: bool
             - minute: int
-            - start_pos: tuple
-            - end_pos: tuple
+            - start_pos: tuple (optional, will be generated if not provided)
+            - end_pos: tuple (optional, will be generated if not provided)
         """
         if match_id not in self.match_actions:
             self.match_actions[match_id] = []
+        
+        # Generate coordinates if not provided
+        if 'start_pos' not in action_data or 'end_pos' not in action_data:
+            start_x, start_y, end_x, end_y = CoordinateMapper.get_action_coordinates(
+                action_data['action'],
+                action_data['player']['position'],
+                action_data['is_home']
+            )
+            action_data['start_pos'] = (start_x, start_y)
+            action_data['end_pos'] = (end_x, end_y)
         
         self.match_actions[match_id].append(action_data)
     
@@ -419,52 +324,39 @@ class MatchActionLogger:
         if not selected_actions:
             return None
         
-        # Generate animated frames for each action
+        # Generate frames for each action
         all_frames = []
         
         for action_data in selected_actions:
-            gif_buffer = SimpleAnimator.create_action_gif(
+            # Create action visualization
+            img = MatchVisualizer.create_action_image(
                 action=action_data['action'],
                 player_name=action_data['player']['player_name'],
                 player_position=action_data['player']['position'],
                 defender_name=action_data.get('defender', {}).get('player_name') if action_data.get('defender') else None,
                 start_pos=action_data['start_pos'],
                 end_pos=action_data['end_pos'],
+                is_home=action_data['is_home'],
                 success=action_data['success'],
-                is_goal=action_data.get('is_goal', False),
-                frames=10
+                is_goal=action_data.get('is_goal', False)
             )
             
-            # Extract frames
-            gif_buffer.seek(0)
-            gif_img = Image.open(gif_buffer)
+            all_frames.append(img)
             
-            try:
-                while True:
-                    all_frames.append(gif_img.copy())
-                    gif_img.seek(gif_img.tell() + 1)
-            except EOFError:
-                pass
-            
-            # Add separator frames (black screen with "Next Action")
-            from match_visualizer import QuickMatchVisualizer
-            from PIL import ImageDraw, ImageFont
-            
-            separator = Image.new('RGB', (600, 400), color='#000000')
+            # Add separator frame with player name and minute
+            separator = Image.new('RGB', (1408, 768), color='#000000')
             draw = ImageDraw.Draw(separator)
             try:
-                font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 30)
+                font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 40)
             except:
                 font = ImageFont.load_default()
             
             text = f"{action_data['minute']}' - {action_data['player']['player_name']}"
             bbox = draw.textbbox((0, 0), text, font=font)
             text_width = bbox[2] - bbox[0]
-            draw.text(((600 - text_width) // 2, 180), text, fill='white', font=font)
+            draw.text(((1408 - text_width) // 2, 350), text, fill='white', font=font)
             
-            # Add separator 3 times (hold for 0.3s)
-            for _ in range(3):
-                all_frames.append(separator.copy())
+            all_frames.append(separator)
         
         # Create final GIF
         if not all_frames:
@@ -476,7 +368,7 @@ class MatchActionLogger:
             format='GIF',
             save_all=True,
             append_images=all_frames[1:],
-            duration=100,
+            duration=2000,  # 2 seconds per frame
             loop=0
         )
         buffer.seek(0)
@@ -486,3 +378,50 @@ class MatchActionLogger:
 
 # Global instance for logging actions during matches
 match_action_logger = MatchActionLogger()
+
+
+# Example usage
+async def example_usage():
+    """Example of how to use the highlights generator"""
+    
+    # During a match, log actions:
+    match_action_logger.log_action(
+        match_id=123,
+        action_data={
+            'action': 'shoot',
+            'player': {'player_name': 'Haaland', 'position': 'ST'},
+            'defender': {'player_name': 'Van Dijk'},
+            'is_home': True,
+            'success': True,
+            'is_goal': True,
+            'minute': 34
+        }
+    )
+    
+    # After match ends, generate highlights:
+    highlights_gif = await MatchHighlightsGenerator.generate_match_highlights(
+        match_id=123,
+        max_highlights=6
+    )
+    
+    if highlights_gif:
+        # Send to Discord
+        await channel.send(
+            content="⚽ **Match Highlights!**",
+            file=discord.File(highlights_gif, 'highlights.gif')
+        )
+    
+    # Or generate detailed highlights from logged actions:
+    detailed_gif = await match_action_logger.generate_detailed_highlights(
+        match_id=123,
+        max_actions=8
+    )
+    
+    if detailed_gif:
+        await channel.send(
+            content="🎬 **Full Match Replay!**",
+            file=discord.File(detailed_gif, 'replay.gif')
+        )
+    
+    # Clear logged actions after sending
+    match_action_logger.clear_match_actions(123)
