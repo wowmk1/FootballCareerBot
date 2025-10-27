@@ -890,17 +890,13 @@ class FootballBot(commands.Bot):
             # ===== CLOSE WINDOW =====
             elif is_end_time and window_open and window_type:
                 logger.info(f"🔴 CLOSING {window_type.upper()} WINDOW NOW")
-                
-                # ✅ FIX: Capture week BEFORE advancing (for domestic notification)
-                completing_week = state['current_week'] if window_type == 'domestic' else None
-                
+    
+                # ✅ Notification now handled INSIDE close_match_window() to ensure correct timing
                 await close_match_window(window_type=window_type, bot=self)
 
-                # ✅ NEW: Send notifications when windows close
+                # ✅ Send European notification (domestic notification is now inside close_match_window)
                 if window_type == 'european':
                     await self.notify_european_window_closed()
-                elif window_type == 'domestic':
-                    await self.notify_domestic_window_closed(completing_week)
 
                 # Update status after closing
                 state = await db.get_game_state()
