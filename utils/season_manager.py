@@ -7,6 +7,7 @@ Season Management - Two Windows on Same Days
 ✅ FIXED: Window closes at EXACT time (2:00 PM, 5:00 PM)
 ✅ FIXED: European window only shows on actual European weeks
 ✅ FIXED: Prevents duplicate window closes
+✅ FIXED: Notification happens BEFORE week advances (correct week numbers)
 """
 import asyncio
 from datetime import datetime, timedelta, timezone
@@ -184,6 +185,10 @@ async def open_match_window(window_type='domestic'):
 
 
 async def close_match_window(window_type='domestic', bot=None):
+    """
+    ✅ FIXED: Now sends notification BEFORE advancing week
+    This ensures correct week numbers in the notification
+    """
     logger.info(f"CLOSING {window_type} match window...")
     
     async with db.pool.acquire() as conn:
@@ -192,12 +197,30 @@ async def close_match_window(window_type='domestic', bot=None):
         
         # ✅ CRITICAL FIX: Prevent duplicate closes
         if not state['match_window_open']:
-            logger.warning(f"Window already closed for week {current_week}, skipping duplicate close")
+            logger.warning(f"⚠️ Window already closed for week {current_week}, skipping duplicate close")
             return []
+        
+        # ✅ CRITICAL: Mark window as closed IMMEDIATELY to prevent race conditions
+        await conn.execute("UPDATE game_state SET match_window_open = FALSE")
+        logger.info(f"✅ Window marked as closed in database")
         
         results = []
         
         if window_type == 'domestic':
+            # ✅ NEW: Send notification BEFORE simulating matches and advancing week
+            # This ensures notification shows correct week numbers
+            if bot:
+                try:
+                    logger.info(f"📢 Sending domestic window closed notification for Week {current_week}")
+                    # Import here to avoid circular dependency
+                    from bot import FootballBot
+                    if isinstance(bot, FootballBot):
+                        await bot.notify_domestic_window_closed(current_week)
+                        logger.info(f"✅ Notification sent for Week {current_week}")
+                except Exception as e:
+                    logger.error(f"❌ Error sending notification: {e}")
+            
+            # Now simulate matches
             unplayed = await conn.fetch("""
                 SELECT * FROM fixtures 
                 WHERE week_number = $1 AND played = FALSE AND playable = TRUE
@@ -239,7 +262,7 @@ async def close_match_window(window_type='domestic', bot=None):
                     competition='League'
                 )
             
-            await conn.execute("UPDATE game_state SET match_window_open = FALSE")
+            # Now advance week AFTER notification and match simulation
             logger.info(f"ADVANCING WEEK from {current_week} to {current_week + 1}")
             await advance_week(bot=bot)
         
@@ -247,8 +270,6 @@ async def close_match_window(window_type='domestic', bot=None):
             if current_week in config.EUROPEAN_MATCH_WEEKS:
                 from utils.european_competitions import close_european_window
                 await close_european_window(current_week, bot=bot, competition=None)
-            
-            await conn.execute("UPDATE game_state SET match_window_open = FALSE")
     
     return results
 
