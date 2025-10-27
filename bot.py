@@ -763,11 +763,12 @@ class FootballBot(commands.Bot):
         except Exception as e:
             logger.warning(f"⚠️ Could not post European window closed notification: {e}")
 
-    async def notify_domestic_window_closed(self):
+    async def notify_domestic_window_closed(self, completing_week):
         """Notify guilds that Domestic window has closed and week is advancing (5 PM)"""
         try:
+            # ✅ FIX: Use the week that was passed in (captured BEFORE advancing)
             state = await db.get_game_state()
-            old_week = state['current_week']
+            new_week = state['current_week']  # This is the NEW week after advancing
 
             for guild in self.guilds:
                 channel = discord.utils.get(guild.text_channels, name="match-results")
@@ -777,7 +778,7 @@ class FootballBot(commands.Bot):
                 if channel:
                     embed = discord.Embed(
                         title="🔴 DOMESTIC WINDOW CLOSED",
-                        description=f"**Week {old_week}** is complete!\n\n⏭️ Advancing to **Week {old_week + 1}**...",
+                        description=f"**Week {completing_week}** is complete!\n\n⏭️ Advancing to **Week {new_week}**...",
                         color=discord.Color.red()
                     )
 
@@ -794,7 +795,7 @@ class FootballBot(commands.Bot):
                             WHERE f.week_number = $1 AND f.played = TRUE
                             ORDER BY f.fixture_id DESC
                             LIMIT 5
-                        """, old_week)
+                        """, completing_week)
 
                     if results:
                         results_text = ""
@@ -808,12 +809,12 @@ class FootballBot(commands.Bot):
                         )
 
                     embed.add_field(
-                        name=f"📅 Week {old_week + 1} Begins",
+                        name=f"📅 Week {new_week} Begins",
                         value=f"Use `/season` to see when your next match is!\nUse `/league table` for updated standings!",
                         inline=False
                     )
 
-                    embed.set_footer(text=f"Week {old_week} complete • Week {old_week + 1} starts now!")
+                    embed.set_footer(text=f"Week {completing_week} complete • Week {new_week} starts now!")
 
                     await channel.send(embed=embed)
                     logger.info(f"✅ Posted domestic window closed notification to {guild.name}")
@@ -889,13 +890,17 @@ class FootballBot(commands.Bot):
             # ===== CLOSE WINDOW =====
             elif is_end_time and window_open and window_type:
                 logger.info(f"🔴 CLOSING {window_type.upper()} WINDOW NOW")
+                
+                # ✅ FIX: Capture week BEFORE advancing (for domestic notification)
+                completing_week = state['current_week'] if window_type == 'domestic' else None
+                
                 await close_match_window(window_type=window_type, bot=self)
 
                 # ✅ NEW: Send notifications when windows close
                 if window_type == 'european':
                     await self.notify_european_window_closed()
                 elif window_type == 'domestic':
-                    await self.notify_domestic_window_closed()
+                    await self.notify_domestic_window_closed(completing_week)
 
                 # Update status after closing
                 state = await db.get_game_state()
