@@ -18,6 +18,7 @@ import os
 def get_training_stat_relationships():
     """
     Defines which secondary stats improve when training a primary stat.
+    Returns percentages for FRACTIONAL accumulation (NO RNG!)
     
     Based on realistic football training:
     - What movements/skills are involved in each type of training?
@@ -26,7 +27,7 @@ def get_training_stat_relationships():
     
     Format: {
         'primary_stat': {
-            'secondary_stat': percentage (0.0-1.0),
+            'secondary_stat': fractional_percentage (0.0-1.0),
         }
     }
     """
@@ -102,13 +103,13 @@ def calculate_expected_gains(selected_stat, total_points, position_efficiency, p
     
     expected_gains[selected_stat] = (primary_min, primary_max, True)
     
-    # Secondary stats get percentage of adjusted points
+    # Secondary stats get percentage of adjusted points (as fractional)
     if selected_stat in relationships:
         for secondary_stat, percentage in relationships[selected_stat].items():
-            secondary_points = int(adjusted_points * percentage)
+            secondary_points = adjusted_points * percentage  # Keep as float for fractional
             if secondary_points > 0:
-                sec_min = max(0, secondary_points - 1)
-                sec_max = secondary_points + 1
+                sec_min = max(0, int(secondary_points * 0.8))
+                sec_max = int(secondary_points * 1.2)
                 expected_gains[secondary_stat] = (sec_min, sec_max, False)
     
     return expected_gains
@@ -130,42 +131,39 @@ else:
     print("⚠️ No Giphy API key found - using fallback GIFs only")
 
 # ✅ CURATED FOOTBALL GIF URLS - No API needed!
-# Each category has multiple verified working GIFs
 FOOTBALL_GIFS = {
     'intense': [
-        'https://media.giphy.com/media/3oKIPqsXYcdjcBcXL2/giphy.gif',  # Ronaldo gym
-        'https://media.giphy.com/media/l0HlBO7eyXzSZkJri/giphy.gif',  # Training drill
-        'https://media.giphy.com/media/xUOwGhOrYP0jP6iAy4/giphy.gif',  # Weights
+        'https://media.giphy.com/media/3oKIPqsXYcdjcBcXL2/giphy.gif',
+        'https://media.giphy.com/media/l0HlBO7eyXzSZkJri/giphy.gif',
+        'https://media.giphy.com/media/xUOwGhOrYP0jP6iAy4/giphy.gif',
     ],
     'skill': [
-        'https://media.giphy.com/media/l0HlNQ03J5JxX6lva/giphy.gif',  # Messi dribble
-        'https://media.giphy.com/media/26BRuo6sLetdllPAQ/giphy.gif',  # Ball control
-        'https://media.giphy.com/media/3o7TKMt1VVNkHV2PaE/giphy.gif',  # Skill move
+        'https://media.giphy.com/media/l0HlNQ03J5JxX6lva/giphy.gif',
+        'https://media.giphy.com/media/26BRuo6sLetdllPAQ/giphy.gif',
+        'https://media.giphy.com/media/3o7TKMt1VVNkHV2PaE/giphy.gif',
     ],
     'cardio': [
-        'https://media.giphy.com/media/xT9IgN8YKRhByRBzZm/giphy.gif',  # Running
-        'https://media.giphy.com/media/l0HlHFRbmaZtBRhXG/giphy.gif',  # Sprint drill
-        'https://media.giphy.com/media/xT9IgN8YKRhByRBzZm/giphy.gif',  # Cardio
+        'https://media.giphy.com/media/xT9IgN8YKRhByRBzZm/giphy.gif',
+        'https://media.giphy.com/media/l0HlHFRbmaZtBRhXG/giphy.gif',
+        'https://media.giphy.com/media/xT9IgN8YKRhByRBzZm/giphy.gif',
     ],
     'defending': [
-        'https://media.giphy.com/media/3o7TKwmnDgQb5jemjK/giphy.gif',  # Tackle
-        'https://media.giphy.com/media/xT9IgNxKAAT2h7oE1i/giphy.gif',  # Defense
-        'https://media.giphy.com/media/3o7TKwmnDgQb5jemjK/giphy.gif',  # Block
+        'https://media.giphy.com/media/3o7TKwmnDgQb5jemjK/giphy.gif',
+        'https://media.giphy.com/media/xT9IgNxKAAT2h7oE1i/giphy.gif',
+        'https://media.giphy.com/media/3o7TKwmnDgQb5jemjK/giphy.gif',
     ],
     'shooting': [
-        'https://media.giphy.com/media/3o7TKRn9HVJ8Ezn98c/giphy.gif',  # Goal
-        'https://media.giphy.com/media/3o7TKMeCOV3oXSb5bq/giphy.gif',  # Shot
-        'https://media.giphy.com/media/3o7TKRn9HVJ8Ezn98c/giphy.gif',  # Strike
+        'https://media.giphy.com/media/3o7TKRn9HVJ8Ezn98c/giphy.gif',
+        'https://media.giphy.com/media/3o7TKMeCOV3oXSb5bq/giphy.gif',
+        'https://media.giphy.com/media/3o7TKRn9HVJ8Ezn98c/giphy.gif',
     ],
     'success': [
-        'https://media.giphy.com/media/26BRBKqUiq586bRVm/giphy.gif',  # Celebration
-        'https://media.giphy.com/media/5GoVLqeAOo6PK/giphy.gif',  # Victory
-        'https://media.giphy.com/media/g9582DNuQppxC/giphy.gif',  # Win
+        'https://media.giphy.com/media/26BRBKqUiq586bRVm/giphy.gif',
+        'https://media.giphy.com/media/5GoVLqeAOo6PK/giphy.gif',
+        'https://media.giphy.com/media/g9582DNuQppxC/giphy.gif',
     ],
 }
 
-# ✅ IMPROVED SOCCER-SPECIFIC SEARCH TERMS - Top 5 only per category
-# Focused on most reliable terms that return quality football content
 GIPHY_SEARCH_TERMS = {
     'intense': [
         'man utd soccer indoor training',
@@ -212,17 +210,7 @@ GIPHY_SEARCH_TERMS = {
 }
 
 async def fetch_giphy_gif(search_term, limit=5):
-    """
-    Fetch a GIF from Giphy API using specific search term.
-    Limit set to 5 to get only top quality results.
-    
-    Args:
-        search_term: Specific search query (e.g., "messi dribbling")
-        limit: Number of results to fetch (default 5 for top picks only)
-    
-    Returns:
-        GIF URL string or None if failed
-    """
+    """Fetch a GIF from Giphy API using specific search term"""
     if not GIPHY_API_KEY:
         return None
     
@@ -231,7 +219,7 @@ async def fetch_giphy_gif(search_term, limit=5):
         params = {
             'api_key': GIPHY_API_KEY,
             'q': search_term,
-            'limit': limit,  # Only get top 5 picks
+            'limit': limit,
             'rating': 'g',
             'lang': 'en'
         }
@@ -241,7 +229,6 @@ async def fetch_giphy_gif(search_term, limit=5):
                 if response.status == 200:
                     data = await response.json()
                     if data.get('data'):
-                        # Pick random from top 5 results
                         gif = random.choice(data['data'])
                         return gif['images']['original']['url']
         
@@ -253,13 +240,7 @@ async def fetch_giphy_gif(search_term, limit=5):
 
 
 async def get_training_gif(stat_trained, success_level='normal'):
-    """
-    Get appropriate training GIF - tries API first with improved terms, 
-    falls back to curated list if API fails.
-    Only uses top 5 results from Giphy to avoid random gifs.
-    """
-    
-    # Determine category
+    """Get appropriate training GIF"""
     if success_level == 'success':
         category = 'success'
     else:
@@ -273,7 +254,7 @@ async def get_training_gif(stat_trained, success_level='normal'):
         }
         category = gif_map.get(stat_trained, 'intense')
     
-    # Try API first with improved search terms (top 5 only)
+    # Try API first
     if GIPHY_API_KEY and category in GIPHY_SEARCH_TERMS:
         search_term = random.choice(GIPHY_SEARCH_TERMS[category])
         gif_url = await fetch_giphy_gif(search_term, limit=5)
@@ -283,6 +264,149 @@ async def get_training_gif(stat_trained, success_level='normal'):
     # Fallback to curated list
     return random.choice(FOOTBALL_GIFS[category])
 
+
+# ============================================
+# 📊 FRACTIONAL STAT HELPERS
+# ============================================
+
+def create_fractional_progress_bar(fractional_value, length=10):
+    """
+    Create a visual progress bar showing fractional progress.
+    
+    Example: 0.73 → ███████▓░░ 73%
+    """
+    filled = int(fractional_value * length)
+    bar = "█" * filled + "░" * (length - filled)
+    percentage = int(fractional_value * 100)
+    return f"{bar} {percentage}%"
+
+
+def format_fractional_display(stat_name, fractional_value, stat_emoji):
+    """Format a single stat's fractional progress for display"""
+    progress_bar = create_fractional_progress_bar(fractional_value, length=10)
+    remaining = 1.0 - fractional_value
+    
+    if fractional_value >= 0.75:
+        status = f"🔥 Almost there! {remaining:.2f} more"
+    elif fractional_value >= 0.50:
+        status = f"⚡ Halfway! {remaining:.2f} more"
+    elif fractional_value >= 0.25:
+        status = f"💪 Building... {remaining:.2f} more"
+    else:
+        status = f"📊 {remaining:.2f} more to +1"
+    
+    return f"{stat_emoji} **{stat_name}**: {progress_bar}\n    └ {status}"
+
+
+async def apply_training_with_fractional_gains(player, selected_stat, base_total_points, position_efficiency):
+    """
+    Apply training with GUARANTEED fractional gains for secondary stats.
+    No more RNG for secondary stats - just predictable, accumulating progress!
+    
+    Returns:
+        dict: {
+            'actual_gains': {stat: gain_amount},
+            'fractional_gains': {stat: fractional_amount_added},
+            'fractional_conversions': {stat: converted_amount},
+            'new_fractional_values': {stat: new_fractional_value},
+            'new_overall': int,
+            'updated_stats': {stat: new_value}
+        }
+    """
+    
+    # Get current fractional values from database
+    current_fractionals = {
+        'pace': float(player.get('pace_fractional', 0.0)),
+        'shooting': float(player.get('shooting_fractional', 0.0)),
+        'passing': float(player.get('passing_fractional', 0.0)),
+        'dribbling': float(player.get('dribbling_fractional', 0.0)),
+        'defending': float(player.get('defending_fractional', 0.0)),
+        'physical': float(player.get('physical_fractional', 0.0))
+    }
+    
+    # Apply position efficiency to get adjusted points
+    efficiency = position_efficiency[selected_stat] / 100.0
+    adjusted_points = int(base_total_points * efficiency)
+    adjusted_points = max(1, adjusted_points)
+    
+    # Randomness (same as original)
+    if random.random() < 0.15:
+        adjusted_points = max(1, adjusted_points - 1)
+    elif random.random() < 0.10:
+        adjusted_points += 1
+    
+    # === PRIMARY STAT: Full points with potential-based success rate ===
+    actual_gains = {}
+    current = player[selected_stat]
+    current_potential = player['potential']
+    distance_from_potential = current_potential - current
+    
+    # Same success rates as original code
+    if distance_from_potential <= 0:
+        if current < current_potential + 3:
+            successful_gains = sum(1 for _ in range(adjusted_points) if random.random() < 0.10)
+        else:
+            successful_gains = 0
+    elif distance_from_potential <= 5:
+        successful_gains = sum(1 for _ in range(adjusted_points) if random.random() < 0.30)
+    elif distance_from_potential <= 10:
+        successful_gains = sum(1 for _ in range(adjusted_points) if random.random() < 0.50)
+    else:
+        successful_gains = sum(1 for _ in range(adjusted_points) if random.random() < 0.70)
+    
+    new_value = min(99, current + successful_gains)
+    actual_gain = new_value - current
+    
+    if actual_gain > 0:
+        actual_gains[selected_stat] = actual_gain
+    
+    # === SECONDARY STATS: FRACTIONAL ACCUMULATION (NO RNG!) ===
+    relationships = get_training_stat_relationships()
+    fractional_gains = {}
+    fractional_conversions = {}
+    new_fractional_values = current_fractionals.copy()
+    
+    if selected_stat in relationships:
+        for secondary_stat, percentage in relationships[selected_stat].items():
+            # Calculate fractional gain (GUARANTEED, no RNG)
+            fractional_gain = adjusted_points * percentage
+            
+            # Add to current fractional value
+            new_fractional = current_fractionals[secondary_stat] + fractional_gain
+            
+            # Check if we can convert to full point
+            conversions = 0
+            while new_fractional >= 1.0 and player[secondary_stat] < 99:
+                new_fractional -= 1.0
+                conversions += 1
+            
+            # Store results
+            fractional_gains[secondary_stat] = fractional_gain
+            new_fractional_values[secondary_stat] = round(new_fractional, 2)
+            
+            if conversions > 0:
+                fractional_conversions[secondary_stat] = conversions
+                # Add to actual gains
+                if secondary_stat in actual_gains:
+                    actual_gains[secondary_stat] += conversions
+                else:
+                    actual_gains[secondary_stat] = conversions
+    
+    # Calculate new overall
+    updated_stats = {stat: player[stat] for stat in ['pace', 'shooting', 'passing', 'dribbling', 'defending', 'physical']}
+    for stat, gain in actual_gains.items():
+        updated_stats[stat] = min(99, player[stat] + gain)
+    
+    new_overall = sum(updated_stats.values()) // 6
+    
+    return {
+        'actual_gains': actual_gains,
+        'fractional_gains': fractional_gains,
+        'fractional_conversions': fractional_conversions,
+        'new_fractional_values': new_fractional_values,
+        'new_overall': new_overall,
+        'updated_stats': updated_stats
+    }
 
 
 # ============================================
@@ -310,7 +434,7 @@ class StatTrainingView(View):
         for stat in ['pace', 'shooting', 'passing', 'dribbling', 'defending', 'physical']:
             efficiency = position_efficiency.get(stat, 100)
             
-            # Calculate expected gains with base points (efficiency applied inside function)
+            # Calculate expected gains with base points
             expected_gains = calculate_expected_gains(stat, self.total_points, position_efficiency, player)
             
             # Build label showing actual expected gains
@@ -398,14 +522,16 @@ class StatTrainingView(View):
             inline=False
         )
         
-        # Secondary stats
+        # Secondary stats (FRACTIONAL)
         secondary_stats = [(s, g) for s, g in expected_gains.items() if s != self.selected_stat]
         if secondary_stats:
-            secondary_text = "**These stats also improve automatically:**\n\n"
+            secondary_text = "**These stats improve automatically (fractional progress):**\n\n"
             for sec_stat, (min_g, max_g, _) in secondary_stats:
                 if max_g > 0:
                     current = self.player[sec_stat]
-                    secondary_text += f"💡 **{sec_stat.capitalize()}**: +{min_g}-{max_g} ({current} → ~{current + max_g})\n"
+                    # Show fractional amounts
+                    secondary_text += f"💡 **{sec_stat.capitalize()}**: +{min_g:.1f}-{max_g:.1f} fractional\n"
+                    secondary_text += f"    └ Accumulates toward +1 full point!\n"
             
             embed.add_field(
                 name="✨ BONUS: Related Stats Improve Too!",
@@ -430,7 +556,7 @@ class StatTrainingView(View):
                 inline=False
             )
         
-        embed.set_footer(text="✅ Training is realistic - related attributes improve naturally! | Starting in 5 seconds...")
+        embed.set_footer(text="✅ Fractional stats accumulate - guaranteed progress every session! | Starting in 5 seconds...")
         
         await interaction.response.edit_message(embed=embed, view=None)
         await asyncio.sleep(5)
@@ -461,7 +587,7 @@ class TrainingCommands(commands.Cog):
 
     @app_commands.command(name="train", description="Train to improve your stats (once per day)")
     async def train(self, interaction: discord.Interaction):
-        """Realistic training with multi-stat improvements"""
+        """Realistic training with fractional multi-stat improvements"""
 
         await interaction.response.defer()
 
@@ -544,7 +670,7 @@ class TrainingCommands(commands.Cog):
         embed = discord.Embed(
             title=f"💪 {player['player_name']} - Training Session",
             description=f"**{player['position']}** • Age {player['age']} • **{player['overall_rating']}** OVR → ⭐ **{player['potential']}** POT\n\n"
-                       f"✨ **NEW:** Training now improves multiple related stats realistically!",
+                       f"✨ **NEW:** Fractional stats - guaranteed progress on secondary attributes!",
             color=discord.Color.blue()
         )
         
@@ -572,7 +698,9 @@ class TrainingCommands(commands.Cog):
                   f"• {player['position']} training their EXPERT stats: +20% gains\n"
                   f"• Training PRIMARY stats: Normal/+10% gains\n"
                   f"• Training off-position stats: -25% to -50% gains\n\n"
-                  "**Example:** Strikers get +20% when training Shooting, but Defenders get -50%",
+                  "**NEW: Fractional Progress**\n"
+                  "Secondary stats now accumulate fractional progress (0.1, 0.5, etc)\n"
+                  "When fractional reaches 1.0 → converts to +1 full stat point!",
             inline=False
         )
         
@@ -606,117 +734,82 @@ class TrainingCommands(commands.Cog):
             await interaction.followup.send("⏰ Training session timed out!", ephemeral=True)
             return
 
-        # Apply training with multi-stat gains
+        # === APPLY TRAINING WITH FRACTIONAL SYSTEM ===
         selected_stat = view.selected_stat
         
-        # Position efficiency is applied inside the gain calculations
-        # So we use base_total_points here (with all other bonuses already applied)
-        total_points = base_total_points
+        result = await apply_training_with_fractional_gains(
+            player=player,
+            selected_stat=selected_stat,
+            base_total_points=base_total_points,
+            position_efficiency=position_efficiency
+        )
         
-        # Randomness
-        if random.random() < 0.15:
-            total_points = max(1, total_points - 1)
-        elif random.random() < 0.10:
-            total_points += 1
-        
-        # Get position-adjusted points for the selected stat
-        efficiency = position_efficiency[selected_stat] / 100.0
-        adjusted_points = int(total_points * efficiency)
-        adjusted_points = max(1, adjusted_points)
-
-        # Calculate gains for primary + secondary stats
-        relationships = get_training_stat_relationships()
-        actual_gains = {}
-
-        # Apply primary stat gain (using position-adjusted points)
-        current = player[selected_stat]
-        current_potential = player['potential']  # Initialize here
-        distance_from_potential = current_potential - current
-
-        if distance_from_potential <= 0:
-            if current < current_potential + 3:
-                successful_gains = sum(1 for _ in range(adjusted_points) if random.random() < 0.10)
-            else:
-                successful_gains = 0
-        elif distance_from_potential <= 5:
-            successful_gains = sum(1 for _ in range(adjusted_points) if random.random() < 0.30)
-        elif distance_from_potential <= 10:
-            successful_gains = sum(1 for _ in range(adjusted_points) if random.random() < 0.50)
-        else:
-            successful_gains = sum(1 for _ in range(adjusted_points) if random.random() < 0.70)
-
-        new_value = min(99, current + successful_gains)
-        actual_gain = new_value - current
-        
-        if actual_gain > 0:
-            actual_gains[selected_stat] = actual_gain
-
-        # Apply secondary stat gains
-        if selected_stat in relationships:
-            for secondary_stat, percentage in relationships[selected_stat].items():
-                secondary_points = int(adjusted_points * percentage)
-                
-                if secondary_points > 0:
-                    sec_current = player[secondary_stat]
-                    sec_distance = current_potential - sec_current
-                    
-                    if sec_distance <= 0:
-                        sec_gains = sum(1 for _ in range(secondary_points) if random.random() < 0.05)
-                    elif sec_distance <= 5:
-                        sec_gains = sum(1 for _ in range(secondary_points) if random.random() < 0.20)
-                    elif sec_distance <= 10:
-                        sec_gains = sum(1 for _ in range(secondary_points) if random.random() < 0.40)
-                    else:
-                        sec_gains = sum(1 for _ in range(secondary_points) if random.random() < 0.60)
-                    
-                    sec_new = min(99, sec_current + sec_gains)
-                    sec_gain = sec_new - sec_current
-                    
-                    if sec_gain > 0:
-                        actual_gains[secondary_stat] = sec_gain
-
-        # Update all stats and calculate new overall
-        updated_stats = {stat: player[stat] for stat in ['pace', 'shooting', 'passing', 'dribbling', 'defending', 'physical']}
-        for stat, gain in actual_gains.items():
-            updated_stats[stat] = player[stat] + gain
-
-        new_overall = sum(updated_stats.values()) // 6
+        actual_gains = result['actual_gains']
+        fractional_gains = result['fractional_gains']
+        fractional_conversions = result['fractional_conversions']
+        new_fractional_values = result['new_fractional_values']
+        new_overall = result['new_overall']
+        updated_stats = result['updated_stats']
 
         # Check for 30-day streak milestone
         potential_boost = 0
+        current_potential = player['potential']
         if new_streak == 30 and player['training_streak'] < 30:
             potential_boost = 3
             current_potential += potential_boost
 
-        # Update database
+        # === UPDATE DATABASE ===
         async with db.pool.acquire() as conn:
-            if actual_gains:
-                update_parts = []
-                update_values = []
-                for stat, new_val in updated_stats.items():
-                    if new_val != player[stat]:
-                        update_parts.append(stat)
-                        update_values.append(new_val)
-                
-                if update_parts:
-                    set_clause = ", ".join([f"{part} = ${i + 1}" for i, part in enumerate(update_parts)])
-                    set_clause += f", overall_rating = ${len(update_parts) + 1}, training_streak = ${len(update_parts) + 2}, last_training = ${len(update_parts) + 3}"
-                    
-                    if potential_boost > 0:
-                        set_clause += f", potential = ${len(update_parts) + 4}"
-                        all_values = update_values + [new_overall, new_streak, datetime.now().isoformat(), current_potential, interaction.user.id]
-                        await conn.execute(f"UPDATE players SET {set_clause} WHERE user_id = ${len(update_parts) + 5}", *all_values)
-                    else:
-                        all_values = update_values + [new_overall, new_streak, datetime.now().isoformat(), interaction.user.id]
-                        await conn.execute(f"UPDATE players SET {set_clause} WHERE user_id = ${len(update_parts) + 4}", *all_values)
-            else:
-                await conn.execute("UPDATE players SET training_streak = $1, last_training = $2 WHERE user_id = $3",
-                    new_streak, datetime.now().isoformat(), interaction.user.id)
+            # Build dynamic update query
+            update_parts = []
+            update_values = []
+            param_count = 1
+            
+            # Update actual stats
+            for stat, new_val in updated_stats.items():
+                if new_val != player[stat]:
+                    update_parts.append(f"{stat} = ${param_count}")
+                    update_values.append(new_val)
+                    param_count += 1
+            
+            # Update fractional values
+            for stat, frac_val in new_fractional_values.items():
+                update_parts.append(f"{stat}_fractional = ${param_count}")
+                update_values.append(frac_val)
+                param_count += 1
+            
+            # Update overall, streak, last_training
+            update_parts.append(f"overall_rating = ${param_count}")
+            update_values.append(new_overall)
+            param_count += 1
+            
+            update_parts.append(f"training_streak = ${param_count}")
+            update_values.append(new_streak)
+            param_count += 1
+            
+            update_parts.append(f"last_training = ${param_count}")
+            update_values.append(datetime.now().isoformat())
+            param_count += 1
+            
+            if potential_boost > 0:
+                update_parts.append(f"potential = ${param_count}")
+                update_values.append(current_potential)
+                param_count += 1
+            
+            # Add user_id for WHERE clause
+            update_values.append(player['user_id'])
+            
+            # Execute update
+            set_clause = ", ".join(update_parts)
+            await conn.execute(
+                f"UPDATE players SET {set_clause} WHERE user_id = ${param_count}",
+                *update_values
+            )
 
             await conn.execute('''
                 INSERT INTO training_history (user_id, stat_gains, streak_bonus, overall_before, overall_after)
                 VALUES ($1, $2, $3, $4, $5)
-            ''', interaction.user.id, str(actual_gains), streak_bonus > 0, player['overall_rating'], new_overall)
+            ''', interaction.user.id, str(actual_gains), new_streak >= 7, player['overall_rating'], new_overall)
 
         from utils.form_morale_system import update_player_morale
         await update_player_morale(interaction.user.id, 'training')
@@ -724,13 +817,13 @@ class TrainingCommands(commands.Cog):
         from utils.traits_system import check_trait_unlocks
         newly_unlocked_traits = await check_trait_unlocks(interaction.user.id, self.bot)
 
-        # === RESULTS SCREEN - MATCH ORIGINAL DESIGN ===
+        # === RESULTS SCREEN WITH FRACTIONAL PROGRESS ===
         success_level = 'success' if sum(actual_gains.values()) >= 3 or new_overall > player['overall_rating'] else 'normal'
         result_gif = await get_training_gif(selected_stat, success_level)
 
         if not actual_gains:
             title = "💪 Training Complete!"
-            description = "Hard work and dedication!\n⚠️ **Tough session today! Gains reduced.**"
+            description = "Hard work and dedication!\n⚠️ **Tough session today! Gains reduced.**\n\n*But fractional progress was still added!*"
             color = discord.Color.orange()
         elif sum(actual_gains.values()) >= 4:
             title = "💪 Training Complete!"
@@ -778,15 +871,61 @@ class TrainingCommands(commands.Cog):
                 elif new_val >= 70 and old_val < 70:
                     milestone = " ✨ **PROFESSIONAL!**"
                 
-                gains_text += f"{emoji} **+{gain} {stat.capitalize()}**{milestone}\n"
+                # Show if this came from fractional conversion
+                if stat in fractional_conversions:
+                    gains_text += f"{emoji} **+{gain} {stat.capitalize()}** (fractional converted!)★{milestone}\n"
+                else:
+                    gains_text += f"{emoji} **+{gain} {stat.capitalize()}**{milestone}\n"
             
             past_potential = any(updated_stats[stat] >= player['potential'] for stat in actual_gains.keys())
             if past_potential:
                 gains_text += "\n✨ **Pushing beyond limits!**"
         else:
-            gains_text = "⚠️ No gains this session - keep training!"
+            gains_text = "⚠️ No full stat gains - but fractional progress added below!"
 
         embed.add_field(name="📈 Stat Gains", value=gains_text, inline=False)
+
+        # === NEW: FRACTIONAL PROGRESS SECTION ===
+        stat_emojis = {
+            'pace': '⚡', 'shooting': '🎯', 'passing': '🎨',
+            'dribbling': '⚽', 'defending': '🛡️', 'physical': '💪'
+        }
+        
+        fractional_display = "**Secondary Stats Building Up:**\n\n"
+        has_fractional = False
+        
+        for stat in ['pace', 'shooting', 'passing', 'dribbling', 'defending', 'physical']:
+            if stat == selected_stat:
+                continue  # Skip primary stat
+            
+            frac_val = new_fractional_values[stat]
+            
+            if frac_val > 0.01:  # Only show if there's progress
+                has_fractional = True
+                fractional_display += format_fractional_display(
+                    stat.capitalize(),
+                    frac_val,
+                    stat_emojis[stat]
+                ) + "\n\n"
+        
+        if has_fractional:
+            embed.add_field(
+                name="📊 Fractional Progress (Next +1 Points)",
+                value=fractional_display.strip(),
+                inline=False
+            )
+        
+        # Show which stats got fractional gains THIS session
+        if fractional_gains:
+            this_session_text = "**Added this session:**\n"
+            for stat, gain_amount in fractional_gains.items():
+                this_session_text += f"{stat_emojis[stat]} {stat.capitalize()}: +{gain_amount:.2f}\n"
+            
+            embed.add_field(
+                name="✨ Fractional Gains (This Session)",
+                value=this_session_text,
+                inline=False
+            )
 
         # Progress to 30-day streak
         if new_streak < 30:
@@ -865,273 +1004,10 @@ class TrainingCommands(commands.Cog):
 
         # Footer
         league_name = player.get('league', 'Championship')
+        efficiency = position_efficiency[selected_stat] / 100.0
         embed.set_footer(text=f"Age: {age_multiplier:.1f}x | Morale: {morale_multiplier:.1f}x | {league_name}: {league_modifier}x | Position: {efficiency:.1f}x")
 
         await interaction.edit_original_response(embed=embed, view=None)
-
-
-# ============================================
-# 🧪 SANDBOX TEST FUNCTION
-# ============================================
-async def test_training_sandbox(interaction: discord.Interaction):
-    """Sandbox test - shows all screens without DB changes"""
-    import random
-    
-    fake_player = {
-        'user_id': interaction.user.id,
-        'player_name': f"{interaction.user.display_name}'s Test Player",
-        'overall_rating': 75,
-        'pace': 78,
-        'shooting': 72,
-        'passing': 74,
-        'dribbling': 76,
-        'defending': 68,
-        'physical': 73,
-        'team_id': 'test_team',
-        'league': 'Premier League',
-        'position': 'CM',
-        'age': 23,
-        'potential': 85,
-        'morale': 75,
-        'training_streak': 5,
-        'retired': False,
-        'injury_weeks': 0,
-        'last_training': None
-    }
-    
-    age_multiplier = 1.0
-    morale_multiplier = 1.1
-    league_modifier = 1.2
-    position_efficiency = get_position_efficiency(fake_player['position'])
-    
-    base_total_points = int((1 + 0) * age_multiplier * morale_multiplier * league_modifier)
-    base_total_points = max(1, base_total_points)
-    
-    embed = discord.Embed(
-        title=f"🧪 SANDBOX TEST: {fake_player['player_name']}",
-        description=f"**{fake_player['position']}** • Age {fake_player['age']} • **{fake_player['overall_rating']}** OVR → ⭐ **{fake_player['potential']}** POT\n\n"
-                   f"✨ **Testing:** Multi-stat training (no database changes)",
-        color=discord.Color.purple()
-    )
-    
-    training_prep_gif = await get_training_gif('physical', 'normal')
-    embed.set_image(url=training_prep_gif)
-    
-    stats_text = (
-        f"⚡ Pace: {fake_player['pace']}\n🎯 Shooting: {fake_player['shooting']}\n"
-        f"🎨 Passing: {fake_player['passing']}\n⚽ Dribbling: {fake_player['dribbling']}\n"
-        f"🛡️ Defending: {fake_player['defending']}\n💪 Physical: {fake_player['physical']}"
-    )
-    embed.add_field(name="📊 Current Attributes", value=stats_text, inline=True)
-    
-    modifiers_text = (
-        f"😊 Morale: {morale_multiplier:.1f}x\n👤 Age: {age_multiplier:.1f}x\n"
-        f"🏟️ Facilities: {league_modifier}x\n🔥 Streak: {fake_player['training_streak']} days"
-    )
-    embed.add_field(name="⚙️ Modifiers", value=modifiers_text, inline=True)
-    
-    embed.add_field(
-        name="🧪 Sandbox Mode",
-        value="TEST - no database changes!\nYou'll see: selection → preview → results\n\n"
-              f"**Your Position: {fake_player['position']}**\n"
-              f"• Expert stats get +20% gains\n"
-              f"• Primary stats get normal/+10% gains\n"
-              f"• Off-position stats get -25% to -50% gains",
-        inline=False
-    )
-    
-    # ADD SAME RELATIONSHIP GUIDE AS REAL TRAINING
-    relationships_guide = "**📋 What Each Stat Improves:**\n\n"
-    relationships_guide += "⚡ **Pace** → Physical, Dribbling, Defending, Passing\n"
-    relationships_guide += "🎯 **Shooting** → Physical, Dribbling, Pace, Passing\n"
-    relationships_guide += "🎨 **Passing** → Dribbling, Shooting, Physical, Defending\n"
-    relationships_guide += "⚽ **Dribbling** → Pace, Passing, Shooting, Physical\n"
-    relationships_guide += "🛡️ **Defending** → Physical, Pace, Passing, Dribbling\n"
-    relationships_guide += "💪 **Physical** → Pace, Defending, Shooting, Passing"
-    
-    embed.add_field(
-        name="✨ Multi-Stat Training Guide",
-        value=relationships_guide,
-        inline=False
-    )
-    
-    embed.set_footer(text="🧪 TESTING | Select a stat")
-    
-    view = StatTrainingView(fake_player, position_efficiency, base_total_points)
-    await interaction.followup.send(embed=embed, view=view)
-    
-    await view.wait()
-    
-    if not view.selected_stat:
-        await interaction.followup.send("⏰ Test timed out!", ephemeral=True)
-        return
-    
-    selected_stat = view.selected_stat
-    efficiency = position_efficiency[selected_stat] / 100.0
-    total_points = int(base_total_points * efficiency)
-    total_points = max(1, total_points)
-    
-    relationships = get_training_stat_relationships()
-    actual_gains = {}
-    
-    # Calculate primary gain based on total_points (respects position efficiency)
-    # Off-position (1 point): 0-1 gain
-    # Secondary (1-2 points): 1-2 gain
-    # Primary (2 points): 1-2 gain
-    # Expert (3 points): 2-3 gain
-    if total_points <= 1:
-        primary_gain = random.randint(0, 1)
-    elif total_points == 2:
-        primary_gain = random.randint(1, 2)
-    else:
-        primary_gain = random.randint(max(1, total_points - 1), min(3, total_points + 1))
-    
-    if primary_gain > 0:
-        actual_gains[selected_stat] = primary_gain
-    
-    # Secondary stats (also scaled by position-adjusted total_points)
-    if selected_stat in relationships:
-        for secondary_stat, percentage in relationships[selected_stat].items():
-            secondary_points = int(total_points * percentage)
-            if secondary_points > 0 and random.random() < 0.7:
-                sec_gain = random.randint(0, min(2, secondary_points))
-                if sec_gain > 0:
-                    actual_gains[secondary_stat] = sec_gain
-    
-    updated_stats = {stat: fake_player[stat] for stat in ['pace', 'shooting', 'passing', 'dribbling', 'defending', 'physical']}
-    for stat, gain in actual_gains.items():
-        updated_stats[stat] = fake_player[stat] + gain
-    
-    new_overall = sum(updated_stats.values()) // 6
-    
-    # === EXACT REPLICA OF REAL RESULTS SCREEN ===
-    success_level = 'success' if sum(actual_gains.values()) >= 3 else 'normal'
-    result_gif = await get_training_gif(selected_stat, success_level)
-    
-    if not actual_gains:
-        title = "💪 Training Complete!"
-        description = "Hard work and dedication!\n⚠️ **Tough session today! Gains reduced.**"
-        color = discord.Color.orange()
-    elif sum(actual_gains.values()) >= 4:
-        title = "💪 Training Complete!"
-        description = "Hard work and dedication!"
-        color = discord.Color.gold()
-    else:
-        title = "💪 Training Complete!"
-        description = "Hard work and dedication!"
-        color = discord.Color.green()
-    
-    # Add sandbox indicator to title only
-    embed = discord.Embed(
-        title=f"{title} [🧪 SANDBOX TEST]",
-        description=description,
-        color=color
-    )
-    embed.set_image(url=result_gif)
-
-    # Progress to next OVR
-    if new_overall < 99:
-        next_ovr = new_overall + 1
-        total_stats = sum(updated_stats.values())
-        needed_for_next = (next_ovr * 6) - total_stats
-        progress = max(0, min(100, ((6 - needed_for_next) / 6) * 100))
-        
-        progress_bar_length = 20
-        filled = int(progress / 100 * progress_bar_length)
-        progress_bar = "█" * filled + "░" * (progress_bar_length - filled)
-        
-        embed.add_field(
-            name=f"📊 Progress to {next_ovr} OVR",
-            value=f"{progress_bar} **{int(progress)}%**",
-            inline=False
-        )
-
-    # Stat gains (EXACT SAME FORMAT)
-    if actual_gains:
-        gains_text = ""
-        for stat, gain in actual_gains.items():
-            is_primary = stat == selected_stat
-            emoji = "⭐" if is_primary else "💡"
-            new_val = updated_stats[stat]
-            old_val = fake_player[stat]
-            
-            milestone = ""
-            if new_val >= 90 and old_val < 90:
-                milestone = " 🔥 **WORLD CLASS!**"
-            elif new_val >= 80 and old_val < 80:
-                milestone = " ⚡ **ELITE!**"
-            elif new_val >= 70 and old_val < 70:
-                milestone = " ✨ **PROFESSIONAL!**"
-            
-            gains_text += f"{emoji} **+{gain} {stat.capitalize()}**{milestone}\n"
-        
-        past_potential = any(updated_stats[stat] >= fake_player['potential'] for stat in actual_gains.keys())
-        if past_potential:
-            gains_text += "\n✨ **Pushing beyond limits!**"
-    else:
-        gains_text = "⚠️ No gains this session - keep training!"
-
-    embed.add_field(name="📈 Stat Gains", value=gains_text, inline=False)
-
-    # Progress to 30-day streak
-    new_streak = fake_player['training_streak'] + 1
-    if new_streak < 30:
-        streak_progress = new_streak / 30
-        progress_bar_filled = int(streak_progress * 20)
-        streak_progress_bar = "█" * progress_bar_filled + "░" * (20 - progress_bar_filled)
-        embed.add_field(
-            name="🎯 Progress to 30-Day Streak",
-            value=f"{streak_progress_bar} **{new_streak}/30 days**\nUnlock: **+3 Potential** permanently!",
-            inline=False
-        )
-
-    # Simulated league comparison
-    league_avg = 71.7  # Fake average
-    diff = new_overall - league_avg
-    comparison = "above" if diff >= 0 else "below"
-    
-    embed.add_field(
-        name="📊 League Comparison",
-        value=f"**You:** {new_overall} | **League Avg:** {league_avg:.1f}\nYou are **{abs(diff):.1f} OVR {comparison}** average",
-        inline=False
-    )
-
-    # Two-column layout (EXACT SAME)
-    left_col = ""
-    right_col = ""
-
-    # Left: Streak & Morale
-    morale_multiplier = 1.1
-    morale_desc = "Delighted"
-    
-    left_col += f"🔥 **Streak**\n{new_streak} days\n\n"
-    left_col += f"😊 **Morale Bonus**\n{morale_desc}\n**+30%** training gains!"
-
-    # Right: Potential Progress
-    distance = fake_player['potential'] - new_overall
-    if distance > 0:
-        right_col += f"🎯 **Potential Progress**\n**{distance} OVR** from potential ({fake_player['potential']})\n"
-        right_col += f"Estimated: ~{distance * 3} sessions\n\n"
-    else:
-        over_by = new_overall - fake_player['potential']
-        right_col += f"🚀 **Beyond Potential!**\n**+{over_by} OVR** above base!\n\n"
-
-    # Career & Next Session
-    years_left = config.RETIREMENT_AGE - fake_player['age']
-    right_col += f"⏳ **Career Time**\n{years_left} years left | Age {fake_player['age']}\n\n"
-    right_col += f"⏰ **Next Session**\n{config.TRAINING_COOLDOWN_HOURS}h"
-
-    if left_col:
-        embed.add_field(name="\u200b", value=left_col, inline=True)
-    if right_col:
-        embed.add_field(name="\u200b", value=right_col, inline=True)
-
-    # Footer (EXACT SAME)
-    age_multiplier = 1.0
-    league_modifier = 1.2
-    embed.set_footer(text=f"🧪 SANDBOX TEST | Age: {age_multiplier:.1f}x | Morale: {morale_multiplier:.1f}x | {fake_player['league']}: {league_modifier}x | Position: {efficiency:.1f}x")
-    
-    await interaction.edit_original_response(embed=embed, view=None)
 
 
 async def setup(bot):
