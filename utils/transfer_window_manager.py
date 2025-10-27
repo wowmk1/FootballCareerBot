@@ -6,6 +6,7 @@ Transfer Window Manager - FIXED VERSION
 - Fixed NPC transfer notifications
 - CRITICAL FIX #1: NPC transfers only during transfer windows
 - CRITICAL FIX #2: Stricter Premier League offer requirements
+- CRITICAL FIX #3: Exclude European competition teams from player offers
 - PHASE 4: Contract Failsafe - Forces free agency for stranded players
 """
 
@@ -49,7 +50,7 @@ async def process_weekly_transfer_offers(bot=None):
         players = await conn.fetch("""
             SELECT user_id, player_name, overall_rating, potential, 
                    team_id, contract_wage, contract_years, age,
-                   season_rating, season_goals
+                   season_rating, season_goals, position
             FROM players
             WHERE retired = FALSE
         """)
@@ -108,7 +109,7 @@ async def generate_offers_for_eligible_players(bot=None):
         all_players = await conn.fetch("""
             SELECT user_id, player_name, overall_rating, potential, 
                    team_id, contract_wage, contract_years, age,
-                   season_rating, season_goals, last_transfer_window
+                   season_rating, season_goals, last_transfer_window, position
             FROM players
             WHERE retired = FALSE
         """)
@@ -237,6 +238,7 @@ async def generate_offers_for_player(player: dict, current_week: int, num_offers
     Generate transfer offers for a specific player
     FIX: Added send_notification flag to prevent duplicate notifications
     CRITICAL FIX #2: Stricter Premier League requirements
+    CRITICAL FIX #3: Exclude European competition teams from player offers
     """
 
     rating = player['overall_rating']
@@ -257,33 +259,42 @@ async def generate_offers_for_player(player: dict, current_week: int, num_offers
 
     interested_teams = []
 
-    # CRITICAL FIX #2: STRICTER PREMIER LEAGUE REQUIREMENTS
-    # Premier League teams - much more selective
+    # ✅ CRITICAL FIX #3: EXCLUDE European competition teams - players can't transfer there
+    # Players can only move to domestic clubs during transfer windows
     
     # Get position-specific minimum
-    position_minimum = POSITION_PL_MINIMUMS.get(player['position'], 75)
+    position_minimum = POSITION_PL_MINIMUMS.get(player.get('position', 'CM'), 75)
     
     if rating >= position_minimum:
         # Meets position-specific requirement
         async with db.pool.acquire() as conn:
             rows = await conn.fetch(
-                "SELECT * FROM teams WHERE league = $1 ORDER BY RANDOM() LIMIT 5",
+                """SELECT * FROM teams 
+                   WHERE league = $1 
+                   AND league NOT IN ('Champions League', 'Europa League')
+                   ORDER BY RANDOM() LIMIT 5""",
                 'Premier League'
             )
             interested_teams.extend([dict(row) for row in rows])
     elif rating >= (position_minimum - 5) and potential >= 87:
-        # High potential young players (within 5 of position minimum + high potential)
+        # High potential young players
         async with db.pool.acquire() as conn:
             rows = await conn.fetch(
-                "SELECT * FROM teams WHERE league = $1 ORDER BY RANDOM() LIMIT 5",
+                """SELECT * FROM teams 
+                   WHERE league = $1 
+                   AND league NOT IN ('Champions League', 'Europa League')
+                   ORDER BY RANDOM() LIMIT 5""",
                 'Premier League'
             )
             interested_teams.extend([dict(row) for row in rows])
     elif rating >= (position_minimum - 8) and potential >= 93:
-        # Exceptional wonderkids only (within 8 of position minimum + elite potential)
+        # Exceptional wonderkids only
         async with db.pool.acquire() as conn:
             rows = await conn.fetch(
-                "SELECT * FROM teams WHERE league = $1 ORDER BY RANDOM() LIMIT 5",
+                """SELECT * FROM teams 
+                   WHERE league = $1 
+                   AND league NOT IN ('Champions League', 'Europa League')
+                   ORDER BY RANDOM() LIMIT 5""",
                 'Premier League'
             )
             interested_teams.extend([dict(row) for row in rows])
@@ -292,7 +303,10 @@ async def generate_offers_for_player(player: dict, current_week: int, num_offers
     if rating >= 65 or (rating >= 62 and potential >= 75):
         async with db.pool.acquire() as conn:
             rows = await conn.fetch(
-                "SELECT * FROM teams WHERE league = $1 ORDER BY RANDOM() LIMIT 5",
+                """SELECT * FROM teams 
+                   WHERE league = $1 
+                   AND league NOT IN ('Champions League', 'Europa League')
+                   ORDER BY RANDOM() LIMIT 5""",
                 'Championship'
             )
             interested_teams.extend([dict(row) for row in rows])
@@ -301,7 +315,10 @@ async def generate_offers_for_player(player: dict, current_week: int, num_offers
     if rating >= 55 or (rating >= 52 and potential >= 65):
         async with db.pool.acquire() as conn:
             rows = await conn.fetch(
-                "SELECT * FROM teams WHERE league = $1 ORDER BY RANDOM() LIMIT 5",
+                """SELECT * FROM teams 
+                   WHERE league = $1 
+                   AND league NOT IN ('Champions League', 'Europa League')
+                   ORDER BY RANDOM() LIMIT 5""",
                 'League One'
             )
             interested_teams.extend([dict(row) for row in rows])
@@ -653,7 +670,7 @@ async def close_transfer_window(bot=None):
     
     async with db.pool.acquire() as conn:
         stranded = await conn.fetch("""
-            SELECT user_id, player_name, team_id, contract_years, overall_rating, potential, age
+            SELECT user_id, player_name, team_id, contract_years, overall_rating, potential, age, position
             FROM players  
             WHERE contract_years <= 0
             AND team_id != 'free_agent'
