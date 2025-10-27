@@ -237,23 +237,42 @@ class PlayerCommands(commands.Cog):
         stats = ['overall_rating', 'potential', 'pace', 'shooting', 'passing', 'dribbling', 'defending', 'physical']
         labels = ['Overall', 'Potential', 'Pace', 'Shooting', 'Passing', 'Dribbling', 'Defending', 'Physical']
         
+        # Combine stats into fewer fields to stay under 25 field limit
+        p1_stats = ""
+        p2_stats = ""
+        
         for stat, label in zip(stats, labels):
-            p1_display = compare_stat(player1[stat], player2[stat])
-            p2_display = compare_stat(player2[stat], player1[stat])
-            
-            embed.add_field(name=f"📊 {label}", value=p1_display, inline=True)
-            embed.add_field(name="", value="", inline=True)
-            embed.add_field(name=f"📊 {label}", value=p2_display, inline=True)
+            p1_val = compare_stat(player1[stat], player2[stat])
+            p2_val = compare_stat(player2[stat], player1[stat])
+            p1_stats += f"**{label}:** {p1_val}\n"
+            p2_stats += f"**{label}:** {p2_val}\n"
         
         embed.add_field(
-            name="Season Stats",
-            value=f"⚽ {player1['season_goals']} | 🅰️ {player1['season_assists']} | 👕 {player1['season_apps']}",
+            name=f"📊 Stats - {player1['player_name']}",
+            value=p1_stats,
             inline=True
         )
-        embed.add_field(name="", value="", inline=True)
+        embed.add_field(name="\u200b", value="\u200b", inline=True)  # Spacer
         embed.add_field(
-            name="Season Stats",
-            value=f"⚽ {player2['season_goals']} | 🅰️ {player2['season_assists']} | 👕 {player2['season_apps']}",
+            name=f"📊 Stats - {player2['player_name']}",
+            value=p2_stats,
+            inline=True
+        )
+        
+        # Season stats
+        embed.add_field(
+            name="⚽ Season Stats",
+            value=f"**Goals:** {player1['season_goals']}\n"
+                  f"**Assists:** {player1['season_assists']}\n"
+                  f"**Apps:** {player1['season_apps']}",
+            inline=True
+        )
+        embed.add_field(name="\u200b", value="\u200b", inline=True)
+        embed.add_field(
+            name="⚽ Season Stats",
+            value=f"**Goals:** {player2['season_goals']}\n"
+                  f"**Assists:** {player2['season_assists']}\n"
+                  f"**Apps:** {player2['season_apps']}",
             inline=True
         )
         
@@ -264,13 +283,13 @@ class PlayerCommands(commands.Cog):
         form2_desc = get_form_description(player2['form'])
         
         embed.add_field(
-            name="Current Form",
+            name="📈 Current Form",
             value=f"{form1_desc} ({player1['form']})",
             inline=True
         )
-        embed.add_field(name="", value="", inline=True)
+        embed.add_field(name="\u200b", value="\u200b", inline=True)
         embed.add_field(
-            name="Current Form",
+            name="📈 Current Form",
             value=f"{form2_desc} ({player2['form']})",
             inline=True
         )
