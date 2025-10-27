@@ -44,6 +44,52 @@ class FootballBot(commands.Bot):
         await db.connect()
 
         # ============================================
+        # AUTO-MIGRATE: Add fractional stat columns
+        # ============================================
+        try:
+            async with db.pool.acquire() as conn:
+                # Check if fractional columns exist
+                result = await conn.fetchrow("""
+                    SELECT column_name
+                    FROM information_schema.columns
+                    WHERE table_name = 'players'
+                      AND column_name = 'pace_fractional'
+                """)
+
+                if not result:
+                    logger.info("📋 Adding fractional stat tracking columns...")
+            
+                    # Add all 6 fractional columns
+                    await conn.execute("""
+                        ALTER TABLE players
+                        ADD COLUMN pace_fractional DECIMAL(5, 2) DEFAULT 0.0,
+                        ADD COLUMN shooting_fractional DECIMAL(5, 2) DEFAULT 0.0,
+                        ADD COLUMN passing_fractional DECIMAL(5, 2) DEFAULT 0.0,
+                        ADD COLUMN dribbling_fractional DECIMAL(5, 2) DEFAULT 0.0,
+                        ADD COLUMN defending_fractional DECIMAL(5, 2) DEFAULT 0.0,
+                        ADD COLUMN physical_fractional DECIMAL(5, 2) DEFAULT 0.0
+                    """)
+            
+                    # Initialize existing players to 0.0
+                    await conn.execute("""
+                        UPDATE players
+                        SET pace_fractional = 0.0,
+                            shooting_fractional = 0.0,
+                            passing_fractional = 0.0,
+                            dribbling_fractional = 0.0,
+                            defending_fractional = 0.0,
+                            physical_fractional = 0.0
+                        WHERE pace_fractional IS NULL
+                    """)
+            
+                    logger.info("✅ Fractional stat columns added!")
+                else:
+                    logger.info("✅ Fractional stat columns already exist")
+            
+        except Exception as e:
+            logger.warning(f"⚠️ Fractional stats migration warning: {e}")
+        
+        # ============================================
         # AUTO-MIGRATE: Add missing column if needed
         # ============================================
         try:
