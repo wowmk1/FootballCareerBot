@@ -2738,111 +2738,149 @@ class MatchEngine:
             )
 
     async def simulate_npc_match(self, home_team_id, away_team_id, week=None, is_european=False):
-        """Simulate NPC match"""
+        """Simulate NPC match using actual team strength"""
         async with db.pool.acquire() as conn:
             if is_european:
                 home_team = await conn.fetchrow("""
-                                                SELECT team_id, team_name
-                                                FROM european_teams
-                                                WHERE team_id = $1
-                                                """, home_team_id)
+                    SELECT team_id, team_name
+                    FROM european_teams
+                    WHERE team_id = $1
+                """, home_team_id)
                 away_team = await conn.fetchrow("""
-                                                SELECT team_id, team_name
-                                                FROM european_teams
-                                                WHERE team_id = $1
-                                                """, away_team_id)
+                    SELECT team_id, team_name
+                    FROM european_teams
+                    WHERE team_id = $1
+                """, away_team_id)
 
                 if not home_team:
                     home_team = await conn.fetchrow("""
-                                                    SELECT team_id, team_name
-                                                    FROM teams
-                                                    WHERE team_id = $1
-                                                    """, home_team_id)
+                        SELECT team_id, team_name
+                        FROM teams
+                        WHERE team_id = $1
+                    """, home_team_id)
                 if not away_team:
                     away_team = await conn.fetchrow("""
-                                                    SELECT team_id, team_name
-                                                    FROM teams
-                                                    WHERE team_id = $1
-                                                    """, away_team_id)
+                        SELECT team_id, team_name
+                        FROM teams
+                        WHERE team_id = $1
+                    """, away_team_id)
             else:
                 home_team = await conn.fetchrow("""
-                                                SELECT team_id, team_name
-                                                FROM teams
-                                                WHERE team_id = $1
-                                                """, home_team_id)
+                    SELECT team_id, team_name
+                    FROM teams
+                    WHERE team_id = $1
+                """, home_team_id)
                 away_team = await conn.fetchrow("""
-                                                SELECT team_id, team_name
-                                                FROM teams
-                                                WHERE team_id = $1
-                                                """, away_team_id)
+                    SELECT team_id, team_name
+                    FROM teams
+                    WHERE team_id = $1
+                """, away_team_id)
 
             if not home_team or not away_team:
                 raise ValueError(f"Could not find teams: {home_team_id}, {away_team_id}")
 
+            # Get ALL player ratings (domestic + European)
             if is_european:
                 home_npcs = await conn.fetch("""
-                                             SELECT overall_rating
-                                             FROM npc_players
-                                             WHERE team_id = $1
-                                               AND retired = FALSE
-                                             UNION ALL
-                                             SELECT overall_rating
-                                             FROM european_npc_players
-                                             WHERE team_id = $1
-                                               AND retired = FALSE
-                                             """, home_team_id)
+                    SELECT overall_rating
+                    FROM npc_players
+                    WHERE team_id = $1
+                      AND retired = FALSE
+                    UNION ALL
+                    SELECT overall_rating
+                    FROM european_npc_players
+                    WHERE team_id = $2
+                      AND retired = FALSE
+                """, home_team_id, home_team_id)
 
                 away_npcs = await conn.fetch("""
-                                             SELECT overall_rating
-                                             FROM npc_players
-                                             WHERE team_id = $1
-                                               AND retired = FALSE
-                                             UNION ALL
-                                             SELECT overall_rating
-                                             FROM european_npc_players
-                                             WHERE team_id = $1
-                                               AND retired = FALSE
-                                             """, away_team_id)
+                    SELECT overall_rating
+                    FROM npc_players
+                    WHERE team_id = $1
+                      AND retired = FALSE
+                    UNION ALL
+                    SELECT overall_rating
+                    FROM european_npc_players
+                    WHERE team_id = $2
+                      AND retired = FALSE
+                """, away_team_id, away_team_id)
             else:
                 home_npcs = await conn.fetch("""
-                                             SELECT overall_rating
-                                             FROM npc_players
-                                             WHERE team_id = $1
-                                               AND retired = FALSE
-                                             """, home_team_id)
+                    SELECT overall_rating
+                    FROM npc_players
+                    WHERE team_id = $1
+                      AND retired = FALSE
+                """, home_team_id)
 
                 away_npcs = await conn.fetch("""
-                                             SELECT overall_rating
-                                             FROM npc_players
-                                             WHERE team_id = $1
-                                               AND retired = FALSE
-                                             """, away_team_id)
+                    SELECT overall_rating
+                    FROM npc_players
+                    WHERE team_id = $1
+                      AND retired = FALSE
+                """, away_team_id)
 
+            # Calculate average team ratings
             home_rating = sum(p['overall_rating'] for p in home_npcs) / len(home_npcs) if home_npcs else 75
             away_rating = sum(p['overall_rating'] for p in away_npcs) / len(away_npcs) if away_npcs else 75
 
-            home_advantage = 5
-            home_attack = (home_rating + home_advantage) / 100
-            away_attack = away_rating / 100
+            # Team quality modifier based on average rating
+            if home_rating >= 85:
+                home_modifier = 25
+            elif home_rating >= 80:
+                home_modifier = 20
+            elif home_rating >= 75:
+                home_modifier = 15
+            elif home_rating >= 70:
+                home_modifier = 10
+            elif home_rating >= 65:
+                home_modifier = 5
+            else:
+                home_modifier = 0
 
+            if away_rating >= 85:
+                away_modifier = 25
+            elif away_rating >= 80:
+                away_modifier = 20
+            elif away_rating >= 75:
+                away_modifier = 15
+            elif away_rating >= 70:
+                away_modifier = 10
+            elif away_rating >= 65:
+                away_modifier = 5
+            else:
+                away_modifier = 0
+
+            # Home advantage
+            home_advantage = 5
+
+            # Calculate attack strength
+            home_strength = home_rating + home_modifier + home_advantage
+            away_strength = away_rating + away_modifier
+
+            # Simulate goals based on strength
             home_goals = 0
             away_goals = 0
 
-            num_chances = random.randint(8, 12)
+            # Number of goal-scoring chances
+            num_chances = random.randint(8, 14)
 
             for _ in range(num_chances):
-                if random.random() < (home_attack * 0.25):
+                # Home team chance
+                if random.random() < (home_strength / 400):
                     home_goals += 1
 
-                if random.random() < (away_attack * 0.22):
+                # Away team chance
+                if random.random() < (away_strength / 400):
                     away_goals += 1
 
-            home_goals = min(home_goals, 5)
-            away_goals = min(away_goals, 5)
+            # Cap scores at realistic levels
+            home_goals = min(home_goals, 6)
+            away_goals = min(away_goals, 6)
 
+            # Occasional high-scoring games (5% chance)
             if random.random() < 0.05:
-                home_goals = min(home_goals + random.randint(0, 2), 7)
-                away_goals = min(away_goals + random.randint(0, 2), 7)
+                home_goals = min(home_goals + random.randint(0, 2), 8)
+                away_goals = min(away_goals + random.randint(0, 2), 8)
 
             return {
                 'home_score': home_goals,
