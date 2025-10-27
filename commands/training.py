@@ -379,6 +379,7 @@ async def apply_training_with_fractional_gains(player, selected_stat, base_total
             while new_fractional >= 1.0 and player[secondary_stat] < 99:
                 new_fractional -= 1.0
                 conversions += 1
+                temp_stat_value += 1
             
             # Store results
             fractional_gains[secondary_stat] = fractional_gain
