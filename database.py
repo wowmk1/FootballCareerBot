@@ -733,7 +733,7 @@ class Database:
         
         return await self._execute_with_retry(operation)
     
-    async def age_all_players(self):
+    async def age_all_players(self, bot=None):
         """Age all players by 1 year"""
         async with self.pool.acquire() as conn:
             await conn.execute("UPDATE players SET age = age + 1 WHERE retired = FALSE")
