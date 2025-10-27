@@ -360,18 +360,59 @@ async def advance_week(bot=None):
         
         if next_week in config.TRANSFER_WINDOW_WEEKS:
             try:
-                from utils.transfer_system import process_weekly_transfer_offers, simulate_npc_transfers
-                await process_weekly_transfer_offers(bot=bot)
-                await simulate_npc_transfers()
-            except Exception as e:
-                logger.error(f"Error in transfers: {e}")
+                logger.info(f"\n{'='*60}")
+                logger.info(f"🔄 TRANSFER WINDOW ACTIVE - Week {next_week}")
+                logger.info(f"{'='*60}")
         
-        if bot:
-            try:
-                from utils.event_poster import post_weekly_news_digest
-                await post_weekly_news_digest(bot, current_week)
-            except:
-                pass
+                # ✅ FIXED: Correct import path
+                from utils.transfer_window_manager import (
+                    process_weekly_transfer_offers, 
+                    simulate_npc_transfers
+                )
+        
+                # 1. Generate player transfer offers (human players)
+                logger.info("📬 Generating transfer offers for players...")
+                await process_weekly_transfer_offers(bot=bot)
+        
+                # 2. Simulate domestic NPC transfers
+                logger.info("🔄 Simulating domestic NPC transfers...")
+                await simulate_npc_transfers()
+        
+                # ✅ NEW: European transfer system
+                logger.info("🌍 Processing European transfers...")
+                from utils.european_transfer_system import (
+                    simulate_european_transfers,
+                    simulate_european_to_english_transfers,
+                    simulate_english_to_european_transfers
+                )
+        
+                # 3. Inter-European transfers (Real Madrid ↔ Bayern, etc.)
+                euro_count = await simulate_european_transfers()
+                logger.info(f"  ✅ {euro_count} inter-European transfers")
+        
+                # 4. European → English transfers (Mbappe → Man City, etc.)
+                euro_to_eng = await simulate_european_to_english_transfers()
+                logger.info(f"  ✅ {euro_to_eng} European → English transfers")
+        
+                # 5. English → European transfers (Kane → Bayern, etc.)
+                eng_to_euro = await simulate_english_to_european_transfers()
+                logger.info(f"  ✅ {eng_to_euro} English → European transfers")
+        
+                # ✅ BONUS: Balance squad sizes (optional but recommended)
+                try:
+                    from utils.npc_transfer_system import balance_team_squads
+                    balanced = await balance_team_squads()
+                    if balanced:
+                        logger.info(f"  ⚖️ {balanced} players balanced across squads")
+                except Exception as e:
+                    logger.warning(f"Squad balancing skipped: {e}")
+        
+                logger.info(f"{'='*60}")
+                logger.info(f"✅ TRANSFER WINDOW COMPLETE")
+                logger.info(f"{'='*60}\n")
+        
+            except Exception as e:
+                logger.error(f"❌ CRITICAL: Error in transfer window processing: {e}", exc_info=True)
 
 
 async def end_season(bot=None):
