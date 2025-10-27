@@ -22,11 +22,12 @@ async def simulate_all_matches(week: int):
     return results
 
 async def simulate_match(fixture: dict):
-    """Simulate a single match (fallback for matches without user involvement)"""
+    """Simulate a single match using actual team strength from player ratings"""
     
     home_team = await db.get_team(fixture['home_team_id'])
     away_team = await db.get_team(fixture['away_team_id'])
     
+    # Check for user players
     async with db.pool.acquire() as conn:
         result = await conn.fetchrow(
             "SELECT COUNT(*) as count FROM players WHERE (team_id = $1 OR team_id = $2) AND retired = FALSE",
@@ -34,11 +35,12 @@ async def simulate_match(fixture: dict):
         )
         has_user_players = result['count'] > 0
     
-    home_strength = random.randint(0, 3) + 1
-    away_strength = random.randint(0, 3)
+    # Calculate actual team strength from player ratings
+    home_strength = await calculate_team_strength(fixture['home_team_id'], is_home=True)
+    away_strength = await calculate_team_strength(fixture['away_team_id'], is_home=False)
     
-    home_score = home_strength
-    away_score = away_strength
+    # Simulate match based on strength difference
+    home_score, away_score = simulate_score(home_strength, away_strength)
     
     async with db.pool.acquire() as conn:
         await conn.execute('''
@@ -59,6 +61,99 @@ async def simulate_match(fixture: dict):
         'away_score': away_score,
         'has_user_players': has_user_players
     }
+
+async def calculate_team_strength(team_id: str, is_home: bool = False) -> int:
+    """Calculate team strength from actual player ratings (domestic + European)"""
+    
+    async with db.pool.acquire() as conn:
+        # Get domestic players (both user and NPC)
+        user_players = await conn.fetch(
+            "SELECT overall_rating FROM players WHERE team_id = $1 AND retired = FALSE",
+            team_id
+        )
+        npc_players = await conn.fetch(
+            "SELECT overall_rating FROM npc_players WHERE team_id = $1 AND retired = FALSE",
+            team_id
+        )
+        
+        # Get European players (if this is a European team)
+        european_players = await conn.fetch(
+            "SELECT overall_rating FROM european_npc_players WHERE team_id = $1 AND retired = FALSE",
+            team_id
+        )
+    
+    # Combine all ratings
+    all_ratings = (
+        [p['overall_rating'] for p in user_players] + 
+        [p['overall_rating'] for p in npc_players] +
+        [p['overall_rating'] for p in european_players]
+    )
+    
+    if not all_ratings:
+        return 50  # Default for teams with no players
+    
+    # Calculate average rating
+    avg_rating = sum(all_ratings) / len(all_ratings)
+    
+    # Team quality modifier based on average rating
+    if avg_rating >= 85:
+        team_modifier = 25  # Elite teams (Man City, Real Madrid, Bayern)
+    elif avg_rating >= 80:
+        team_modifier = 20  # Top teams (Liverpool, Arsenal, Juventus)
+    elif avg_rating >= 75:
+        team_modifier = 15  # Good teams (Aston Villa, Roma)
+    elif avg_rating >= 70:
+        team_modifier = 10  # Mid-table (Brentford, Fulham)
+    elif avg_rating >= 65:
+        team_modifier = 5   # Lower teams (Luton, Southampton)
+    else:
+        team_modifier = 0   # Weak teams (League One clubs)
+    
+    # Home advantage
+    home_bonus = 5 if is_home else 0
+    
+    # Calculate total strength
+    strength = int(avg_rating + team_modifier + home_bonus)
+    
+    # Cap at 95 to prevent unrealistic scorelines
+    return min(strength, 95)
+
+def simulate_score(home_strength: int, away_strength: int) -> tuple:
+    """Simulate match score based on team strengths"""
+    
+    # Calculate strength difference
+    diff = home_strength - away_strength
+    
+    # Base goals from strength (stronger teams score more)
+    home_base = max(0, (home_strength - 50) // 15)
+    away_base = max(0, (away_strength - 50) // 15)
+    
+    # Add randomness (luck factor)
+    home_score = home_base + random.randint(0, 2)
+    away_score = away_base + random.randint(0, 2)
+    
+    # Apply strength difference bonuses
+    if diff > 20:
+        home_score += 1
+    elif diff > 30:
+        home_score += 2
+    elif diff < -20:
+        away_score += 1
+    elif diff < -30:
+        away_score += 2
+    
+    # Occasional upsets (10% chance - this is the "luck" factor)
+    if random.random() < 0.1:
+        if diff > 0:
+            away_score += random.randint(1, 2)
+        else:
+            home_score += random.randint(1, 2)
+    
+    # Ensure scores are non-negative
+    home_score = max(0, home_score)
+    away_score = max(0, away_score)
+    
+    return home_score, away_score
 
 async def update_team_stats(team_id: str, goals_for: int, goals_against: int, is_home: bool):
     """Update team statistics after a match"""
