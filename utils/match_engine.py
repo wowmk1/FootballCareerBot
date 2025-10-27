@@ -2314,7 +2314,7 @@ class MatchEngine:
         try:
             from match_visualizer import generate_action_visualization
 
-            viz = generate_action_visualization(
+            viz = await generate_action_visualization(
                 action=action,
                 player=player,
                 defender=defender,
@@ -2703,8 +2703,7 @@ class MatchEngine:
             try:
                 highlights_buffer = await MatchHighlightsGenerator.generate_match_highlights(
                     match_id=match_id,
-                    max_highlights=6,
-                    animated=True
+                    max_highlights=5
                 )
             except Exception as e:
                 print(f"⚠️ Could not generate highlights: {e}")
