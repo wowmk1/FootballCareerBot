@@ -1,5 +1,5 @@
 """
-ENHANCED MATCH ENGINE - COMPLETE VERSION WITH ALL FIXES
+ENHANCED MATCH ENGINE - COMPLETE VERSION WITH ALL FIXES + SKIP/AFK BUTTONS
 ✅ Fix #1: Fair player distribution (13 moments each)
 ✅ Fix #2: Teammate scoring priority (75% user, position-weighted)
 ✅ Fix #3: High engagement (40-50 events, decision every 60-90s)
@@ -10,6 +10,9 @@ ENHANCED MATCH ENGINE - COMPLETE VERSION WITH ALL FIXES
 ✅ Fix #8: Tutorial for first-time players
 ✅ Fix #9: Defending team parameter fix (no more freezing)
 ✅ Fix #10: Minute generation fix (handles 45+ events)
+✅ NEW: Skip Turn button (no tracking)
+✅ NEW: Mark AFK button (appears after timeout)
+✅ NEW: Auto-play for AFK players
 """
 import discord
 from discord.ext import commands
@@ -43,6 +46,10 @@ class MatchEngine:
         self._match_timestamps: Dict[int, datetime] = {}
         self.match_yellow_cards: Dict[int, Dict[int, int]] = {}
         self.match_stats: Dict[int, dict] = {}
+        
+        # ✅ NEW: Timeout and AFK tracking
+        self.player_timeouts: Dict[int, set] = {}  # match_id -> {user_ids who timed out}
+        self.afk_players: Dict[int, set] = {}  # match_id -> {user_ids marked AFK}
 
     # ═══════════════════════════════════════════════════════════════
     # EVENT DISTRIBUTION SYSTEM (NEW)
@@ -495,6 +502,11 @@ class MatchEngine:
                     del self.match_yellow_cards[match_id]
                 if match_id in self.match_stats:
                     del self.match_stats[match_id]
+                # ✅ NEW: Cleanup timeout and AFK tracking
+                if match_id in self.player_timeouts:
+                    del self.player_timeouts[match_id]
+                if match_id in self.afk_players:
+                    del self.afk_players[match_id]
 
         for match_id in list(self.pinned_messages.keys()):
             if match_id not in self.active_matches:
@@ -1697,14 +1709,61 @@ class MatchEngine:
     async def handle_player_moment(self, channel, player, participant, minute, attacking_team, defending_team,
                                    is_home, match_id, is_european=False):
         """
-        ✅ COMPLETE WITH ALL FIXES
+        ✅ UPDATED WITH SKIP & AFK SYSTEM
         """
         member = channel.guild.get_member(player['user_id'])
         if not member:
             return None
 
-        # ✅ FIX #8: Show tutorial if first match
+        # ✅ NEW: Check if player is marked AFK - auto-play immediately
+        if match_id in self.afk_players and player['user_id'] in self.afk_players[match_id]:
+            scenario_type, defender_positions, scenario_description = self.get_position_scenario(player['position'])
+            available_actions = self.get_actions_for_scenario(player['position'], scenario_type)
+            action = available_actions[0]  # Use best action
+            
+            await channel.send(
+                f"💤 **{player['player_name']}** (AFK) - Auto-playing: **{action.upper()}**"
+            )
+            
+            # Execute action immediately
+            adjusted_stats = self.apply_form_to_stats(player)
+            
+            async with db.pool.acquire() as conn:
+                position_filter = ', '.join([f"'{pos}'" for pos in defender_positions])
+                if is_european:
+                    result = await conn.fetchrow(f"""
+                        SELECT * FROM npc_players
+                        WHERE team_id = $1 AND position IN ({position_filter}) AND retired = FALSE
+                        ORDER BY RANDOM() LIMIT 1
+                    """, defending_team['team_id'])
+                    if not result:
+                        result = await conn.fetchrow(f"""
+                            SELECT * FROM european_npc_players
+                            WHERE team_id = $1 AND position IN ({position_filter}) AND retired = FALSE
+                            ORDER BY RANDOM() LIMIT 1
+                        """, defending_team['team_id'])
+                else:
+                    result = await conn.fetchrow(f"""
+                        SELECT * FROM npc_players 
+                        WHERE team_id = $1 AND position IN ({position_filter}) AND retired = FALSE
+                        ORDER BY RANDOM() LIMIT 1
+                    """, defending_team['team_id'])
+                defender = dict(result) if result else None
+            
+            result = await self.execute_action_with_duel(
+                channel, player, adjusted_stats, defender, action, minute,
+                match_id, member, attacking_team, defending_team, is_european, is_home
+            )
+            return result
+
+        # ✅ Show tutorial if first match
         await self.show_tutorial_if_needed(channel, player['user_id'])
+
+        # ✅ NEW: Check if this player has timed out before
+        if match_id not in self.player_timeouts:
+            self.player_timeouts[match_id] = set()
+        
+        has_timed_out = player['user_id'] in self.player_timeouts[match_id]
 
         adjusted_stats = self.apply_form_to_stats(player)
         scenario_type, defender_positions, scenario_description = self.get_position_scenario(player['position'])
@@ -1769,6 +1828,10 @@ class MatchEngine:
             description=f"## {player['player_name']} ({player['position']})\n**{minute}'** | Form: {form_desc}\n\n{scenario_text}",
             color=discord.Color.gold()
         )
+        
+        # ✅ NEW: Add timeout warning if they've been AFK before
+        if has_timed_out:
+            embed.description += "\n\n⚠️ _This player timed out last turn_"
 
         home_crest = get_team_crest_url(attacking_team['team_id'])
         away_crest = get_team_crest_url(defending_team['team_id'])
@@ -1780,7 +1843,6 @@ class MatchEngine:
                 crests_file = discord.File(fp=crests_buffer, filename=f"crests_{minute}.png")
                 embed.set_image(url=f"attachment://crests_{minute}.png")
 
-        # ✅ FIX #6 & #7: Enhanced descriptions with recommended action
         actions_data = []
         for action in available_actions:
             att_p, att_s, def_p, def_s = self.get_action_stats(action)
@@ -1812,7 +1874,6 @@ class MatchEngine:
                 'primary': att_p[:3].upper(), 'secondary': att_s[:3].upper()
             })
 
-        # ✅ FIX #7: Sort by chance and highlight best option
         actions_data.sort(key=lambda x: x['chance'], reverse=True)
         recommended_action = actions_data[0]['action']
 
@@ -1823,7 +1884,6 @@ class MatchEngine:
             inline=False
         )
 
-        # ✅ FIX #6: Enhanced action descriptions
         actions_text = ""
         for data in actions_data:
             action = data['action']
@@ -1836,7 +1896,6 @@ class MatchEngine:
             else:
                 emoji, difficulty = "🔴", "RISKY"
 
-            # ✅ FIX #7: Highlight recommended
             if action == recommended_action:
                 emoji = "⭐" + emoji
                 difficulty = "★ BEST"
@@ -1856,7 +1915,6 @@ class MatchEngine:
                 else:
                     actions_text += f"**{data['defender_effective']}**"
             
-            # ✅ FIX #6: Show follow-up info
             actions_text += f"\n   ↪️ {self.get_followup_description(action)}\n\n"
 
         embed.add_field(name="⚡ CHOOSE YOUR ACTION", value=actions_text, inline=False)
@@ -1867,7 +1925,11 @@ class MatchEngine:
         else:
             embed.set_footer(text="⭐ = Best Choice | 🎲 = Die Roll After Choice | ⏱️ 30 seconds")
 
-        view = EnhancedActionView(available_actions, player['user_id'], timeout=30)
+        # ✅ NEW: Create view with AFK button if needed, pass match_engine
+        view = EnhancedActionView(available_actions, player['user_id'], match_id, 
+                                  timeout=30, show_afk_button=has_timed_out, match_engine=self)
+        # ✅ FIX: match_id now passed in constructor, no need to set it after
+        #view.match_id = match_id  # Pass match context # ✅ match_id already set in constructor
 
         if crests_file:
             message = await channel.send(content=f"📢 {member.mention}", embed=embed, file=crests_file, view=view)
@@ -1877,7 +1939,10 @@ class MatchEngine:
         await view.wait()
 
         action = view.chosen_action if view.chosen_action else random.choice(available_actions)
+        
+        # ✅ NEW: Track if they timed out
         if not view.chosen_action:
+            self.player_timeouts[match_id].add(player['user_id'])
             await channel.send(f"⏰ {member.mention} **AUTO-SELECTED**: {action.upper()}")
 
         result = await self.execute_action_with_duel(channel, player, adjusted_stats, defender, action, minute,
@@ -1885,7 +1950,6 @@ class MatchEngine:
                                                      is_home)
         return result
 
-    # ✅ FIXED: Added defending_team parameter
     async def execute_action_with_duel(self, channel, player, adjusted_stats, defender, action, minute,
                                        match_id, member, attacking_team, defending_team, is_european=False,
                                        is_home=False):
@@ -2107,7 +2171,6 @@ class MatchEngine:
                 WHERE match_id = $2 AND user_id = $3
             """, rating_change, match_id, player['user_id'])
 
-        # Add static visualization during match
         try:
             from match_visualizer import generate_action_visualization
 
@@ -2125,7 +2188,6 @@ class MatchEngine:
         except Exception as e:
             print(f"⚠️ Visualization error: {e}")
 
-        # ✅ FIXED: Now defending_team is available for follow-up actions
         followup_result = await self.handle_followup_action(
             channel, action, success, player, attacking_team, defending_team, match_id, is_european
         )
@@ -2268,7 +2330,6 @@ class MatchEngine:
     async def start_match(self, fixture: dict, interaction: discord.Interaction, is_european: bool = False):
         """Start a match - supports both domestic and European competitions"""
 
-        # ═══ CLEANUP: Remove any existing active match for this fixture ═══
         async with db.pool.acquire() as conn:
             existing = await conn.fetchrow(
                 "SELECT match_id FROM active_matches WHERE fixture_id = $1",
@@ -2447,10 +2508,14 @@ class MatchEngine:
 
     async def run_match(self, match_id: int, fixture: dict, channel: discord.TextChannel, 
                         is_european: bool = False):
-        """
-        ✅ COMPLETE MATCH ENGINE WITH ALL FIXES
-        """
+        """Complete match engine with all fixes"""
         await self.maybe_cleanup()
+    
+        # ✅ FIX: Initialize tracking dictionaries for this match
+        if match_id not in self.player_timeouts:
+            self.player_timeouts[match_id] = set()
+        if match_id not in self.afk_players:
+            self.afk_players[match_id] = set()
 
         home_team = await self.get_team_info(fixture['home_team_id'], is_european)
         away_team = await self.get_team_info(fixture['away_team_id'], is_european)
@@ -2466,11 +2531,6 @@ class MatchEngine:
 
         self.initialize_match_stats(match_id, home_participants, away_participants)
 
-        # ═══════════════════════════════════════════════════════════════
-        # ✅ NEW EVENT SYSTEM
-        # ═══════════════════════════════════════════════════════════════
-
-        # Calculate fair distribution
         distribution = self.calculate_event_distribution(home_participants, away_participants)
 
         print(f"📊 Match Setup:")
@@ -2479,18 +2539,15 @@ class MatchEngine:
         print(f"   NPC Moments: {distribution['npc_moments']}")
         print(f"   Set Pieces: {distribution['set_pieces']}")
 
-        # Create fair player schedule
         player_schedule = await self.create_fair_player_schedule(
             home_participants,
             away_participants,
             distribution['player_moments']
         )
 
-        # Create complete schedule
         complete_schedule = []
         complete_schedule.extend(player_schedule)
 
-        # Add exciting NPC moments
         npc_moment_types = [
             'npc_attack', 'npc_attack', 'npc_attack',
             'dramatic_save', 'dramatic_save',
@@ -2506,21 +2563,17 @@ class MatchEngine:
                 'team_side': random.choice(['home', 'away'])
             })
 
-        # Add set pieces
         for _ in range(distribution['set_pieces']):
             complete_schedule.append({
                 'type': 'set_piece',
                 'team_side': random.choice(['home', 'away'])
             })
 
-        # Shuffle for variety
         random.shuffle(complete_schedule)
 
-        # ✅ FIX #10: Generate minutes (with fix for 45+ events)
         possible_minutes = list(range(3, 91, 3))
         minutes = sorted(random.sample(possible_minutes, min(len(complete_schedule), len(possible_minutes))))
 
-        # If we need more minutes, use 2-minute intervals
         if len(complete_schedule) > len(possible_minutes):
             additional_minutes = list(range(4, 91, 2))
             all_minutes = sorted(list(set(possible_minutes + additional_minutes)))
@@ -2528,7 +2581,6 @@ class MatchEngine:
 
         await self.update_pinned_score(channel, match_id, home_team, away_team, home_score, away_score, 0)
 
-        # Execute match
         for i, minute in enumerate(minutes):
             if i >= len(complete_schedule):
                 break
@@ -2537,17 +2589,14 @@ class MatchEngine:
             
             await self.update_pinned_score(channel, match_id, home_team, away_team, home_score, away_score, minute)
 
-            # Half-time
             if minute >= 45 and minute < 48 and not hasattr(self, f'_halftime_shown_{match_id}'):
                 setattr(self, f'_halftime_shown_{match_id}', True)
                 await self.post_halftime_summary(channel, home_team, away_team, home_score, away_score, participants, match_id)
                 await self.display_match_stats(channel, match_id, home_team, away_team)
 
-            # Execute based on event type
             result = None
             
             if event['type'] == 'player':
-                # Player moment
                 participant = event['participant']
                 player = event['player']
                 is_home = (event['team_side'] == 'home')
@@ -2612,7 +2661,6 @@ class MatchEngine:
                     await self.update_pinned_score(channel, match_id, home_team, away_team, home_score, away_score, minute)
             
             else:
-                # ✅ NEW: Exciting NPC moments
                 exciting_result = await self.handle_exciting_npc_moment(
                     channel, event['type'], minute, home_team, away_team, event['team_side']
                 )
@@ -2624,7 +2672,6 @@ class MatchEngine:
                         away_score += 1
                     await self.update_pinned_score(channel, match_id, home_team, away_team, home_score, away_score, minute)
 
-            # Update match state
             async with db.pool.acquire() as conn:
                 await conn.execute(
                     'UPDATE active_matches SET home_score = $1, away_score = $2, current_minute = $3 WHERE match_id = $4',
@@ -2969,11 +3016,18 @@ class MatchEngine:
             }
 
 
+# ═══════════════════════════════════════════════════════════════
+# ✅ NEW: BUTTON CLASSES WITH SKIP & AFK FUNCTIONALITY
+# ═══════════════════════════════════════════════════════════════
+
 class EnhancedActionView(discord.ui.View):
-    def __init__(self, available_actions, user_id, timeout=30):
+    def __init__(self, available_actions, user_id, match_id, timeout=30, show_afk_button=False, match_engine=None):
         super().__init__(timeout=timeout)
         self.chosen_action = None
         self.owner_user_id = user_id
+        self.match_id = match_id  # ✅ NOW IT WORKS: match_id is a parameter
+        self.skipped = False
+        self.match_engine = match_engine
 
         emoji_map = {
             'shoot': '🎯', 'pass': '🎪', 'dribble': '🪄', 'tackle': '🛡️', 'cross': '📤',
@@ -2984,9 +3038,19 @@ class EnhancedActionView(discord.ui.View):
             'press': '⚡', 'cover': '🛡️', 'track_runner': '🏃', 'sweep': '🧹', 'header': '🎯'
         }
 
+        # Add action buttons (first row)
         for action in available_actions[:5]:
             button = ActionButton(action, emoji_map.get(action, '⚽'))
             self.add_item(button)
+        
+        # Add skip button (second row) - ALWAYS visible
+        skip_button = SkipTurnButton()
+        self.add_item(skip_button)
+        
+        # Add AFK button (second row) - ONLY if player has timed out before
+        if show_afk_button:
+            afk_button = MarkAFKButton()
+            self.add_item(afk_button)
 
     async def on_timeout(self):
         for item in self.children:
@@ -2999,7 +3063,8 @@ class ActionButton(discord.ui.Button):
         super().__init__(
             label=label,
             emoji=emoji,
-            style=discord.ButtonStyle.primary
+            style=discord.ButtonStyle.primary,
+            row=0
         )
         self.action = action
 
@@ -3013,9 +3078,171 @@ class ActionButton(discord.ui.Button):
 
         await interaction.response.defer()
         self.view.chosen_action = self.action
+        self.view.skipped = False
         for item in self.view.children:
             item.disabled = True
         await interaction.edit_original_response(view=self.view)
+        self.view.stop()
+
+
+class SkipTurnButton(discord.ui.Button):
+    def __init__(self):
+        super().__init__(
+            label="Skip Turn (Auto)",
+            emoji="⏭️",
+            style=discord.ButtonStyle.secondary,
+            row=1
+        )
+
+    async def callback(self, interaction: discord.Interaction):
+        match_id = self.view.match_id  # ✅ FIX: Direct access (no getattr needed)
+    
+        if not match_id:
+            await interaction.response.send_message(
+                "❌ Error: Match context not found!",
+                ephemeral=True
+            )
+            return
+    
+        # Check if clicker is a participant
+        try:  # ✅ FIX: Add error handling
+            async with db.pool.acquire() as conn:
+                participant = await conn.fetchrow("""
+                    SELECT user_id, team_id FROM match_participants 
+                    WHERE match_id = $1 AND user_id = $2
+                """, match_id, interaction.user.id)
+        except Exception as e:
+            await interaction.response.send_message(
+                f"❌ Database error: {e}",
+                ephemeral=True
+            )
+            return
+        
+        if not participant:
+            await interaction.response.send_message(
+                "❌ Only players in this match can skip turns!",
+                ephemeral=True
+            )
+            return
+        
+        # Just skip immediately
+        await interaction.response.defer()
+        
+        # Select best action
+        available_actions = [item.action for item in self.view.children if isinstance(item, ActionButton)]
+        if available_actions:
+            self.view.chosen_action = available_actions[0]
+            self.view.skipped = True
+        
+        # Disable buttons
+        for item in self.view.children:
+            item.disabled = True
+        
+        try:
+            await interaction.edit_original_response(view=self.view)
+        except discord.errors.NotFound:
+            pass
+        except Exception as e:
+            print(f"⚠️ Failed to edit interaction: {e}")
+        
+        # Public feedback
+        skipper_member = interaction.guild.get_member(interaction.user.id)
+        skipper_name = skipper_member.display_name if skipper_member else "Player"
+        
+        turn_owner_id = self.view.owner_user_id
+        turn_owner_member = interaction.guild.get_member(turn_owner_id)
+        turn_owner_name = turn_owner_member.display_name if turn_owner_member else "Player"
+        
+        if interaction.user.id == turn_owner_id:
+            skip_msg = (
+                f"⏭️ **{skipper_name}** skipped their turn\n"
+                f"Auto-selected: **{self.view.chosen_action.upper()}**"
+            )
+        else:
+            skip_msg = (
+                f"⏭️ **{skipper_name}** skipped **{turn_owner_name}**'s turn\n"
+                f"Auto-selected: **{self.view.chosen_action.upper()}**"
+            )
+        
+        await interaction.followup.send(skip_msg, ephemeral=False)
+        
+        self.view.stop()
+
+
+class MarkAFKButton(discord.ui.Button):
+    def __init__(self):
+        super().__init__(
+            label="Mark AFK",
+            emoji="💤",
+            style=discord.ButtonStyle.danger,
+            row=1
+        )
+    
+    async def callback(self, interaction: discord.Interaction):
+        match_id = self.view.match_id  # ✅ FIX: Direct access
+        turn_owner_id = self.view.owner_user_id
+    
+        if not match_id:
+            await interaction.response.send_message("❌ Error: Match context not found!", ephemeral=True)
+            return
+    
+        # Check if clicker is opponent
+        try:  # ✅ FIX: Add error handling
+            async with db.pool.acquire() as conn:
+                skipper = await conn.fetchrow("""
+                    SELECT team_id FROM match_participants 
+                    WHERE match_id = $1 AND user_id = $2
+                """, match_id, interaction.user.id)
+            
+                turn_owner = await conn.fetchrow("""
+                    SELECT team_id FROM match_participants 
+                    WHERE match_id = $1 AND user_id = $2
+                """, match_id, turn_owner_id)
+        except Exception as e:
+            await interaction.response.send_message(f"❌ Database error: {e}", ephemeral=True)
+            return
+        
+        if not skipper or not turn_owner:
+            await interaction.response.send_message("❌ Error: Players not found!", ephemeral=True)
+            return
+        
+        if skipper['team_id'] == turn_owner['team_id']:
+            await interaction.response.send_message("❌ You can only mark opponents as AFK!", ephemeral=True)
+            return
+        
+        # Mark player as AFK
+        if self.view.match_engine:
+            if match_id not in self.view.match_engine.afk_players:
+                self.view.match_engine.afk_players[match_id] = set()
+            self.view.match_engine.afk_players[match_id].add(turn_owner_id)
+        
+        await interaction.response.defer()
+        
+        # Disable buttons
+        for item in self.view.children:
+            item.disabled = True
+        
+        try:
+            await interaction.edit_original_response(view=self.view)
+        except:
+            pass
+        
+        # Public announcement
+        turn_owner_member = interaction.guild.get_member(turn_owner_id)
+        turn_owner_name = turn_owner_member.display_name if turn_owner_member else "player"
+        
+        await interaction.followup.send(
+            f"💤 **{turn_owner_name} marked as AFK**\n"
+            f"All remaining turns will auto-play with recommended actions.",
+            ephemeral=False
+        )
+        
+        # Auto-select this turn
+        available_actions = [item.action for item in self.view.children if isinstance(item, ActionButton)]
+        if available_actions:
+            self.view.chosen_action = available_actions[0]
+            self.view.skipped = True
+        
         self.view.stop()
 
 
