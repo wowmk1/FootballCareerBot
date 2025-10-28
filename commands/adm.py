@@ -4,7 +4,7 @@ FIXED VERSION - Now passes bot instance to season manager functions
 ENHANCED VERSION - Added European competition admin controls
 SAFEGUARDED VERSION - Prevents duplicate starts and allows clean restarts
 DIAGNOSTIC VERSION - Added NPC stats diagnostic
-MATCH ENGINE TEST - Added sandbox match engine testing
+MATCH ENGINE TEST - Added sandbox match engine testing with REAL engine logic
 """
 import discord
 from discord import app_commands
@@ -105,8 +105,8 @@ class AdminCommands(commands.Cog):
             await self._test_match_engine(interaction)
         elif action == "restart":
             await self._restart(interaction)
-        elif action == "test_training":  # ← ADD THIS
-            await self._test_training(interaction)  # ← AND THIS
+        elif action == "test_training":
+            await self._test_training(interaction)
     
     async def _advance_week(self, interaction: discord.Interaction):
         """Advance to the next week"""
@@ -788,39 +788,27 @@ class AdminCommands(commands.Cog):
         await interaction.followup.send(embed=embed, ephemeral=True)
     
     async def _test_match_engine(self, interaction: discord.Interaction):
-        """Test match engine with full interactive sandbox match (no DB impact)"""
+        """Test match engine with sandbox match using actual engine logic"""
         await interaction.response.defer()
         
         try:
-            import random
+            # Import actual match engine
+            from utils.match_engine import match_engine
             
-            home_team = self._create_sandbox_team("Test United", "Premier League")
-            away_team = self._create_sandbox_team("Sandbox City", "Championship")
-            away_team['home_advantage'] = False
+            if not match_engine:
+                await interaction.followup.send("❌ Match engine not initialized!", ephemeral=True)
+                return
             
-            embed = discord.Embed(
-                title="🎮 Match Engine Test - INTERACTIVE",
-                description=f"{home_team['name']} vs {away_team['name']}",
-                color=discord.Color.blue()
-            )
+            # Create sandbox fixture
+            sandbox_fixture = {
+                'fixture_id': 999999,
+                'home_team_id': 'test_home',
+                'away_team_id': 'test_away',
+                'week_number': 99,
+                'competition': 'Sandbox Test'
+            }
             
-            embed.add_field(
-                name="📋 Teams",
-                value=f"🏠 {home_team['name']} (OVR: {home_team['overall']})\n"
-                      f"🛣️ {away_team['name']} (OVR: {away_team['overall']})",
-                inline=False
-            )
-            
-            embed.add_field(
-                name="⚙️ Sandbox Features",
-                value="✅ No database writes\n✅ Interactive moments\n✅ Button decisions\n✅ Real match logic",
-                inline=False
-            )
-            
-            await interaction.followup.send(embed=embed)
-            await interaction.followup.send("🏗️ Creating test match channel...")
-            
-            # Create temporary test channel
+            # Create temporary channel
             guild = interaction.guild
             category = discord.utils.get(guild.categories, name="⚽ ACTIVE MATCHES")
             if not category:
@@ -833,18 +821,29 @@ class AdminCommands(commands.Cog):
             }
             
             match_channel = await guild.create_text_channel(
-                name="test-match-sandbox",
+                name="🧪-sandbox-test",
                 category=category,
                 overwrites=overwrites
             )
             
-            await interaction.followup.send(f"✅ Match started in {match_channel.mention}")
+            await interaction.followup.send(
+                f"✅ **Sandbox Match Started!**\n"
+                f"Channel: {match_channel.mention}\n\n"
+                f"⚠️ **This is a TEST** - No database changes\n"
+                f"🎮 You'll get real interactive moments\n"
+                f"⏱️ Channel auto-deletes after match",
+                ephemeral=True
+            )
             
-            # Run sandbox match
-            await self._run_sandbox_match(match_channel, home_team, away_team, interaction.user)
+            # Run actual sandbox match
+            await self._run_sandbox_match_with_engine(
+                match_channel, 
+                interaction.user, 
+                match_engine
+            )
             
-            # Clean up
-            await asyncio.sleep(5)
+            # Cleanup
+            await asyncio.sleep(30)
             try:
                 await match_channel.delete()
             except:
@@ -855,206 +854,324 @@ class AdminCommands(commands.Cog):
             import traceback
             traceback.print_exc()
     
-    async def _run_sandbox_match(self, channel, home_team, away_team, player_user):
-        """Run a fully sandboxed interactive match with no database writes"""
+    async def _run_sandbox_match_with_engine(self, channel, player_user, engine):
+        """Run sandbox match using ACTUAL match engine logic"""
         import random
+        
+        # Create sandbox teams (minimal info needed)
+        home_team = {
+            'team_id': 'sandbox_home',
+            'team_name': 'Sandbox United',
+            'league': 'Test League'
+        }
+        
+        away_team = {
+            'team_id': 'sandbox_away',
+            'team_name': 'Test City FC',
+            'league': 'Test League'
+        }
+        
+        # Create sandbox player
+        sandbox_player = {
+            'user_id': player_user.id,
+            'player_name': f"{player_user.name}'s Player",
+            'position': 'ST',
+            'pace': 82,
+            'shooting': 85,
+            'passing': 78,
+            'dribbling': 83,
+            'defending': 45,
+            'physical': 79,
+            'overall_rating': 80,
+            'form': 85,
+            'team_id': 'sandbox_home'
+        }
         
         home_score = 0
         away_score = 0
-        num_events = 3
         
+        # Opening embed
         embed = discord.Embed(
-            title="🟢 SANDBOX MATCH STARTING!",
-            description=f"## {home_team['name']} 🆚 {away_team['name']}\n\n**Interactive Test Match**",
-            color=discord.Color.green()
+            title="🧪 SANDBOX TEST MATCH",
+            description=f"## {home_team['team_name']} 🆚 {away_team['team_name']}\n\n"
+                       f"**Interactive Test** - Real match engine logic\n"
+                       f"No database changes will be made!",
+            color=discord.Color.blue()
         )
-        embed.add_field(name="🏠 Home", value=f"**{home_team['name']}**\nOVR: {home_team['overall']}", inline=True)
-        embed.add_field(name="✈️ Away", value=f"**{away_team['name']}**\nOVR: {away_team['overall']}", inline=True)
-        embed.set_footer(text="⚡ Sandbox - No database changes | 20s decision time")
-        
+        embed.add_field(
+            name="🎮 Test Player",
+            value=f"**{sandbox_player['player_name']}**\n"
+                  f"{sandbox_player['position']} | OVR {sandbox_player['overall_rating']}",
+            inline=False
+        )
         await channel.send(embed=embed)
         await asyncio.sleep(3)
         
-        possible_minutes = [15, 35, 67]
+        # Store goal actions for highlights
+        goal_actions = []
         
-        for minute in possible_minutes:
+        # Run 3 test moments using REAL engine logic
+        minutes = [15, 45, 78]
+        
+        for minute in minutes:
+            # Progress embed
             embed = discord.Embed(
-                title=f"⚡ MOMENT {possible_minutes.index(minute)+1}/{num_events} — {minute}'",
-                description=f"## {home_team['name']} {home_score} - {away_score} {away_team['name']}",
+                title=f"⚡ MOMENT {minutes.index(minute)+1}/3 — {minute}'",
+                description=f"## {home_team['team_name']} {home_score} - {away_score} {away_team['team_name']}",
                 color=discord.Color.blue()
             )
             await channel.send(embed=embed)
-            await asyncio.sleep(2)
+            await asyncio.sleep(1)
             
-            attacking_team = random.choice([home_team, away_team])
-            is_home = attacking_team == home_team
+            # Use ACTUAL engine methods
+            adjusted_stats = engine.apply_form_to_stats(sandbox_player)
+            scenario_type, defender_positions, scenario_description = engine.get_position_scenario(
+                sandbox_player['position']
+            )
+            available_actions = engine.get_actions_for_scenario(
+                sandbox_player['position'], 
+                scenario_type
+            )
             
-            sandbox_player = {
-                'user_id': player_user.id,
-                'player_name': f"{player_user.name}'s Player",
-                'position': random.choice(['ST', 'W', 'CM', 'CB']),
-                'pace': 78,
-                'shooting': 82,
-                'passing': 75,
-                'dribbling': 80,
-                'defending': 70,
-                'physical': 79,
-                'form': 0.85,
-                'overall_rating': 78
-            }
-            
-            defending_team = away_team if is_home else home_team
+            # Create NPC defender
             defender = {
-                'player_name': f"{defending_team['name']} Defender",
-                'position': random.choice(['CB', 'FB', 'CDM']),
-                'pace': 76,
+                'player_name': f'{away_team["team_name"]} Defender',
+                'position': random.choice(defender_positions),
+                'pace': 75,
                 'shooting': 65,
-                'passing': 72,
+                'passing': 70,
                 'dribbling': 68,
-                'defending': 81,
-                'physical': 80
+                'defending': 80,
+                'physical': 78
             }
             
-            moment_embed = discord.Embed(
+            scenario_text = scenario_description.format(
+                defender=f"**{defender['player_name']}** ({defender['position']})"
+            )
+            
+            # Create interactive moment using REAL engine display
+            embed = discord.Embed(
                 title=f"🎯 {player_user.display_name}'S MOMENT!",
-                description=f"**{sandbox_player['player_name']}** ({sandbox_player['position']})\n"
-                           f"vs **{defender['player_name']}** ({defender['position']})\n\n"
-                           f"Space to shoot! {defending_team['name']}'s defense closing in...",
+                description=f"## {sandbox_player['player_name']} ({sandbox_player['position']})\n"
+                           f"**{minute}'** | Form: 🔥 Hot\n\n{scenario_text}",
                 color=discord.Color.gold()
             )
-            moment_embed.set_footer(text="⏱️ Choose your action (20 seconds)")
             
-            actions = ['shoot', 'pass', 'dribble']
-            if sandbox_player['position'] == 'CB':
-                actions = ['tackle', 'clearance', 'pass']
+            # Calculate REAL action chances using engine's system
+            actions_data = []
+            for action in available_actions:
+                att_p, att_s, def_p, def_s = engine.get_action_stats(action)
+                player_weighted = engine.calculate_weighted_stat(adjusted_stats, att_p, att_s)
+                player_pos_bonus = engine.get_position_bonus(sandbox_player['position'], action)
+                player_effective = player_weighted + player_pos_bonus
+                
+                defender_weighted = engine.calculate_weighted_stat(defender, def_p, def_s)
+                defender_pos_bonus = engine.get_position_bonus(defender['position'], action)
+                defender_effective = defender_weighted + defender_pos_bonus
+                
+                chance = engine.calculate_d20_success_probability(player_effective, defender_effective)
+                chance = min(90, chance + 3)  # Home advantage
+                
+                actions_data.append({
+                    'action': action,
+                    'chance': int(chance),
+                    'player_effective': player_effective,
+                    'defender_effective': defender_effective
+                })
             
-            view = TestActionView(actions, player_user.id, timeout=20)
-            msg = await channel.send(f"📢 {player_user.mention}", embed=moment_embed, view=view)
+            # Sort and highlight recommended (just like real engine)
+            actions_data.sort(key=lambda x: x['chance'], reverse=True)
+            recommended_action = actions_data[0]['action']
+            
+            actions_text = ""
+            for data in actions_data:
+                action = data['action']
+                chance = data['chance']
+                
+                if chance >= 65:
+                    emoji = "🟢"
+                elif chance >= 50:
+                    emoji = "🟡"
+                else:
+                    emoji = "🔴"
+                
+                if action == recommended_action:
+                    emoji = "⭐" + emoji
+                
+                actions_text += f"{emoji} **{action.replace('_', ' ').title()}** — **{chance}%**\n"
+            
+            embed.add_field(name="⚡ CHOOSE YOUR ACTION", value=actions_text, inline=False)
+            embed.set_footer(text="⭐ = Recommended | 🎲 = Die roll after | ⏱️ 20s")
+            
+            # Show buttons
+            from utils.match_engine import EnhancedActionView
+            view = EnhancedActionView(available_actions, player_user.id, timeout=20)
+            
+            msg = await channel.send(f"📢 {player_user.mention}", embed=embed, view=view)
             await view.wait()
             
-            action = view.chosen_action or random.choice(actions)
+            action = view.chosen_action or recommended_action
             if not view.chosen_action:
                 await channel.send(f"⏰ Auto-selected: **{action.upper()}**")
             
-            result = self._execute_sandbox_action(sandbox_player, defender, action)
+            # Execute using REAL engine logic (simplified, no DB)
+            att_p, att_s, def_p, def_s = engine.get_action_stats(action)
+            player_stat = engine.calculate_weighted_stat(adjusted_stats, att_p, att_s)
+            position_bonus = engine.get_position_bonus(sandbox_player['position'], action)
             
+            player_roll = random.randint(1, 20)
+            player_total = player_stat + player_roll + position_bonus + 3
+            
+            defender_stat = engine.calculate_weighted_stat(defender, def_p, def_s)
+            defender_roll = random.randint(1, 20)
+            defender_total = defender_stat + defender_roll
+            
+            success = player_total > defender_total
+            
+            # Result display WITH VISUALIZATION
             result_embed = discord.Embed(
-                title=f"{'✅ SUCCESS!' if result['success'] else '❌ FAILED!'}",
-                description=f"{action.replace('_', ' ').upper()}\n\n"
-                           f"You: {result['your_total']} vs Defender: {result['their_total']}",
-                color=discord.Color.green() if result['success'] else discord.Color.red()
+                title=f"🎲 {action.replace('_', ' ').upper()}",
+                color=discord.Color.green() if success else discord.Color.red()
             )
             
-            if result['goal']:
-                result_embed.title = "⚽ GOAL!"
+            result_embed.add_field(
+                name="⚔️ Duel",
+                value=f"**YOU**: {player_stat} + 🎲{player_roll} +{position_bonus} = **{player_total}**\n"
+                      f"**THEM**: {defender_stat} + 🎲{defender_roll} = **{defender_total}**\n\n"
+                      f"{'✅ **YOU WIN**' if success else '❌ **DEFENDER WINS**'}",
+                inline=False
+            )
+            
+            is_goal = False
+            if action in ['shoot', 'header'] and success and player_roll >= 15:
+                is_goal = True
+                home_score += 1
+                result_embed.add_field(name="⚽ GOAL!", value=f"**{sandbox_player['player_name']}** scores!", inline=False)
                 result_embed.color = discord.Color.gold()
-                result_embed.description = f"**{sandbox_player['player_name']}** SCORES!\n\n{result['your_total']} vs {result['their_total']}"
-                if is_home:
-                    home_score += 1
-                else:
-                    away_score += 1
+                
+                # Store goal for highlights
+                goal_actions.append({
+                    'action': action,
+                    'player': sandbox_player,
+                    'defender': defender,
+                    'minute': minute,
+                    'start_pos': (random.randint(300, 500), random.randint(200, 400)),
+                    'end_pos': (600, 300)
+                })
+            elif success:
+                result_embed.add_field(name="✅ SUCCESS!", value=f"Great {action}!", inline=False)
+            else:
+                result_embed.add_field(name="❌ FAILED!", value="Unsuccessful!", inline=False)
             
             await channel.send(embed=result_embed)
+            
+            # ✅ ADD STATIC VISUALIZATION
+            try:
+                from match_visualizer import generate_action_visualization
+                
+                viz = await generate_action_visualization(
+                    action=action,
+                    player=sandbox_player,
+                    defender=defender,
+                    is_home=True,
+                    success=success,
+                    is_goal=is_goal,
+                    animated=False  # Static PNG during match
+                )
+                
+                await channel.send(file=discord.File(fp=viz, filename="action.png"))
+            except Exception as e:
+                print(f"⚠️ Visualization error: {e}")
+            
             await asyncio.sleep(2)
         
+        # Final score
         final_embed = discord.Embed(
-            title="🏁 FULL TIME!",
-            description=f"## {home_team['name']} {home_score} - {away_score} {away_team['name']}",
+            title="🏁 TEST COMPLETE!",
+            description=f"## {home_team['team_name']} {home_score} - {away_score} {away_team['team_name']}",
             color=discord.Color.gold()
         )
         final_embed.add_field(
-            name="✅ Test Complete",
-            value="✓ No database changes\n✓ No data persisted\n✓ Pure sandbox simulation",
+            name="✅ Sandbox Test Results",
+            value="✓ Used real match engine logic\n"
+                  "✓ Real stat calculations\n"
+                  "✓ Real scenario system\n"
+                  "✓ Real D20 mechanics\n"
+                  "✓ No database changes",
             inline=False
         )
-        final_embed.set_footer(text="Channel will delete in 5 seconds...")
         await channel.send(embed=final_embed)
-    
-    def _execute_sandbox_action(self, player, defender, action):
-        """Execute sandbox action without any database interaction"""
-        import random
         
-        att_p, att_s, def_p, def_s = self._get_action_stats_sandbox(action)
-        
-        player_stat = int((player[att_p] * 0.7) + (player[att_s] * 0.3))
-        defender_stat = int((defender[def_p] * 0.7) + (defender[def_s] * 0.3))
-        
-        player_roll = random.randint(1, 20)
-        defender_roll = random.randint(1, 20)
-        
-        player_total = player_stat + player_roll
-        defender_total = defender_stat + defender_roll
-        
-        success = player_total > defender_total
-        is_goal = False
-        if action in ['shoot', 'header'] and success and player_roll >= 15:
-            is_goal = True
-        
-        return {
-            'success': success,
-            'goal': is_goal,
-            'your_total': player_total,
-            'their_total': defender_total,
-            'roll': player_roll
-        }
-    
-    def _get_action_stats_sandbox(self, action):
-        """Get stat config for sandbox action"""
-        configs = {
-            'shoot': ('shooting', 'physical', 'defending', 'physical'),
-            'pass': ('passing', 'dribbling', 'pace', 'defending'),
-            'dribble': ('dribbling', 'pace', 'defending', 'pace'),
-            'tackle': ('defending', 'physical', 'dribbling', 'physical'),
-            'clearance': ('defending', 'physical', 'shooting', 'pace'),
-            'header': ('physical', 'shooting', 'physical', 'defending'),
-        }
-        return configs.get(action, ('pace', 'passing', 'defending', 'pace'))
-    
-    def _create_sandbox_team(self, team_name: str, league: str) -> dict:
-        """Create a sandbox team with random players for testing"""
-        import random
-        
-        positions = ['GK', 'CB', 'CB', 'LB', 'RB', 'CM', 'CM', 'CAM', 'LW', 'RW', 'ST']
-        
-        players = []
-        for i, pos in enumerate(positions):
-            base_rating = random.randint(72, 87) if league == "Premier League" else random.randint(68, 82)
+        # ✅ GENERATE ANIMATED HIGHLIGHTS
+        if goal_actions:
+            await channel.send("🎬 **Generating animated highlights...**")
             
-            player = {
-                'id': f'sandbox_{i}',
-                'name': f'Player {i+1}',
-                'position': pos,
-                'overall_rating': base_rating,
-                'pace': base_rating + random.randint(-3, 3),
-                'shooting': base_rating + random.randint(-3, 3),
-                'passing': base_rating + random.randint(-3, 3),
-                'dribbling': base_rating + random.randint(-3, 3),
-                'defending': base_rating + random.randint(-3, 3),
-                'physical': base_rating + random.randint(-3, 3),
-                'form': random.randint(6, 10) / 10,
-                'fitness': random.randint(85, 100),
-            }
-            players.append(player)
+            try:
+                from match_visualizer import MatchVisualizer
+                from PIL import Image
+                import io
+                
+                all_frames = []
+                
+                for goal_action in goal_actions:
+                    # Create 10 animated frames per goal
+                    frames = await MatchVisualizer.create_action_animation(
+                        action=goal_action['action'],
+                        player_name=goal_action['player']['player_name'],
+                        player_position=goal_action['player']['position'],
+                        defender_name=goal_action['defender']['player_name'] if goal_action['defender'] else None,
+                        start_pos=goal_action['start_pos'],
+                        end_pos=goal_action['end_pos'],
+                        is_home=True,
+                        success=True,
+                        is_goal=True,
+                        frames=10
+                    )
+                    all_frames.extend(frames)
+                
+                # Resize and save as GIF
+                resized_frames = []
+                for frame in all_frames:
+                    new_width = int(frame.width * 0.7)
+                    new_height = int(frame.height * 0.7)
+                    resized = frame.resize((new_width, new_height), Image.Resampling.LANCZOS)
+                    resized_frames.append(resized)
+                
+                buffer = io.BytesIO()
+                resized_frames[0].save(
+                    buffer,
+                    format='GIF',
+                    save_all=True,
+                    append_images=resized_frames[1:],
+                    duration=70,
+                    loop=0,
+                    optimize=True,
+                    quality=85
+                )
+                buffer.seek(0)
+                
+                await channel.send(
+                    content=f"⚽ **Match Highlights!** ({len(goal_actions)} goal{'s' if len(goal_actions) != 1 else ''})",
+                    file=discord.File(fp=buffer, filename='sandbox_highlights.gif')
+                )
+                
+            except Exception as e:
+                await channel.send(f"⚠️ Could not generate highlights: {e}")
+                import traceback
+                traceback.print_exc()
+        else:
+            await channel.send("ℹ️ No goals to show in highlights!")
         
-        team_overall = sum(p['overall_rating'] for p in players) / len(players)
-        
-        return {
-            'id': f'sandbox_{team_name.lower().replace(" ", "_")}',
-            'name': team_name,
-            'league': league,
-            'overall': round(team_overall, 1),
-            'players': players,
-            'formation': '4-3-3',
-            'style': random.choice(['Attacking', 'Balanced', 'Defensive']),
-            'home_advantage': True,
-        }
-    
+        await asyncio.sleep(5)
+        final_embed.set_footer(text="Channel deletes in 25 seconds...")
+        await channel.send("⏱️ Channel deletes in 25 seconds...")
+
     async def _restart(self, interaction: discord.Interaction):
         """Restart the bot"""
         await interaction.response.send_message("🔄 Restarting bot...", ephemeral=True)
         await self.bot.close()
 
-    async def _test_training(self, interaction: discord.Interaction):  # ← ADD HERE!
+    async def _test_training(self, interaction: discord.Interaction):
         """Test training system in sandbox mode (no DB changes)"""
         await interaction.response.defer()
         
@@ -1117,44 +1234,6 @@ class ConfirmEuropeanWipeView(discord.ui.View):
         self.confirmed = False
         self.stop()
         await interaction.response.defer()
-
-
-class TestActionView(discord.ui.View):
-    def __init__(self, actions, user_id, timeout=20):
-        super().__init__(timeout=timeout)
-        self.chosen_action = None
-        self.owner_user_id = user_id
-        
-        emojis = {
-            'shoot': '🎯', 'pass': '🎪', 'dribble': '🪄', 'tackle': '🛡️', 
-            'clearance': '🚀', 'header': '🎯'
-        }
-        
-        for action in actions:
-            button = discord.ui.Button(
-                label=action.replace('_', ' ').title(),
-                emoji=emojis.get(action, '⚽'),
-                style=discord.ButtonStyle.primary
-            )
-            button.callback = self._make_callback(action)
-            self.add_item(button)
-    
-    def _make_callback(self, action):
-        async def callback(interaction: discord.Interaction):
-            if interaction.user.id != self.owner_user_id:
-                await interaction.response.send_message("❌ Not your moment!", ephemeral=True)
-                return
-            await interaction.response.defer()
-            self.chosen_action = action
-            for item in self.children:
-                item.disabled = True
-            await interaction.edit_original_response(view=self)
-            self.stop()
-        return callback
-    
-    async def on_timeout(self):
-        for item in self.children:
-            item.disabled = True
 
 
 async def setup(bot):
