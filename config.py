@@ -31,7 +31,7 @@ STREAK_BONUS_THRESHOLD = 7
 STREAK_BONUS_AMOUNT = 1
 
 # Training Configuration
-TRAINING_COOLDOWN_HOURS = 24
+TRAINING_COOLDOWN_HOURS = 23.75  # 23 hours 45 minutes (prevents daily drift)
 
 # Transfer Configuration
 TRANSFER_WINDOW_WEEKS = [15, 16, 17, 30, 31, 32]
