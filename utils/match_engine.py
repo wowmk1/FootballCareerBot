@@ -2139,7 +2139,11 @@ class MatchEngine:
                 'player_shoot_stat': player_shoot_stat
             })
 
-        actions_data.sort(key=lambda x: x.get('combined_chance', x['chance']), reverse=True)
+        # ✅ FIXED: Safe sorting that handles None values
+        actions_data.sort(
+            key=lambda x: x.get('combined_chance') or x.get('chance') or 0, 
+            reverse=True
+        )
         recommended_action = actions_data[0]['action']
 
         actions_text = ""
