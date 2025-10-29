@@ -47,6 +47,7 @@ class AdminCommands(commands.Cog):
         app_commands.Choice(name="🗑️ Wipe & Restart European", value="wipe_european"),
         app_commands.Choice(name="🔍 Diagnose NPC Stats", value="diagnose_npcs"),
         app_commands.Choice(name="🎮 Test Match Engine", value="test_match_engine"),
+        app_commands.Choice(name="🔄 Recalculate Tables", value="recalculate_tables"),
         app_commands.Choice(name="🔄 Restart Bot", value="restart"),
         app_commands.Choice(name="🧪 Test Training System", value="test_training"),
     ])
@@ -107,6 +108,8 @@ class AdminCommands(commands.Cog):
             await self._restart(interaction)
         elif action == "test_training":
             await self._test_training(interaction)
+        elif action == "recalculate_tables":  # ← ADD THIS
+            await self._recalculate_tables(interaction)
     
     async def _advance_week(self, interaction: discord.Interaction):
         """Advance to the next week"""
@@ -297,6 +300,108 @@ class AdminCommands(commands.Cog):
         total_npcs = sum(t['players'] for t in teams)
         embed.set_footer(text=f"Total NPC players: {total_npcs}")
         
+        await interaction.followup.send(embed=embed)
+
+    async def _recalculate_tables(self, interaction: discord.Interaction):
+        """Recalculate all team statistics from played fixtures"""
+    
+        await interaction.response.defer()
+    
+        async with db.pool.acquire() as conn:
+            # Reset all team stats
+            await conn.execute("""
+                UPDATE teams SET 
+                    played = 0, won = 0, drawn = 0, lost = 0,
+                    goals_for = 0, goals_against = 0, points = 0
+            """)
+        
+            # Get all played fixtures
+            fixtures = await conn.fetch("""
+                SELECT fixture_id, home_team_id, away_team_id, home_score, away_score
+                FROM fixtures 
+                WHERE played = true 
+                ORDER BY week_number, fixture_id
+            """)
+        
+            # Recalculate for each fixture
+            for fixture in fixtures:
+                # Home team stats
+                if fixture['home_score'] > fixture['away_score']:
+                    h_won, h_drawn, h_lost, h_points = 1, 0, 0, 3
+                elif fixture['home_score'] == fixture['away_score']:
+                    h_won, h_drawn, h_lost, h_points = 0, 1, 0, 1
+                else:
+                    h_won, h_drawn, h_lost, h_points = 0, 0, 1, 0
+            
+                await conn.execute("""
+                    UPDATE teams SET
+                        played = played + 1,
+                        won = won + $1,
+                        drawn = drawn + $2,
+                        lost = lost + $3,
+                        goals_for = goals_for + $4,
+                        goals_against = goals_against + $5,
+                        points = points + $6
+                    WHERE team_id = $7
+                """, h_won, h_drawn, h_lost, fixture['home_score'], 
+                     fixture['away_score'], h_points, fixture['home_team_id'])
+            
+                # Away team stats
+                if fixture['away_score'] > fixture['home_score']:
+                    a_won, a_drawn, a_lost, a_points = 1, 0, 0, 3
+                elif fixture['away_score'] == fixture['home_score']:
+                    a_won, a_drawn, a_lost, a_points = 0, 1, 0, 1
+                else:
+                    a_won, a_drawn, a_lost, a_points = 0, 0, 1, 0
+            
+                await conn.execute("""
+                    UPDATE teams SET
+                        played = played + 1,
+                        won = won + $1,
+                        drawn = drawn + $2,
+                        lost = lost + $3,
+                        goals_for = goals_for + $4,
+                        goals_against = goals_against + $5,
+                        points = points + $6
+                    WHERE team_id = $7
+                """, a_won, a_drawn, a_lost, fixture['away_score'], 
+                     fixture['home_score'], a_points, fixture['away_team_id'])
+        
+            # Get summary
+            teams = await conn.fetch("""
+                SELECT team_name, league, played, points 
+                FROM teams 
+                ORDER BY league, points DESC, (goals_for - goals_against) DESC
+            """)
+    
+        # Build summary by league
+        pl_teams = [t for t in teams if t['league'] == 'Premier League']
+        champ_teams = [t for t in teams if t['league'] == 'Championship']
+        l1_teams = [t for t in teams if t['league'] == 'League One']
+    
+        embed = discord.Embed(
+            title="✅ League Tables Recalculated",
+            description=f"Recalculated stats for **{len(fixtures)} fixtures**",
+            color=discord.Color.green()
+        )
+    
+        if pl_teams:
+            top5 = "\n".join([f"{i+1}. {t['team_name']}: {t['played']}P, {t['points']}pts" 
+                             for i, t in enumerate(pl_teams[:5])])
+            embed.add_field(name="⚽ Premier League (Top 5)", value=top5, inline=False)
+    
+        if champ_teams:
+            top5 = "\n".join([f"{i+1}. {t['team_name']}: {t['played']}P, {t['points']}pts" 
+                             for i, t in enumerate(champ_teams[:5])])
+            embed.add_field(name="⚽ Championship (Top 5)", value=top5, inline=False)
+    
+        if l1_teams:
+            top3 = "\n".join([f"{i+1}. {t['team_name']}: {t['played']}P, {t['points']}pts" 
+                             for i, t in enumerate(l1_teams[:3])])
+            embed.add_field(name="⚽ League One (Top 3)", value=top3, inline=False)
+    
+        embed.set_footer(text="Use /league table to view full standings")
+    
         await interaction.followup.send(embed=embed)
     
     async def _transfer_test(self, interaction: discord.Interaction, user: discord.User):
