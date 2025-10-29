@@ -13,6 +13,7 @@ ENHANCED MATCH ENGINE - COMPLETE VERSION WITH ALL FIXES + SKIP/AFK BUTTONS
 ✅ NEW: Skip Turn button (no tracking)
 ✅ NEW: Mark AFK button (appears after timeout)
 ✅ NEW: Auto-play for AFK players
+✅ FIXED: Skip vs Timeout distinction (no false AFK marking)
 """
 import discord
 from discord.ext import commands
@@ -1709,7 +1710,7 @@ class MatchEngine:
     async def handle_player_moment(self, channel, player, participant, minute, attacking_team, defending_team,
                                    is_home, match_id, is_european=False):
         """
-        ✅ UPDATED WITH SKIP & AFK SYSTEM
+        ✅ UPDATED WITH SKIP & AFK SYSTEM + FIXED SKIP VS TIMEOUT TRACKING
         """
         member = channel.guild.get_member(player['user_id'])
         if not member:
@@ -1939,10 +1940,15 @@ class MatchEngine:
 
         action = view.chosen_action if view.chosen_action else random.choice(available_actions)
         
-        # ✅ NEW: Track if they timed out
+        # ✅ FIXED: Distinguish between skip and timeout
         if not view.chosen_action:
-            self.player_timeouts[match_id].add(player['user_id'])
-            await channel.send(f"⏰ {member.mention} **AUTO-SELECTED**: {action.upper()}")
+            if view.skipped:
+                # Player clicked skip button - don't penalize them
+                await channel.send(f"⏭️ {member.mention} **SKIPPED** - Selected: {action.upper()}")
+            else:
+                # Natural timeout - mark for AFK button next time
+                self.player_timeouts[match_id].add(player['user_id'])
+                await channel.send(f"⏰ {member.mention} **TIMED OUT** - Auto-selected: {action.upper()}")
 
         result = await self.execute_action_with_duel(channel, player, adjusted_stats, defender, action, minute,
                                                      match_id, member, attacking_team, defending_team, is_european,
@@ -3010,7 +3016,7 @@ class MatchEngine:
 
 
 # ═══════════════════════════════════════════════════════════════
-# ✅ NEW: BUTTON CLASSES WITH SKIP & AFK FUNCTIONALITY
+# ✅ BUTTON CLASSES WITH SKIP & AFK FUNCTIONALITY (FIXED)
 # ═══════════════════════════════════════════════════════════════
 
 class EnhancedActionView(discord.ui.View):
