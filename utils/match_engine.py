@@ -1714,6 +1714,7 @@ class MatchEngine:
                                    is_home, match_id, is_european=False):
         """
         ✅ UPDATED WITH SKIP & AFK SYSTEM + FIXED SKIP VS TIMEOUT TRACKING
+        ✅ UPDATED: Shows 2-stage chances for shoot/header actions
         """
         member = channel.guild.get_member(player['user_id'])
         if not member:
@@ -1724,14 +1725,14 @@ class MatchEngine:
             scenario_type, defender_positions, scenario_description = self.get_position_scenario(player['position'])
             available_actions = self.get_actions_for_scenario(player['position'], scenario_type)
             action = available_actions[0]  # Use best action
-            
+        
             await channel.send(
                 f"💤 **{player['player_name']}** (AFK) - Auto-playing: **{action.upper()}**"
             )
-            
+        
             # Execute action immediately
             adjusted_stats = self.apply_form_to_stats(player)
-            
+        
             async with db.pool.acquire() as conn:
                 position_filter = ', '.join([f"'{pos}'" for pos in defender_positions])
                 if is_european:
@@ -1753,7 +1754,7 @@ class MatchEngine:
                         ORDER BY RANDOM() LIMIT 1
                     """, defending_team['team_id'])
                 defender = dict(result) if result else None
-            
+        
             result = await self.execute_action_with_duel(
                 channel, player, adjusted_stats, defender, action, minute,
                 match_id, member, attacking_team, defending_team, is_european, is_home
@@ -1766,7 +1767,7 @@ class MatchEngine:
         # ✅ NEW: Check if this player has timed out before
         if match_id not in self.player_timeouts:
             self.player_timeouts[match_id] = set()
-        
+    
         has_timed_out = player['user_id'] in self.player_timeouts[match_id]
 
         adjusted_stats = self.apply_form_to_stats(player)
@@ -1832,7 +1833,7 @@ class MatchEngine:
             description=f"## {player['player_name']} ({player['position']})\n**{minute}'** | Form: {form_desc}\n\n{scenario_text}",
             color=discord.Color.gold()
         )
-        
+    
         # ✅ NEW: Add timeout warning if they've been AFK before
         if has_timed_out:
             embed.description += "\n\n⚠️ _This player timed out last turn_"
@@ -1846,6 +1847,30 @@ class MatchEngine:
             if crests_buffer:
                 crests_file = discord.File(fp=crests_buffer, filename=f"crests_{minute}.png")
                 embed.set_image(url=f"attachment://crests_{minute}.png")
+
+        embed.add_field(
+            name="📖 Quick Guide",
+            value="⭐🟢 = **Recommended/Good** (65%+) | 🟡 = **Fair** (50-64%) | 🔴 = **Risky** (<50%)\n"
+                  "📊 = Your stats vs opponent | ↪️ = What might happen next",
+            inline=False
+        )
+
+        # ✅ NEW: Get goalkeeper for 2-stage calculations
+        async with db.pool.acquire() as conn:
+            if is_european:
+                keeper = await conn.fetchrow("""
+                    SELECT * FROM npc_players
+                    WHERE team_id = $1 AND position = 'GK' AND retired = FALSE
+                    UNION ALL
+                    SELECT * FROM european_npc_players
+                    WHERE team_id = $1 AND position = 'GK' AND retired = FALSE LIMIT 1
+                """, defending_team['team_id'])
+            else:
+                keeper = await conn.fetchrow("""
+                    SELECT * FROM npc_players
+                    WHERE team_id = $1 AND position = 'GK' AND retired = FALSE LIMIT 1
+                """, defending_team['team_id'])
+            keeper = dict(keeper) if keeper else None
 
         actions_data = []
         for action in available_actions:
@@ -1869,33 +1894,64 @@ class MatchEngine:
                 home_bonus = self.get_home_advantage_bonus(is_home, player['position'])
                 chance = min(90, chance + home_bonus)
 
+            # ✅ NEW: Calculate 2-stage chances for shoot/header
+            keeper_chance = None
+            combined_chance = None
+            keeper_stat_val = None
+            keeper_effective = None
+            player_shoot_stat = None
+        
+            if action in ['shoot', 'header'] and defender and defender.get('position') != 'GK' and keeper:
+                # Stage 1: vs defender chance (already calculated above)
+                stage1_chance = chance
+            
+                # Stage 2: vs keeper chance
+                keeper_att_p, keeper_att_s, keeper_def_p, keeper_def_s = self.get_action_stats('save')
+                player_shoot_stat = self.calculate_weighted_stat(adjusted_stats, keeper_att_p, keeper_att_s)
+                keeper_stat_val = self.calculate_weighted_stat(keeper, keeper_def_p, keeper_def_s)
+                keeper_bonus_val = self.get_position_bonus('GK', 'save')
+                keeper_effective = keeper_stat_val + keeper_bonus_val + 5  # GK gets +5 bonus
+            
+                stage2_chance = self.calculate_d20_success_probability(player_shoot_stat, keeper_effective)
+            
+                # Combined probability (both must succeed)
+                combined_chance = int((stage1_chance / 100) * (stage2_chance / 100) * 100)
+                keeper_chance = int(stage2_chance)
+
             actions_data.append({
-                'action': action, 'chance': int(chance), 'player_stat': player_weighted,
-                'player_bonus': player_pos_bonus, 'player_effective': player_effective,
+                'action': action, 
+                'chance': int(chance), 
+                'keeper_chance': keeper_chance,
+                'combined_chance': combined_chance,
+                'player_stat': player_weighted,
+                'player_bonus': player_pos_bonus, 
+                'player_effective': player_effective,
                 'defender_stat': defender_weighted if defender else 0,
                 'defender_bonus': defender_pos_bonus if defender else 0,
                 'defender_effective': defender_effective if defender else 0,
-                'primary': att_p[:3].upper(), 'secondary': att_s[:3].upper()
+                'primary': att_p[:3].upper(), 
+                'secondary': att_s[:3].upper(),
+                'keeper_stat_val': keeper_stat_val,
+                'keeper_effective': keeper_effective,
+                'player_shoot_stat': player_shoot_stat
             })
 
-        actions_data.sort(key=lambda x: x['chance'], reverse=True)
+        actions_data.sort(key=lambda x: x.get('combined_chance', x['chance']), reverse=True)
         recommended_action = actions_data[0]['action']
-
-        embed.add_field(
-            name="📖 Quick Guide",
-            value="⭐🟢 = **Recommended/Good** (65%+) | 🟡 = **Fair** (50-64%) | 🔴 = **Risky** (<50%)\n"
-                  "📊 = Your stats vs opponent | ↪️ = What might happen next",
-            inline=False
-        )
 
         actions_text = ""
         for data in actions_data:
             action = data['action']
             chance = data['chance']
+            keeper_chance = data['keeper_chance']
+            combined_chance = data['combined_chance']
 
-            if chance >= 65:
+            # ✅ Use combined chance for difficulty rating if it's a 2-stage action
+            display_chance = combined_chance if combined_chance is not None else chance
+
+            if display_chance >= 65:
                 emoji, difficulty = "🟢", "GOOD"
-            elif chance >= 50:
+            elif display_chance >= 50:
                 emoji, difficulty = "🟡", "FAIR"
             else:
                 emoji, difficulty = "🔴", "RISKY"
@@ -1905,21 +1961,46 @@ class MatchEngine:
                 difficulty = "★ BEST"
 
             action_name = action.replace('_', ' ').title()
-            actions_text += f"{emoji} **{action_name}** — **{chance}%** `[{difficulty}]`\n   📊 "
-
-            if data['player_bonus'] > 0:
-                actions_text += f"{data['primary']}/{data['secondary']}: {data['player_stat']}+{data['player_bonus']}=**{data['player_effective']}**"
-            else:
-                actions_text += f"{data['primary']}/{data['secondary']}: **{data['player_effective']}**"
-
-            if defender and data['defender_effective'] > 0:
-                actions_text += f" vs "
+        
+            # ✅ NEW: Show 2-stage breakdown for shoot/header with full stats
+            if combined_chance is not None:
+                actions_text += f"{emoji} **{action_name}** — {chance}% vs {defender.get('position', 'DEF')} → {keeper_chance}% vs GK = **{combined_chance}% total** `[{difficulty}]`\n"
+            
+                # Stage 1: vs Defender
+                actions_text += f"   📊 Stage 1: {data['primary']}/{data['secondary']} "
+                if data['player_bonus'] > 0:
+                    actions_text += f"{data['player_stat']}+{data['player_bonus']}=**{data['player_effective']}**"
+                else:
+                    actions_text += f"**{data['player_effective']}**"
+                actions_text += f" vs {defender.get('position', 'DEF')} "
                 if data['defender_bonus'] > 0:
                     actions_text += f"{data['defender_stat']}+{data['defender_bonus']}=**{data['defender_effective']}**"
                 else:
                     actions_text += f"**{data['defender_effective']}**"
+                actions_text += "\n"
             
-            actions_text += f"\n   ↪️ {self.get_followup_description(action)}\n\n"
+                # Stage 2: vs Goalkeeper
+                keeper_att_p, keeper_att_s = self.get_action_stats('save')[:2]
+                actions_text += f"   📊 Stage 2: {keeper_att_p[:3].upper()}/{keeper_att_s[:3].upper()} **{data['player_shoot_stat']}** vs GK **{data['keeper_effective']}** (+5 save bonus)\n"
+                actions_text += f"   ↪️ Two-stage: Beat defender, then beat keeper\n\n"
+            else:
+                # Single-stage action (normal display)
+                actions_text += f"{emoji} **{action_name}** — **{chance}%** `[{difficulty}]`\n"
+                actions_text += f"   📊 "
+
+                if data['player_bonus'] > 0:
+                    actions_text += f"{data['primary']}/{data['secondary']}: {data['player_stat']}+{data['player_bonus']}=**{data['player_effective']}**"
+                else:
+                    actions_text += f"{data['primary']}/{data['secondary']}: **{data['player_effective']}**"
+
+                if defender and data['defender_effective'] > 0:
+                    actions_text += f" vs "
+                    if data['defender_bonus'] > 0:
+                        actions_text += f"{data['defender_stat']}+{data['defender_bonus']}=**{data['defender_effective']}**"
+                    else:
+                        actions_text += f"**{data['defender_effective']}**"
+            
+                actions_text += f"\n   ↪️ {self.get_followup_description(action)}\n\n"
 
         embed.add_field(name="⚡ CHOOSE YOUR ACTION", value=actions_text, inline=False)
 
@@ -1942,7 +2023,7 @@ class MatchEngine:
         await view.wait()
 
         action = view.chosen_action if view.chosen_action else random.choice(available_actions)
-        
+    
         # ✅ FIXED: Distinguish between skip and timeout
         if not view.chosen_action:
             if view.skipped:
@@ -1984,6 +2065,12 @@ class MatchEngine:
             defender_total = defender_stat_value + defender_roll + defender_position_bonus
 
         success = player_total > defender_total if defender_total > 0 else player_roll_with_bonus >= 10
+        
+        # ✅ NEW: Check if this is a shoot/header vs non-GK (needs 2-stage system)
+        is_two_stage_shot = (action in ['shoot', 'header'] and 
+                             success and  # Only if we beat the defender
+                             defender and 
+                             defender.get('position') != 'GK')
 
         team_side = 'home' if is_home else 'away'
         self.update_match_stats(match_id, team_side, action, success)
@@ -2004,6 +2091,7 @@ class MatchEngine:
             color=discord.Color.green() if success else discord.Color.red()
         )
 
+        # ✅ Show stage 1 results (vs defender)
         if defender and defender_total > 0:
             duel_text = f"**YOU**\n"
             duel_text += f"{att_p.upper()}/{att_s.upper()}: **{player_stat}**\n"
@@ -2025,10 +2113,12 @@ class MatchEngine:
 
             if success:
                 duel_text += f"✅ **YOU WIN**"
+                if is_two_stage_shot:
+                    duel_text += f"\n⚽ Now facing the goalkeeper..."
             else:
                 duel_text += f"❌ **DEFENDER WINS**"
 
-            result_embed.add_field(name="⚔️ Duel", value=duel_text, inline=False)
+            result_embed.add_field(name="⚔️ Stage 1: vs Defender", value=duel_text, inline=False)
         else:
             result_embed.add_field(
                 name="🎲 Roll",
@@ -2036,6 +2126,86 @@ class MatchEngine:
                       f"{'✅ Success!' if success else '❌ Failed!'}",
                 inline=False
             )
+
+        # ✅ NEW: STAGE 2 - Automatic goalkeeper challenge if needed
+        keeper_save = False
+        keeper_roll = 0
+        keeper_total = 0
+        
+        if is_two_stage_shot:
+            await channel.send(embed=result_embed)
+            await asyncio.sleep(1)
+            
+            # Get the goalkeeper
+            async with db.pool.acquire() as conn:
+                if is_european:
+                    keeper = await conn.fetchrow("""
+                        SELECT * FROM npc_players
+                        WHERE team_id = $1 AND position = 'GK' AND retired = FALSE
+                        UNION ALL
+                        SELECT * FROM european_npc_players
+                        WHERE team_id = $1 AND position = 'GK' AND retired = FALSE LIMIT 1
+                    """, defending_team['team_id'])
+                else:
+                    keeper = await conn.fetchrow("""
+                        SELECT * FROM npc_players
+                        WHERE team_id = $1 AND position = 'GK' AND retired = FALSE LIMIT 1
+                    """, defending_team['team_id'])
+                keeper = dict(keeper) if keeper else None
+            
+            # Goalkeeper challenge
+            keeper_embed = discord.Embed(
+                title="🧤 GOALKEEPER CHALLENGE!",
+                description=f"**{player['player_name']}** through on goal!",
+                color=discord.Color.orange()
+            )
+            keeper_msg = await channel.send(embed=keeper_embed)
+            await asyncio.sleep(1.5)
+            
+            if keeper:
+                # Shoot stats: shooting + physical for attacker
+                # GK stats: defending + physical for keeper
+                keeper_att_p, keeper_att_s, keeper_def_p, keeper_def_s = self.get_action_stats('save')
+                
+                player_shoot_stat = self.calculate_weighted_stat(adjusted_stats, att_p, att_s)
+                player_shoot_roll = random.randint(1, 20)
+                player_shoot_total = player_shoot_stat + player_shoot_roll
+                
+                keeper_stat = self.calculate_weighted_stat(keeper, keeper_def_p, keeper_def_s)
+                keeper_bonus = self.get_position_bonus('GK', 'save')
+                keeper_roll = random.randint(1, 20)
+                keeper_total = keeper_stat + keeper_roll + keeper_bonus + 5  # GK gets +5 bonus
+                
+                keeper_save = keeper_total > player_shoot_total
+                
+                # Show stage 2 results
+                keeper_result_embed = discord.Embed(
+                    title="🥅 STAGE 2: vs GOALKEEPER",
+                    color=discord.Color.red() if keeper_save else discord.Color.green()
+                )
+                
+                keeper_duel_text = f"**YOU (SHOT)**\n"
+                keeper_duel_text += f"SHO/PHY: **{player_shoot_stat}**\n"
+                keeper_duel_text += f"🎲 **{player_shoot_roll}**\n"
+                keeper_duel_text += f"Total: **{player_shoot_total}**\n\n"
+                
+                keeper_duel_text += f"**{keeper['player_name']} (GK)**\n"
+                keeper_duel_text += f"DEF/PHY: **{keeper_stat}**\n"
+                keeper_duel_text += f"🎲 **{keeper_roll}** +{keeper_bonus} (GK) +5 (save bonus)\n"
+                keeper_duel_text += f"Total: **{keeper_total}**\n\n"
+                
+                if keeper_save:
+                    keeper_duel_text += "🧤 **KEEPER SAVES!**"
+                else:
+                    keeper_duel_text += "⚽ **GOAL!!!**"
+                
+                keeper_result_embed.add_field(name="⚔️ Shot vs Save", value=keeper_duel_text, inline=False)
+                
+                await keeper_msg.delete()
+                result_embed = keeper_result_embed
+            else:
+                # No keeper found (shouldn't happen, but fallback)
+                keeper_save = False
 
         is_goal = False
         scorer_name = None
@@ -2094,41 +2264,81 @@ class MatchEngine:
             if action in ['tackle', 'block']:
                 await self.give_yellow_card(player, match_id, channel, "reckless challenge")
 
+        # ✅ UPDATED: Goal logic now accounts for two-stage system
         if not is_goal and not critical_failure:
             if action in ['shoot', 'header'] and success:
-                if player_roll_with_bonus >= 18 or player_total >= defender_total + 10:
-                    goal_type = "header" if action == 'header' else "shot"
-                    result_embed.add_field(name="⚽ GOAL!",
-                                           value=f"**{player['player_name']}** scores from the {goal_type}!",
-                                           inline=False)
-                    is_goal = True
-                    scorer_name = player['player_name']
-                    rating_change = 1.2
+                # For two-stage shots, check if keeper saved it
+                if is_two_stage_shot:
+                    if not keeper_save:
+                        # Beat defender AND beat keeper = GOAL
+                        goal_type = "header" if action == 'header' else "shot"
+                        result_embed.add_field(name="⚽ GOAL!",
+                                               value=f"**{player['player_name']}** scores from the {goal_type}!",
+                                               inline=False)
+                        is_goal = True
+                        scorer_name = player['player_name']
+                        rating_change = 1.2
 
-                    async with db.pool.acquire() as conn:
-                        await conn.execute("""
-                            UPDATE match_participants
-                            SET goals_scored = goals_scored + 1
-                            WHERE match_id = $1 AND user_id = $2
-                        """, match_id, player['user_id'])
+                        async with db.pool.acquire() as conn:
+                            await conn.execute("""
+                                UPDATE match_participants
+                                SET goals_scored = goals_scored + 1
+                                WHERE match_id = $1 AND user_id = $2
+                            """, match_id, player['user_id'])
 
-                        await conn.execute(
-                            "UPDATE players SET season_goals = season_goals + 1, career_goals = career_goals + 1 WHERE user_id = $1",
-                            player['user_id']
-                        )
+                            await conn.execute(
+                                "UPDATE players SET season_goals = season_goals + 1, career_goals = career_goals + 1 WHERE user_id = $1",
+                                player['user_id']
+                            )
 
-                        goals_row = await conn.fetchrow(
-                            "SELECT goals_scored FROM match_participants WHERE match_id = $1 AND user_id = $2",
-                            match_id, player['user_id']
-                        )
-                        if goals_row and goals_row['goals_scored'] == 3:
-                            await self.send_hattrick_notification(player, attacking_team)
+                            goals_row = await conn.fetchrow(
+                                "SELECT goals_scored FROM match_participants WHERE match_id = $1 AND user_id = $2",
+                                match_id, player['user_id']
+                            )
+                            if goals_row and goals_row['goals_scored'] == 3:
+                                await self.send_hattrick_notification(player, attacking_team)
 
-                    from utils.form_morale_system import update_player_morale
-                    await update_player_morale(player['user_id'], 'goal')
+                        from utils.form_morale_system import update_player_morale
+                        await update_player_morale(player['user_id'], 'goal')
+                    else:
+                        # Beat defender but keeper saved
+                        result_embed.add_field(name="🧤 SAVED!", value="Keeper denies you!", inline=False)
+                        rating_change = 0.1  # Small bonus for getting shot on target
                 else:
-                    result_embed.add_field(name="🧤 SAVED!", value="Keeper saves it!", inline=False)
-                    rating_change = -0.1
+                    # Single-stage shot (already vs GK) - use original logic
+                    if player_roll_with_bonus >= 18 or player_total >= defender_total + 10:
+                        goal_type = "header" if action == 'header' else "shot"
+                        result_embed.add_field(name="⚽ GOAL!",
+                                               value=f"**{player['player_name']}** scores from the {goal_type}!",
+                                               inline=False)
+                        is_goal = True
+                        scorer_name = player['player_name']
+                        rating_change = 1.2
+
+                        async with db.pool.acquire() as conn:
+                            await conn.execute("""
+                                UPDATE match_participants
+                                SET goals_scored = goals_scored + 1
+                                WHERE match_id = $1 AND user_id = $2
+                            """, match_id, player['user_id'])
+
+                            await conn.execute(
+                                "UPDATE players SET season_goals = season_goals + 1, career_goals = career_goals + 1 WHERE user_id = $1",
+                                player['user_id']
+                            )
+
+                            goals_row = await conn.fetchrow(
+                                "SELECT goals_scored FROM match_participants WHERE match_id = $1 AND user_id = $2",
+                                match_id, player['user_id']
+                            )
+                            if goals_row and goals_row['goals_scored'] == 3:
+                                await self.send_hattrick_notification(player, attacking_team)
+
+                        from utils.form_morale_system import update_player_morale
+                        await update_player_morale(player['user_id'], 'goal')
+                    else:
+                        result_embed.add_field(name="🧤 SAVED!", value="Keeper saves it!", inline=False)
+                        rating_change = -0.1
 
             elif action in ['pass', 'through_ball', 'key_pass', 'cross'] and success:
                 assist_chance = {'pass': 0.35, 'through_ball': 0.40, 'key_pass': 0.45, 'cross': 0.40}
