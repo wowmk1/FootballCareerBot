@@ -552,6 +552,9 @@ class MatchEngine:
         if match_id not in self.match_stats:
             return
 
+        if team_side not in self.match_stats[match_id]:  # ⚡ ADD THIS CHECK
+            return
+
         stats = self.match_stats[match_id][team_side]
         stats['actions'] += 1
 
@@ -1977,7 +1980,7 @@ class MatchEngine:
         if defender:
             defender_stat_value = self.calculate_weighted_stat(defender, def_p, def_s)
             defender_roll = random.randint(1, 20)
-            defender_position_bonus = self.get_position_bonus(defender.get('position', 'CB'), action)
+            defender_position_bonus = self.get_position_bonus(defender.get('position', 'CB'), action) if defender else 0
             defender_total = defender_stat_value + defender_roll + defender_position_bonus
 
         success = player_total > defender_total if defender_total > 0 else player_roll_with_bonus >= 10
