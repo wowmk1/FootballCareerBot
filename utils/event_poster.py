@@ -366,6 +366,7 @@ async def post_match_result_to_channel(bot, guild, fixture, home_score, away_sco
             inline=True
         )
 
+        # ⬇️⬇️⬇️ START EDITING HERE (around line 368) ⬇️⬇️⬇️
         # Prepare files to send
         files_to_send = []
 
@@ -393,6 +394,7 @@ async def post_match_result_to_channel(bot, guild, fixture, home_score, away_sco
         else:
             await results_channel.send(embed=embed)
             print(f"  ✅ Posted match result to {guild.name}")
+        # ⬆️⬆️⬆️ STOP EDITING HERE (around line 391) ⬆️⬆️⬆️
 
     except Exception as e:
         print(f"  ❌ Error posting match result to {guild.name}: {e}")
