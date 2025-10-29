@@ -1105,12 +1105,12 @@ class MatchEngine:
     def get_followup_config(self, action, success):
         """Defines realistic follow-up chances after actions"""
         followups = {
-            'dribble_success': {'chance': 0.30, 'type': 'shooting_chance', 'desc': "Space created! Shooting opportunity..."},
-            'cut_inside_success': {'chance': 0.40, 'type': 'shooting_chance', 'desc': "Cut onto strong foot! Shot incoming..."},
-            'tackle_success': {'chance': 0.40, 'type': 'counter_attack', 'desc': "Ball won! Counter-attack developing..."},
-            'interception_success': {'chance': 0.40, 'type': 'counter_attack', 'desc': "Intercepted! Quick break on..."},
+            'dribble_success': {'chance': 0.25, 'type': 'shooting_chance', 'desc': "Space created! Shooting opportunity..."},
+            'cut_inside_success': {'chance': 0.30, 'type': 'shooting_chance', 'desc': "Cut onto strong foot! Shot incoming..."},
+            'tackle_success': {'chance': 0.30, 'type': 'counter_attack', 'desc': "Ball won! Counter-attack developing..."},
+            'interception_success': {'chance': 0.35, 'type': 'counter_attack', 'desc': "Intercepted! Quick break on..."},
             'hold_up_play_success': {'chance': 0.25, 'type': 'layoff_pass', 'desc': "Held up! Teammate making run..."},
-            'run_in_behind_success': {'chance': 0.60, 'type': '1v1_keeper', 'desc': "Through on goal! One-on-one!"},
+            'run_in_behind_success': {'chance': 0.55, 'type': '1v1_keeper', 'desc': "Through on goal! One-on-one!"},
             'block_success': {'chance': 0.20, 'type': 'loose_ball', 'desc': "Blocked! Ball ricochets loose..."},
             'save_success': {'chance': 0.25, 'type': 'distribution_counter', 'desc': "Great save! Launch counter?"},
             'header_success': {'chance': 0.15, 'type': 'loose_ball', 'desc': "Header! Ball drops loose..."},
@@ -2661,7 +2661,7 @@ class MatchEngine:
                         rating_change = -0.1
 
             elif action in ['pass', 'through_ball', 'key_pass', 'cross'] and success:
-                assist_chance = {'pass': 0.35, 'through_ball': 0.40, 'key_pass': 0.45, 'cross': 0.40}
+                assist_chance = {'pass': 0.20, 'through_ball': 0.30, 'key_pass': 0.40, 'cross': 0.25}
                 if random.random() < assist_chance.get(action, 0.35):
                     teammate_result = await self.handle_teammate_goal(channel, player, attacking_team, match_id,
                                                                       is_european)
