@@ -51,6 +51,7 @@ class AdminCommands(commands.Cog):
         app_commands.Choice(name="🔍 Debug Fixtures", value="debug_fixtures"),
         app_commands.Choice(name="🔄 Restart Bot", value="restart"),
         app_commands.Choice(name="🧪 Test Training System", value="test_training"),
+        app_commands.Choice(name="⚽ Simulate Week 5", value="simulate_week_5"),
     ])
     @app_commands.checks.has_permissions(administrator=True)
     async def adm(
@@ -113,6 +114,8 @@ class AdminCommands(commands.Cog):
             await self._recalculate_tables(interaction)
         elif action == "debug_fixtures":
             await self._debug_fixtures(interaction)
+        elif action == "simulate_week_5":
+            await self._simulate_week_5(interaction)
     
     async def _advance_week(self, interaction: discord.Interaction):
         """Advance to the next week"""
@@ -340,6 +343,31 @@ class AdminCommands(commands.Cog):
         embed.set_footer(text=f"Total NPC players: {total_npcs}")
         
         await interaction.followup.send(embed=embed)
+
+    async def _simulate_week_5(self, interaction: discord.Interaction):
+        """Simulate missing Week 5 fixtures"""
+        await interaction.response.defer()
+    
+        from utils.match_simulator import simulate_match
+    
+        async with db.pool.acquire() as conn:
+            week5_fixtures = await conn.fetch("""
+                SELECT * FROM fixtures WHERE week_number = 5 AND played = false
+            """)
+    
+        if not week5_fixtures:
+            await interaction.followup.send("❌ No unplayed Week 5 fixtures!")
+            return
+    
+        await interaction.followup.send(f"⏳ Simulating {len(week5_fixtures)} Week 5 fixtures...")
+    
+        for fixture in week5_fixtures:
+            await simulate_match(dict(fixture))
+    
+        await interaction.followup.send(
+            f"✅ **Simulated {len(week5_fixtures)} Week 5 fixtures!**\n\n"
+            f"Now run `/adm action:Recalculate Tables` to update standings!"
+        )
 
     async def _recalculate_tables(self, interaction: discord.Interaction):
         """Recalculate all team statistics from played fixtures"""
