@@ -865,7 +865,7 @@ class FootballBot(commands.Bot):
                     await channel.send(embed=embed)
                     logger.info(f"✅ Posted domestic window closed notification to {guild.name}")
         except Exception as e:
-            logger.warning(f"⚠️ Could not post domestic window closed notification: {e}")
+            logger.error(f"❌ Could not post domestic window closed notification: {e}", exc_info=True)
 
     # ============================================
     # SELF-HEALING BACKGROUND TASKS (FIXED)
