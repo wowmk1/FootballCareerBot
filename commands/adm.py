@@ -39,7 +39,7 @@ class AdminCommands(commands.Cog):
         app_commands.Choice(name="🗂️ Setup Channels", value="setup_channels"),
         app_commands.Choice(name="🎮 View Game State", value="game_state"),
         app_commands.Choice(name="🔧 Sync to This Server", value="sync_guild"),
-        app_commands.Choice(name="🔍 Debug Commands", value="debug_commands"),
+        #app_commands.Choice(name="🔍 Debug Commands", value="debug_commands"),
         app_commands.Choice(name="🔄 Rebuild All Commands", value="rebuild_commands"),
         app_commands.Choice(name="🔧 Fix MOTM Columns", value="fix_motm"),
         app_commands.Choice(name="🏆 Start European Now", value="start_european_now"),
@@ -91,8 +91,8 @@ class AdminCommands(commands.Cog):
         elif action == "sync_guild":
             await self._sync_guild(interaction)
         elif action == "debug_commands":
-            await self._debug_commands(interaction)
-        elif action == "rebuild_commands":
+            #await self._debug_commands(interaction)
+        #elif action == "rebuild_commands":
             await self._rebuild_commands(interaction)
         elif action == "fix_motm":
             await self._fix_motm(interaction)
