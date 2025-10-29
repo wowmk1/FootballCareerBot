@@ -1,5 +1,5 @@
 """
-ENHANCED MATCH ENGINE - COMPLETE VERSION WITH ALL FIXES + SKIP/AFK BUTTONS
+ENHANCED MATCH ENGINE - COMPLETE VERSION WITH ALL FIXES + SKIP/AFK BUTTONS + SHOT PLACEMENT
 ✅ Fix #1: Fair player distribution (13 moments each)
 ✅ Fix #2: Teammate scoring priority (75% user, position-weighted)
 ✅ Fix #3: High engagement (40-50 events, decision every 60-90s)
@@ -14,6 +14,9 @@ ENHANCED MATCH ENGINE - COMPLETE VERSION WITH ALL FIXES + SKIP/AFK BUTTONS
 ✅ NEW: Mark AFK button (appears after timeout)
 ✅ NEW: Auto-play for AFK players
 ✅ FIXED: Skip vs Timeout distinction (no false AFK marking)
+✅ NEW: Interactive Shot Placement System with 5 options
+✅ NEW: Beautiful goal visualization graphics
+✅ NEW: Risk/reward shooting mechanics
 """
 import discord
 from discord.ext import commands
@@ -24,6 +27,8 @@ import random
 import config
 import logging
 from typing import Dict
+from io import BytesIO
+from PIL import Image, ImageDraw, ImageFont
 
 logger = logging.getLogger(__name__)
 
@@ -241,6 +246,206 @@ class MatchEngine:
         }
         return followup_info.get(action, "No follow-up")
 
+    # ═══════════════════════════════════════════════════════════════
+    # ✅ NEW: SHOT PLACEMENT SYSTEM
+    # ═══════════════════════════════════════════════════════════════
+
+    def get_shot_placement_config(self):
+        """
+        Shot placement system - players choose where to aim
+        Risk/reward mechanics for exciting shooting moments
+        """
+        return {
+            'left_corner': {
+                'name': 'Left Corner',
+                'emoji': '⬅️',
+                'player_bonus': 5,
+                'keeper_penalty': -8,
+                'miss_chance': 25,
+                'stat_used': 'shooting',
+                'description': 'High risk, high reward - keeper has to dive far',
+                'success_text': 'Shot placed perfectly into the left corner!',
+                'fail_text': 'Keeper dives and saves! / Shot goes wide left!',
+                'style': discord.ButtonStyle.primary
+            },
+            'right_corner': {
+                'name': 'Right Corner',
+                'emoji': '➡️',
+                'player_bonus': 5,
+                'keeper_penalty': -8,
+                'miss_chance': 25,
+                'stat_used': 'shooting',
+                'description': 'High risk, high reward - keeper has to dive far',
+                'success_text': 'Shot placed perfectly into the right corner!',
+                'fail_text': 'Keeper dives and saves! / Shot goes wide right!',
+                'style': discord.ButtonStyle.primary
+            },
+            'top_center': {
+                'name': 'Top Center',
+                'emoji': '⬆️',
+                'player_bonus': 2,
+                'keeper_penalty': -3,
+                'miss_chance': 15,
+                'stat_used': 'shooting',
+                'description': 'Powerful shot high - can go over the bar',
+                'success_text': 'Powerful shot into the top of the net!',
+                'fail_text': 'Keeper tips it over! / Shot sails over the bar!',
+                'style': discord.ButtonStyle.primary
+            },
+            'low_center': {
+                'name': 'Low Center',
+                'emoji': '⬇️',
+                'player_bonus': -3,
+                'keeper_penalty': 5,
+                'miss_chance': 5,
+                'stat_used': 'shooting',
+                'description': 'Safe option - hard to miss but keeper positioned',
+                'success_text': 'Placed shot finds the net!',
+                'fail_text': 'Keeper saves comfortably!',
+                'style': discord.ButtonStyle.success
+            },
+            'power_shot': {
+                'name': 'Power Shot',
+                'emoji': '💥',
+                'player_bonus': 8,
+                'keeper_penalty': -5,
+                'miss_chance': 35,
+                'stat_used': 'physical',
+                'description': 'Pure power - uses Physical stat, very risky!',
+                'success_text': 'SCREAMER! Unstoppable power shot!',
+                'fail_text': 'Blasted into Row Z! / Keeper somehow stops the rocket!',
+                'style': discord.ButtonStyle.danger
+            }
+        }
+
+    async def create_goal_visualization(self, placement, keeper_dove, is_goal, player_name, keeper_name):
+        """
+        Create beautiful goal visualization showing shot trajectory and keeper position
+        """
+        try:
+            # Create canvas
+            width, height = 800, 500
+            img = Image.new('RGB', (width, height), color='#2b5329')  # Football pitch green
+            draw = ImageDraw.Draw(img)
+            
+            # Try to load a font, fallback to default
+            try:
+                title_font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 32)
+                text_font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 24)
+            except:
+                title_font = ImageFont.load_default()
+                text_font = ImageFont.load_default()
+            
+            # Draw goal frame (white posts)
+            goal_left = 200
+            goal_right = 600
+            goal_top = 100
+            goal_bottom = 350
+            
+            # Goal posts
+            draw.rectangle([goal_left-10, goal_top-10, goal_left, goal_bottom], fill='white')
+            draw.rectangle([goal_right, goal_top-10, goal_right+10, goal_bottom], fill='white')
+            draw.rectangle([goal_left, goal_top-10, goal_right, goal_top], fill='white')
+            
+            # Net pattern
+            for i in range(goal_left, goal_right, 30):
+                draw.line([(i, goal_top), (i, goal_bottom)], fill='#cccccc', width=1)
+            for i in range(goal_top, goal_bottom, 30):
+                draw.line([(goal_left, i), (goal_right, i)], fill='#cccccc', width=1)
+            
+            # Divide goal into sections (visualize the zones)
+            mid_x = (goal_left + goal_right) // 2
+            mid_y = (goal_top + goal_bottom) // 2
+            
+            # Draw section lines (light)
+            draw.line([(mid_x, goal_top), (mid_x, goal_bottom)], fill='#888888', width=2)
+            draw.line([(goal_left, mid_y), (goal_right, mid_y)], fill='#888888', width=2)
+            
+            # Determine shot position
+            shot_positions = {
+                'left_corner': (goal_left + 60, goal_top + 60),
+                'right_corner': (goal_right - 60, goal_top + 60),
+                'top_center': (mid_x, goal_top + 60),
+                'low_center': (mid_x, goal_bottom - 60),
+                'power_shot': (mid_x, mid_y)
+            }
+            
+            shot_x, shot_y = shot_positions.get(placement, (mid_x, mid_y))
+            
+            # Determine keeper position
+            keeper_positions = {
+                'left': (goal_left + 80, mid_y),
+                'right': (goal_right - 80, mid_y),
+                'center': (mid_x, mid_y)
+            }
+            
+            keeper_x, keeper_y = keeper_positions.get(keeper_dove, (mid_x, mid_y))
+            
+            # Draw ball trajectory (from penalty spot to shot position)
+            ball_start_x = width // 2
+            ball_start_y = height - 50
+            
+            # Curved line for ball path
+            points = []
+            for i in range(20):
+                t = i / 19
+                # Bezier curve for nice arc
+                x = ball_start_x + (shot_x - ball_start_x) * t
+                y = ball_start_y - (ball_start_y - shot_y) * t - (50 * (1 - (t * 2 - 1) ** 2))
+                points.append((x, y))
+            
+            # Draw trajectory line
+            for i in range(len(points) - 1):
+                draw.line([points[i], points[i + 1]], fill='white', width=4)
+            
+            # Draw keeper (emoji-like circle with gloves)
+            keeper_radius = 30
+            draw.ellipse([keeper_x - keeper_radius, keeper_y - keeper_radius,
+                          keeper_x + keeper_radius, keeper_y + keeper_radius],
+                         fill='#FFD700', outline='black', width=3)
+            
+            # Keeper arms (stretched toward ball)
+            if keeper_dove == 'left':
+                draw.line([(keeper_x, keeper_y), (keeper_x - 40, keeper_y - 20)], fill='#FFD700', width=8)
+            elif keeper_dove == 'right':
+                draw.line([(keeper_x, keeper_y), (keeper_x + 40, keeper_y - 20)], fill='#FFD700', width=8)
+            else:
+                draw.line([(keeper_x - 30, keeper_y), (keeper_x + 30, keeper_y)], fill='#FFD700', width=8)
+            
+            # Draw ball at final position
+            ball_radius = 15
+            ball_color = '#00FF00' if is_goal else '#FF0000'
+            draw.ellipse([shot_x - ball_radius, shot_y - ball_radius,
+                          shot_x + ball_radius, shot_y + ball_radius],
+                         fill=ball_color, outline='black', width=3)
+            
+            # Draw result text at top
+            result_text = "⚽ GOAL!" if is_goal else "🧤 SAVED / MISSED!"
+            result_color = '#00FF00' if is_goal else '#FF4444'
+            
+            # Background for text
+            draw.rectangle([50, 10, 750, 60], fill='black')
+            draw.text((400, 30), result_text, fill=result_color, font=title_font, anchor="mm")
+            
+            # Bottom info
+            info_text = f"{player_name} → {placement.replace('_', ' ').title()}"
+            draw.rectangle([50, height - 50, 750, height - 10], fill='black')
+            draw.text((400, height - 30), info_text, fill='white', font=text_font, anchor="mm")
+            
+            # Add keeper name
+            keeper_text = f"🧤 {keeper_name} (Dove {keeper_dove})"
+            draw.text((400, height - 70), keeper_text, fill='#FFD700', font=text_font, anchor="mm")
+            
+            # Save to buffer
+            buffer = BytesIO()
+            img.save(buffer, format='PNG')
+            buffer.seek(0)
+            return buffer
+            
+        except Exception as e:
+            print(f"❌ Error creating goal visualization: {e}")
+            return None
+
     async def handle_exciting_npc_moment(self, channel, moment_type, minute, home_team, away_team, team_side):
         """
         ✅ FIX #4: Exciting NPC moments (not boring build-up)
@@ -434,8 +639,6 @@ class MatchEngine:
     async def generate_crests_image(self, home_url, away_url):
         """Generate combined image with both crests side by side"""
         try:
-            from io import BytesIO
-            from PIL import Image
             import aiohttp
 
             async with aiohttp.ClientSession() as session:
@@ -2127,10 +2330,9 @@ class MatchEngine:
                 inline=False
             )
 
-        # ✅ NEW: STAGE 2 - Automatic goalkeeper challenge if needed
+        # ✅ NEW: STAGE 2 - Shot Placement System (if applicable)
         keeper_save = False
-        keeper_roll = 0
-        keeper_total = 0
+        keeper_result_embed = result_embed
         
         if is_two_stage_shot:
             await channel.send(embed=result_embed)
@@ -2153,59 +2355,183 @@ class MatchEngine:
                     """, defending_team['team_id'])
                 keeper = dict(keeper) if keeper else None
             
-            # Goalkeeper challenge
-            keeper_embed = discord.Embed(
-                title="🧤 GOALKEEPER CHALLENGE!",
-                description=f"**{player['player_name']}** through on goal!",
-                color=discord.Color.orange()
-            )
-            keeper_msg = await channel.send(embed=keeper_embed)
-            await asyncio.sleep(1.5)
-            
             if keeper:
-                # Shoot stats: shooting + physical for attacker
-                # GK stats: defending + physical for keeper
-                keeper_att_p, keeper_att_s, keeper_def_p, keeper_def_s = self.get_action_stats('save')
+                # 🎯 SHOT PLACEMENT SYSTEM
+                shot_placement_config = self.get_shot_placement_config()
                 
-                player_shoot_stat = self.calculate_weighted_stat(adjusted_stats, att_p, att_s)
-                player_shoot_roll = random.randint(1, 20)
-                player_shoot_total = player_shoot_stat + player_shoot_roll
-                
-                keeper_stat = self.calculate_weighted_stat(keeper, keeper_def_p, keeper_def_s)
-                keeper_bonus = self.get_position_bonus('GK', 'save')
-                keeper_roll = random.randint(1, 20)
-                keeper_total = keeper_stat + keeper_roll + keeper_bonus + 5  # GK gets +5 bonus
-                
-                keeper_save = keeper_total > player_shoot_total
-                
-                # Show stage 2 results
-                keeper_result_embed = discord.Embed(
-                    title="🥅 STAGE 2: vs GOALKEEPER",
-                    color=discord.Color.red() if keeper_save else discord.Color.green()
+                # Create placement choice embed
+                placement_embed = discord.Embed(
+                    title="🎯 SHOT PLACEMENT - Choose Where to Aim!",
+                    description=f"**{player['player_name']}** - You've beaten the defender!\n\n"
+                                f"Now choose where to place your shot:",
+                    color=discord.Color.gold()
                 )
                 
-                keeper_duel_text = f"**YOU (SHOT)**\n"
-                keeper_duel_text += f"SHO/PHY: **{player_shoot_stat}**\n"
-                keeper_duel_text += f"🎲 **{player_shoot_roll}**\n"
-                keeper_duel_text += f"Total: **{player_shoot_total}**\n\n"
+                # Calculate stats for each placement option
+                options_text = ""
+                for key in ['left_corner', 'right_corner', 'top_center', 'low_center', 'power_shot']:
+                    config = shot_placement_config[key]
+                    
+                    # Get player stat
+                    if config['stat_used'] == 'physical':
+                        player_placement_stat = adjusted_stats['physical']
+                    else:
+                        player_placement_stat = adjusted_stats['shooting']
+                    
+                    player_total_with_bonus = player_placement_stat + config['player_bonus']
+                    
+                    # Get keeper stat
+                    keeper_stat = self.calculate_weighted_stat(keeper, 'defending', 'physical')
+                    keeper_bonus_val = self.get_position_bonus('GK', 'save')
+                    keeper_total_adjusted = keeper_stat + keeper_bonus_val + 5 + config['keeper_penalty']
+                    
+                    # Calculate success probability
+                    goal_chance = self.calculate_d20_success_probability(
+                        player_total_with_bonus, 
+                        keeper_total_adjusted
+                    )
+                    
+                    # Account for miss chance
+                    actual_chance = int(goal_chance * (1 - config['miss_chance']/100))
+                    
+                    # Determine color indicator
+                    if actual_chance >= 55:
+                        indicator = "🟢"
+                    elif actual_chance >= 40:
+                        indicator = "🟡"
+                    else:
+                        indicator = "🔴"
+                    
+                    options_text += f"{config['emoji']} **{config['name']}** {indicator} — {actual_chance}% chance\n"
+                    options_text += f"   Your: {player_total_with_bonus} vs GK: {keeper_total_adjusted} | Miss risk: {config['miss_chance']}%\n"
+                    options_text += f"   _{config['description']}_\n\n"
                 
-                keeper_duel_text += f"**{keeper['player_name']} (GK)**\n"
-                keeper_duel_text += f"DEF/PHY: **{keeper_stat}**\n"
-                keeper_duel_text += f"🎲 **{keeper_roll}** +{keeper_bonus} (GK) +5 (save bonus)\n"
-                keeper_duel_text += f"Total: **{keeper_total}**\n\n"
+                placement_embed.add_field(
+                    name="⚽ Placement Options",
+                    value=options_text,
+                    inline=False
+                )
                 
-                if keeper_save:
-                    keeper_duel_text += "🧤 **KEEPER SAVES!**"
+                placement_embed.set_footer(text="⏱️ 15 seconds to choose | 🟢 = Good | 🟡 = Fair | 🔴 = Risky")
+                
+                # Create button view
+                placement_view = ShotPlacementView(
+                    player, keeper, adjusted_stats, shot_placement_config, timeout=15
+                )
+                
+                placement_msg = await channel.send(
+                    content=f"📢 {member.mention}",
+                    embed=placement_embed,
+                    view=placement_view
+                )
+                
+                await placement_view.wait()
+                
+                chosen_placement = placement_view.chosen_placement or 'low_center'
+                config = shot_placement_config[chosen_placement]
+                
+                # Show choice
+                choice_embed = discord.Embed(
+                    title=f"{config['emoji']} {config['name']} Chosen!",
+                    description=f"**{player['player_name']}** aims for the {config['name'].lower()}...",
+                    color=discord.Color.orange()
+                )
+                await channel.send(embed=choice_embed)
+                await asyncio.sleep(1.5)
+                
+                # STEP 1: Check if shot is on target (miss check)
+                miss_roll = random.randint(1, 100)
+                shot_missed_target = miss_roll <= config['miss_chance']
+                
+                if shot_missed_target:
+                    # Shot missed the target entirely
+                    miss_embed = discord.Embed(
+                        title="😱 SHOT MISSED!",
+                        description=f"**{player['player_name']}'s** shot goes wide!\n\n"
+                                   f"Miss roll: {miss_roll} (needed >{config['miss_chance']})",
+                        color=discord.Color.red()
+                    )
+                    
+                    # Add visual
+                    keeper_dove = random.choice(['left', 'right', 'center'])
+                    visual_buffer = await self.create_goal_visualization(
+                        chosen_placement, keeper_dove, False, 
+                        player['player_name'], keeper['player_name']
+                    )
+                    
+                    if visual_buffer:
+                        miss_embed.set_image(url="attachment://shot_result.png")
+                        shot_file = discord.File(fp=visual_buffer, filename="shot_result.png")
+                        await channel.send(embed=miss_embed, file=shot_file)
+                    else:
+                        await channel.send(embed=miss_embed)
+                    
+                    keeper_save = True
+                    
                 else:
-                    keeper_duel_text += "⚽ **GOAL!!!**"
+                    # Shot is on target - now keeper duel!
+                    if config['stat_used'] == 'physical':
+                        player_shoot_stat = adjusted_stats['physical']
+                    else:
+                        player_shoot_stat = adjusted_stats['shooting']
+                    
+                    player_shoot_stat_with_bonus = player_shoot_stat + config['player_bonus']
+                    player_shoot_roll = random.randint(1, 20)
+                    player_shoot_total = player_shoot_stat_with_bonus + player_shoot_roll
+                    
+                    keeper_stat = self.calculate_weighted_stat(keeper, 'defending', 'physical')
+                    keeper_bonus_val = self.get_position_bonus('GK', 'save')
+                    keeper_stat_with_penalty = keeper_stat + keeper_bonus_val + 5 + config['keeper_penalty']
+                    keeper_roll = random.randint(1, 20)
+                    keeper_total = keeper_stat_with_penalty + keeper_roll
+                    
+                    keeper_save = keeper_total > player_shoot_total
+                    
+                    # Determine where keeper dove
+                    if chosen_placement in ['left_corner', 'top_center']:
+                        keeper_dove = 'left'
+                    elif chosen_placement in ['right_corner']:
+                        keeper_dove = 'right'
+                    else:
+                        keeper_dove = 'center'
+                    
+                    # Show stage 2 results
+                    keeper_result_embed = discord.Embed(
+                        title="🥅 SHOT vs GOALKEEPER",
+                        color=discord.Color.red() if keeper_save else discord.Color.green()
+                    )
+                    
+                    keeper_duel_text = f"**YOU ({config['name'].upper()})**\n"
+                    keeper_duel_text += f"{config['stat_used'].upper()[:3]}: **{player_shoot_stat}** +{config['player_bonus']} (placement)\n"
+                    keeper_duel_text += f"🎲 **{player_shoot_roll}**\n"
+                    keeper_duel_text += f"Total: **{player_shoot_total}**\n\n"
+                    
+                    keeper_duel_text += f"**{keeper['player_name']} (GK)**\n"
+                    keeper_duel_text += f"DEF/PHY: **{keeper_stat}**\n"
+                    keeper_duel_text += f"🎲 **{keeper_roll}** +{keeper_bonus_val} (GK) +5 (save) {config['keeper_penalty']:+d} (placement)\n"
+                    keeper_duel_text += f"Total: **{keeper_total}**\n\n"
+                    
+                    if keeper_save:
+                        keeper_duel_text += f"🧤 **KEEPER SAVES!**\n_{config['fail_text']}_"
+                    else:
+                        keeper_duel_text += f"⚽ **GOAL!!!**\n_{config['success_text']}_"
+                    
+                    keeper_result_embed.add_field(name="⚔️ Duel", value=keeper_duel_text, inline=False)
+                    
+                    # Add visual
+                    visual_buffer = await self.create_goal_visualization(
+                        chosen_placement, keeper_dove, not keeper_save, 
+                        player['player_name'], keeper['player_name']
+                    )
+                    
+                    if visual_buffer:
+                        keeper_result_embed.set_image(url="attachment://shot_result.png")
+                        shot_file = discord.File(fp=visual_buffer, filename="shot_result.png")
+                        await channel.send(embed=keeper_result_embed, file=shot_file)
+                    else:
+                        await channel.send(embed=keeper_result_embed)
                 
-                keeper_result_embed.add_field(name="⚔️ Shot vs Save", value=keeper_duel_text, inline=False)
-                
-                await keeper_msg.delete()
                 result_embed = keeper_result_embed
-            else:
-                # No keeper found (shouldn't happen, but fallback)
-                keeper_save = False
 
         is_goal = False
         scorer_name = None
@@ -2271,10 +2597,6 @@ class MatchEngine:
                 if is_two_stage_shot:
                     if not keeper_save:
                         # Beat defender AND beat keeper = GOAL
-                        goal_type = "header" if action == 'header' else "shot"
-                        result_embed.add_field(name="⚽ GOAL!",
-                                               value=f"**{player['player_name']}** scores from the {goal_type}!",
-                                               inline=False)
                         is_goal = True
                         scorer_name = player['player_name']
                         rating_change = 1.2
@@ -2302,15 +2624,10 @@ class MatchEngine:
                         await update_player_morale(player['user_id'], 'goal')
                     else:
                         # Beat defender but keeper saved
-                        result_embed.add_field(name="🧤 SAVED!", value="Keeper denies you!", inline=False)
                         rating_change = 0.1  # Small bonus for getting shot on target
                 else:
                     # Single-stage shot (already vs GK) - use original logic
                     if player_roll_with_bonus >= 18 or player_total >= defender_total + 10:
-                        goal_type = "header" if action == 'header' else "shot"
-                        result_embed.add_field(name="⚽ GOAL!",
-                                               value=f"**{player['player_name']}** scores from the {goal_type}!",
-                                               inline=False)
                         is_goal = True
                         scorer_name = player['player_name']
                         rating_change = 1.2
@@ -2337,7 +2654,6 @@ class MatchEngine:
                         from utils.form_morale_system import update_player_morale
                         await update_player_morale(player['user_id'], 'goal')
                     else:
-                        result_embed.add_field(name="🧤 SAVED!", value="Keeper saves it!", inline=False)
                         rating_change = -0.1
 
             elif action in ['pass', 'through_ball', 'key_pass', 'cross'] and success:
@@ -2379,7 +2695,9 @@ class MatchEngine:
                 rating_change = -0.1
 
         await suspense_msg.delete()
-        await channel.send(embed=result_embed)
+        # Only send result embed if we didn't already send it for shot placement
+        if not is_two_stage_shot or keeper_save:
+            await channel.send(embed=result_embed)
 
         async with db.pool.acquire() as conn:
             await conn.execute("""
@@ -3229,7 +3547,7 @@ class MatchEngine:
 
 
 # ═══════════════════════════════════════════════════════════════
-# ✅ BUTTON CLASSES WITH SKIP & AFK FUNCTIONALITY (FIXED)
+# ✅ BUTTON CLASSES WITH SKIP & AFK FUNCTIONALITY + SHOT PLACEMENT
 # ═══════════════════════════════════════════════════════════════
 
 class EnhancedActionView(discord.ui.View):
@@ -3443,6 +3761,52 @@ class MarkAFKButton(discord.ui.Button):
             self.view.chosen_action = available_actions[0]
             self.view.skipped = True
         
+        self.view.stop()
+
+
+# ✅ NEW: Shot Placement View and Buttons
+class ShotPlacementView(discord.ui.View):
+    """Interactive view for shot placement selection"""
+    
+    def __init__(self, player, keeper, adjusted_stats, shot_placement_config, timeout=15):
+        super().__init__(timeout=timeout)
+        self.chosen_placement = None
+        self.player = player
+        self.keeper = keeper
+        self.adjusted_stats = adjusted_stats
+        self.config = shot_placement_config
+        
+        # Add all 5 placement buttons
+        for placement_key in ['left_corner', 'right_corner', 'top_center', 'low_center', 'power_shot']:
+            button = ShotPlacementButton(placement_key, shot_placement_config[placement_key])
+            self.add_item(button)
+    
+    async def on_timeout(self):
+        # Auto-select safest option if timeout
+        self.chosen_placement = 'low_center'
+        for item in self.children:
+            item.disabled = True
+
+
+class ShotPlacementButton(discord.ui.Button):
+    """Individual shot placement button"""
+    
+    def __init__(self, placement_key, config):
+        super().__init__(
+            label=config['name'],
+            emoji=config['emoji'],
+            style=config['style'],
+            custom_id=placement_key
+        )
+        self.placement_key = placement_key
+        self.config = config
+    
+    async def callback(self, interaction: discord.Interaction):
+        await interaction.response.defer()
+        self.view.chosen_placement = self.placement_key
+        for item in self.view.children:
+            item.disabled = True
+        await interaction.edit_original_response(view=self.view)
         self.view.stop()
 
 
