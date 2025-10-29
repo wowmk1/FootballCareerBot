@@ -414,6 +414,15 @@ async def advance_week(bot=None):
             except Exception as e:
                 logger.error(f"❌ CRITICAL: Error in transfer window processing: {e}", exc_info=True)
 
+        # ✅ POST WEEKLY NEWS DIGEST FOR COMPLETED WEEK
+        if bot:
+            try:
+                from utils.event_poster import post_weekly_news_digest
+                await post_weekly_news_digest(bot, current_week)
+                logger.info(f"✅ Posted weekly news digest for Week {current_week}")
+            except Exception as e:
+                logger.error(f"❌ Error posting weekly digest: {e}")
+
 
 async def end_season(bot=None):
     async with db.pool.acquire() as conn:
