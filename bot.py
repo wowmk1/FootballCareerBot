@@ -812,9 +812,8 @@ class FootballBot(commands.Bot):
     async def notify_domestic_window_closed(self, completing_week):
         """Notify guilds that Domestic window has closed and week is advancing (5 PM)"""
         try:
-            # ✅ FIX: Use the week that was passed in (captured BEFORE advancing)
-            state = await db.get_game_state()
-            new_week = state['current_week']  # This is the NEW week after advancing
+            # ✅ FIX: Calculate new week from parameter (don't read database!)
+            new_week = completing_week + 1
 
             for guild in self.guilds:
                 channel = discord.utils.get(guild.text_channels, name="match-results")
