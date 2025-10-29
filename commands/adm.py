@@ -48,6 +48,7 @@ class AdminCommands(commands.Cog):
         app_commands.Choice(name="🔍 Diagnose NPC Stats", value="diagnose_npcs"),
         app_commands.Choice(name="🎮 Test Match Engine", value="test_match_engine"),
         app_commands.Choice(name="🔄 Recalculate Tables", value="recalculate_tables"),
+        app_commands.Choice(name="🔍 Debug Fixtures", value="debug_fixtures"),
         app_commands.Choice(name="🔄 Restart Bot", value="restart"),
         app_commands.Choice(name="🧪 Test Training System", value="test_training"),
     ])
@@ -110,6 +111,8 @@ class AdminCommands(commands.Cog):
             await self._test_training(interaction)
         elif action == "recalculate_tables":  # ← ADD THIS
             await self._recalculate_tables(interaction)
+        elif action == "debug_fixtures":
+            await self._debug_fixtures(interaction)
     
     async def _advance_week(self, interaction: discord.Interaction):
         """Advance to the next week"""
@@ -151,6 +154,42 @@ class AdminCommands(commands.Cog):
         )
         
         await interaction.followup.send(embed=embed)
+    
+    async def _debug_fixtures(self, interaction: discord.Interaction):
+        """Debug fixture counts"""
+        await interaction.response.defer()
+    
+        async with db.pool.acquire() as conn:
+            # Count by week
+            by_week = await conn.fetch("""
+                SELECT week_number, COUNT(*) as count
+                FROM fixtures 
+                WHERE played = true
+                GROUP BY week_number
+                ORDER BY week_number
+            """)
+        
+            # Total count
+            total = await conn.fetchval("SELECT COUNT(*) FROM fixtures WHERE played = true")
+        
+            # Week 11 details
+            week11 = await conn.fetch("""
+                SELECT fixture_id, home_team_id, away_team_id, home_score, away_score, played
+                FROM fixtures 
+                WHERE week_number = 11
+                LIMIT 5
+            """)
+    
+        result = f"**Total played fixtures: {total}**\n\n"
+        result += "**By week:**\n"
+        for w in by_week:
+            result += f"Week {w['week_number']}: {w['count']} fixtures\n"
+    
+        result += f"\n**Week 11 sample:**\n"
+        for f in week11:
+            result += f"{f['home_team_id']} {f['home_score']}-{f['away_score']} {f['away_team_id']} (played={f['played']})\n"
+    
+        await interaction.followup.send(result)
     
     async def _open_window(self, interaction: discord.Interaction):
         """Open match window with notifications"""
