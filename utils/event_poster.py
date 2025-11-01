@@ -364,8 +364,8 @@ async def post_match_result_to_channel(bot, guild, fixture, home_score, away_sco
             value=f"**Competition:** {fixture.get('competition', 'League')}\n"
                   f"**Week:** {fixture['week_number']}",
             inline=True
-        )️
-        
+        )
+
         # STEP 1: Send highlights GIF first (if available) as separate message
         if highlights_buffer:
             try:
