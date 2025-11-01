@@ -364,19 +364,35 @@ async def post_match_result_to_channel(bot, guild, fixture, home_score, away_sco
             value=f"**Competition:** {fixture.get('competition', 'League')}\n"
                   f"**Week:** {fixture['week_number']}",
             inline=True
-        )
-
-        # ⬇️⬇️⬇️ START EDITING HERE (around line 368) ⬇️⬇️⬇️
-        # Prepare files to send
-        files_to_send = []
-
-        # Add highlights GIF if provided
+        )️
+        
+        # STEP 1: Send highlights GIF first (if available) as separate message
         if highlights_buffer:
-            highlights_file = discord.File(fp=highlights_buffer, filename="match_highlights.gif")
-            files_to_send.append(highlights_file)
-            embed.set_image(url="attachment://match_highlights.gif")
-        # Otherwise use combined crests image
-        elif home_crest or away_crest:
+            try:
+                highlights_buffer.seek(0, 2)  # Check file size
+                file_size = highlights_buffer.tell()
+                highlights_buffer.seek(0)
+                
+                if file_size > 8 * 1024 * 1024:  # 8MB limit
+                    print(f"  ⚠️ Highlights GIF too large ({file_size / 1024 / 1024:.1f}MB), skipping")
+                else:
+                    highlights_embed = discord.Embed(
+                        title="🎬 MATCH HIGHLIGHTS",
+                        description=f"**{home_team['team_name']}** vs **{away_team['team_name']}**",
+                        color=discord.Color.blue()
+                    )
+                    highlights_embed.set_image(url="attachment://match_highlights.gif")
+                    highlights_file = discord.File(fp=highlights_buffer, filename="match_highlights.gif")
+                    await results_channel.send(embed=highlights_embed, file=highlights_file)
+                    print(f"  ✅ Posted highlights GIF ({file_size / 1024 / 1024:.1f}MB)")
+            except Exception as e:
+                print(f"  ⚠️ Could not post highlights: {e}")
+        
+        # STEP 2: Send main result embed with crests (separate message)
+        files_to_send = []
+        
+        # Add crests image if available
+        if home_crest or away_crest:
             crests_buffer = await generate_crests_image(home_crest, away_crest)
             if crests_buffer:
                 crests_file = discord.File(fp=crests_buffer, filename="match_crests.png")
@@ -387,14 +403,14 @@ async def post_match_result_to_channel(bot, guild, fixture, home_score, away_sco
         if away_crest:
             embed.set_footer(text=away_team['team_name'], icon_url=away_crest)
 
-        # Send with all files
+        # Send main result embed
         if files_to_send:
             await results_channel.send(embed=embed, files=files_to_send)
-            print(f"  ✅ Posted match result with {'highlights' if highlights_buffer else 'crests'} to {guild.name}")
         else:
             await results_channel.send(embed=embed)
-            print(f"  ✅ Posted match result to {guild.name}")
-        # ⬆️⬆️⬆️ STOP EDITING HERE (around line 391) ⬆️⬆️⬆️
+        
+        print(f"  ✅ Posted match result to {guild.name}")
+        # ⬆️⬆️⬆️ STOP EDITING HERE (around line 410) ⬆️⬆️⬆️
 
     except Exception as e:
         print(f"  ❌ Error posting match result to {guild.name}: {e}")
