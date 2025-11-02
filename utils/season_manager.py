@@ -209,17 +209,7 @@ async def close_match_window(window_type='domestic', bot=None):
         if window_type == 'domestic':
             # ✅ NEW: Send notification BEFORE simulating matches and advancing week
             # This ensures notification shows correct week numbers
-            if bot:
-                try:
-                    logger.info(f"📢 Sending domestic window closed notification for Week {current_week}")
-                    # Import here to avoid circular dependency
-                    from bot import FootballBot
-                    if isinstance(bot, FootballBot):
-                        await bot.notify_domestic_window_closed(current_week)
-                        logger.info(f"✅ Notification sent for Week {current_week}")
-                except Exception as e:
-                    logger.error(f"❌ Error sending notification: {e}")
-            
+        
             # Now simulate matches
             unplayed = await conn.fetch("""
                 SELECT * FROM fixtures 
