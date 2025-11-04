@@ -35,7 +35,7 @@ async def simulate_match(fixture: dict):
         )
         has_user_players = result['count'] > 0
     
-    # Calculate actual team strength from player ratings
+    # ✅ FIX: Calculate team strength using WEIGHTED average
     home_strength = await calculate_team_strength(fixture['home_team_id'], is_home=True)
     away_strength = await calculate_team_strength(fixture['away_team_id'], is_home=False)
     
@@ -63,7 +63,13 @@ async def simulate_match(fixture: dict):
     }
 
 async def calculate_team_strength(team_id: str, is_home: bool = False) -> int:
-    """Calculate team strength from actual player ratings (domestic + European)"""
+    """
+    ✅ FIX: Calculate team strength using WEIGHTED average
+    User players count 1.5x more than NPCs to reflect their training/growth
+    
+    This prevents teams with one 90-rated user + ten 65-rated NPCs
+    from having their strength calculated as only 67
+    """
     
     async with db.pool.acquire() as conn:
         # Get domestic players (both user and NPC)
@@ -82,18 +88,29 @@ async def calculate_team_strength(team_id: str, is_home: bool = False) -> int:
             team_id
         )
     
-    # Combine all ratings
-    all_ratings = (
-        [p['overall_rating'] for p in user_players] + 
-        [p['overall_rating'] for p in npc_players] +
-        [p['overall_rating'] for p in european_players]
-    )
+    # ✅ FIX: Calculate WEIGHTED average (user players count 1.5x)
+    total_weight = 0
+    total_rating = 0
     
-    if not all_ratings:
+    # User players are worth 1.5x (they train and improve)
+    for player in user_players:
+        total_rating += player['overall_rating'] * 1.5
+        total_weight += 1.5
+    
+    # NPCs are worth 1.0x
+    for player in npc_players:
+        total_rating += player['overall_rating']
+        total_weight += 1.0
+    
+    for player in european_players:
+        total_rating += player['overall_rating']
+        total_weight += 1.0
+    
+    if total_weight == 0:
         return 50  # Default for teams with no players
     
-    # Calculate average rating
-    avg_rating = sum(all_ratings) / len(all_ratings)
+    # Calculate weighted average
+    avg_rating = total_rating / total_weight
     
     # Team quality modifier based on average rating
     if avg_rating >= 85:
