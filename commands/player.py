@@ -3,6 +3,8 @@ from discord import app_commands
 from discord.ext import commands
 from database import db
 from utils.football_data_api import get_team_crest_url
+from datetime import datetime, timedelta
+import pytz
 
 class PlayerCommands(commands.Cog):
     def __init__(self, bot):
@@ -150,29 +152,50 @@ class PlayerCommands(commands.Cog):
         # ============================================
         
         # ============================================
-        # ✅ NEW: TRAINING COOLDOWN INFO
+        # ✅ UPDATED: TRAINING STATUS WITH DAILY 2:30 PM EST RESET
         # ============================================
-        from datetime import datetime, timedelta
-        import config
+        est = pytz.timezone('US/Eastern')
+        now_est = datetime.now(est)
         
+        # Calculate today's 2:30 PM EST reset time
+        today_reset = now_est.replace(hour=14, minute=30, second=0, microsecond=0)
+        
+        # If current time is before today's reset, the last reset was yesterday at 2:30 PM
+        if now_est < today_reset:
+            last_reset = today_reset - timedelta(days=1)
+            next_reset = today_reset
+        else:
+            last_reset = today_reset
+            next_reset = today_reset + timedelta(days=1)
+        
+        # Check if player has trained since the last reset
+        has_trained_today = False
         if player['last_training']:
             last_train = datetime.fromisoformat(player['last_training'])
-            time_since = datetime.now() - last_train
             
-            if time_since < timedelta(hours=config.TRAINING_COOLDOWN_HOURS):
-                # Still on cooldown
-                next_train = last_train + timedelta(hours=config.TRAINING_COOLDOWN_HOURS)
-                time_until = next_train - datetime.now()
-                
-                hours_left = int(time_until.total_seconds() // 3600)
-                minutes_left = int((time_until.total_seconds() % 3600) // 60)
-                
-                cooldown_text = f"⏰ Training available in **{hours_left}h {minutes_left}m**"
-            else:
-                # Ready to train
-                cooldown_text = "✅ **TRAINING READY!** Use `/train`"
+            # Make timezone-aware if needed
+            if last_train.tzinfo is None:
+                last_train = est.localize(last_train)
+            
+            # Check if they trained after the last reset
+            if last_train >= last_reset:
+                has_trained_today = True
+        
+        if has_trained_today:
+            # Already trained today - show when next training is available
+            time_until = next_reset - now_est
+            hours_left = int(time_until.total_seconds() // 3600)
+            minutes_left = int((time_until.total_seconds() % 3600) // 60)
+            
+            next_reset_time = next_reset.strftime('%I:%M %p')
+            today_or_tomorrow = "today" if next_reset.date() == now_est.date() else "tomorrow"
+            
+            cooldown_text = f"⏰ Training available **{today_or_tomorrow} at {next_reset_time} EST**\n"
+            cooldown_text += f"   ({hours_left}h {minutes_left}m remaining)"
         else:
-            cooldown_text = "✅ **TRAINING READY!** Use `/train`"
+            # Ready to train!
+            cooldown_text = "✅ **TRAINING READY!** Use `/train`\n"
+            cooldown_text += f"   Resets daily at **2:30 PM EST**"
         
         embed.add_field(
             name="💪 Training Status",
