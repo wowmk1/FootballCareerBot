@@ -3263,6 +3263,14 @@ class MatchEngine:
                         WHERE user_id = $1
                     """, participant['user_id'])
 
+        # ✅ NEW: Update NPC ratings after match
+        try:
+            from utils.npc_rating_manager import update_npcs_after_match
+            await update_npcs_after_match(match_id, home_score, away_score)
+            logger.info(f"✅ Updated NPC ratings for match {match_id}")
+        except Exception as e:
+            logger.error(f"❌ Error updating NPC ratings after match: {e}")
+
         for participant in participants:
             if participant['user_id']:
                 player_team = participant['team_id']
