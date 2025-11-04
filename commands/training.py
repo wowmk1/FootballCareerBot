@@ -4,11 +4,12 @@ from discord.ext import commands
 from discord.ui import View, Select
 from database import db
 import random
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import config
 import asyncio
 import aiohttp
 import os
+import pytz
 
 
 # ============================================
@@ -587,7 +588,7 @@ class TrainingCommands(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-    @app_commands.command(name="train", description="Train to improve your stats (once per day)")
+    @app_commands.command(name="train", description="Train to improve your stats (resets daily at 2:30 PM EST)")
     async def train(self, interaction: discord.Interaction):
         """Realistic training with fractional multi-stat improvements"""
 
@@ -607,29 +608,51 @@ class TrainingCommands(commands.Cog):
             await interaction.followup.send(f"You're injured! Rest for **{player['injury_weeks']} more weeks** before training.", ephemeral=True)
             return
 
-        # Check cooldown and streak
+        # Check cooldown and streak - Daily reset at 2:30 PM EST
+        est = pytz.timezone('US/Eastern')
+        now_est = datetime.now(est)
+        
+        # Calculate today's 2:30 PM EST reset time
+        today_reset = now_est.replace(hour=14, minute=30, second=0, microsecond=0)
+        
+        # If current time is before today's reset, the last reset was yesterday at 2:30 PM
+        if now_est < today_reset:
+            last_reset = today_reset - timedelta(days=1)
+        else:
+            last_reset = today_reset
+        
+        # Calculate next reset (tomorrow at 2:30 PM if we've passed today's reset)
+        next_reset = today_reset if now_est < today_reset else today_reset + timedelta(days=1)
+        
         streak_broken = False
         if player['last_training']:
             last_train = datetime.fromisoformat(player['last_training'])
-            time_diff = datetime.now() - last_train
-
-            if time_diff < timedelta(hours=config.TRAINING_COOLDOWN_HOURS):
-                next_train = last_train + timedelta(hours=config.TRAINING_COOLDOWN_HOURS)
-                time_until = next_train - datetime.now()
+            
+            # Make last_train timezone-aware if it isn't already
+            if last_train.tzinfo is None:
+                last_train = est.localize(last_train)
+            
+            # Check if player has already trained since the last reset
+            if last_train >= last_reset:
+                time_until = next_reset - now_est
                 hours_left = int(time_until.total_seconds() // 3600)
                 minutes_left = int((time_until.total_seconds() % 3600) // 60)
-                next_train_formatted = next_train.strftime('%I:%M %p')
-                today_or_tomorrow = "today" if next_train.date() == datetime.now().date() else "tomorrow"
+                next_train_formatted = next_reset.strftime('%I:%M %p')
+                today_or_tomorrow = "today" if next_reset.date() == now_est.date() else "tomorrow"
 
-                embed = discord.Embed(title="⏰ Training on Cooldown", description=f"You trained recently and need rest!", color=discord.Color.orange())
-                embed.add_field(name="⏱️ Time Remaining", value=f"**{hours_left}h {minutes_left}m**", inline=True)
-                embed.add_field(name="🕐 Next Training", value=f"**{next_train_formatted}** {today_or_tomorrow}", inline=True)
+                embed = discord.Embed(title="⏰ Training on Cooldown", description=f"You've already trained today! Come back after the daily reset.", color=discord.Color.orange())
+                embed.add_field(name="⏱️ Time Until Reset", value=f"**{hours_left}h {minutes_left}m**", inline=True)
+                embed.add_field(name="🕐 Next Training Available", value=f"**{next_train_formatted} EST** {today_or_tomorrow}", inline=True)
                 embed.add_field(name="🔥 Current Streak", value=f"**{player['training_streak']} days**\n*Don't break it!*", inline=False)
-                embed.set_footer(text="💡 Train daily to maintain your streak and gain bonus points!")
+                embed.set_footer(text="💡 Training resets daily at 2:30 PM EST - Train every day to maintain your streak!")
                 await interaction.followup.send(embed=embed, ephemeral=True)
                 return
-
-            if time_diff > timedelta(hours=48):
+            
+            # Check if streak is broken (missed more than 1 reset day)
+            # Calculate how many resets have passed since last training
+            # If last training was before yesterday's reset, streak is broken
+            yesterday_reset = last_reset - timedelta(days=1)
+            if last_train < yesterday_reset:
                 streak_broken = True
 
         # Calculate training modifiers
@@ -725,7 +748,7 @@ class TrainingCommands(commands.Cog):
         if streak_broken:
             embed.add_field(name="⚠️ Streak Broken", value="You missed a training day! Starting fresh.", inline=False)
 
-        embed.set_footer(text="Select your primary training focus - secondary stats will improve automatically!")
+        embed.set_footer(text="🕐 Resets daily at 2:30 PM EST | Select your primary training focus!")
 
         view = StatTrainingView(player, position_efficiency, base_total_points)
         await interaction.followup.send(embed=embed, view=view)
@@ -760,7 +783,7 @@ class TrainingCommands(commands.Cog):
             potential_boost = 3
             current_potential += potential_boost
 
-        # === UPDATE DATABASE ===
+        # === UPDATE DATABASE (timezone-aware timestamp) ===
         async with db.pool.acquire() as conn:
             # Build dynamic update query
             update_parts = []
@@ -780,7 +803,7 @@ class TrainingCommands(commands.Cog):
                 update_values.append(frac_val)
                 param_count += 1
             
-            # Update overall, streak, last_training
+            # Update overall, streak, last_training (timezone-aware)
             update_parts.append(f"overall_rating = ${param_count}")
             update_values.append(new_overall)
             param_count += 1
@@ -790,7 +813,7 @@ class TrainingCommands(commands.Cog):
             param_count += 1
             
             update_parts.append(f"last_training = ${param_count}")
-            update_values.append(datetime.now().isoformat())
+            update_values.append(now_est.isoformat())
             param_count += 1
             
             if potential_boost > 0:
@@ -997,7 +1020,7 @@ class TrainingCommands(commands.Cog):
         # Career & Next Session
         years_left = config.RETIREMENT_AGE - player['age']
         right_col += f"⏳ **Career Time**\n{years_left} years left | Age {player['age']}\n\n"
-        right_col += f"⏰ **Next Session**\n{config.TRAINING_COOLDOWN_HOURS}h"
+        right_col += f"⏰ **Next Session**\nDaily at 2:30 PM EST"
 
         if left_col:
             embed.add_field(name="\u200b", value=left_col, inline=True)
