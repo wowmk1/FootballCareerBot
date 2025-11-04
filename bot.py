@@ -1056,18 +1056,21 @@ class FootballBot(commands.Bot):
         try:
             est = pytz.timezone('US/Eastern')
             now_est = datetime.now(est)
-            
+        
             # Calculate today's 2:30 PM EST reset time
             today_reset = now_est.replace(hour=14, minute=30, second=0, microsecond=0)
-            
-            # Only send notifications if we're within 5 minutes after 2:30 PM
+        
+            # Only send notifications if we're within 30 minutes after 2:30 PM
             time_since_reset = (now_est - today_reset).total_seconds() / 60
-            if time_since_reset < 0 or time_since_reset > 5:
+            if time_since_reset < 0 or time_since_reset > 30:
                 # Not notification time yet
                 return
-            
+        
             logger.info(f"🔍 Checking training reminders at {now_est.strftime('%I:%M %p EST')}")
             logger.info(f"   Today's reset was at: {today_reset.strftime('%I:%M %p EST')}")
+
+            # ✅ FIX: Convert to naive datetime for PostgreSQL comparison
+            today_reset_naive = today_reset.replace(tzinfo=None)
 
             async with db.pool.acquire() as conn:
                 # Find players who:
@@ -1077,28 +1080,51 @@ class FootballBot(commands.Bot):
                     SELECT user_id, player_name, last_training, last_reminded
                     FROM players
                     WHERE retired = FALSE
+                      AND team_id != 'free_agent'
                       AND (last_training IS NULL 
                            OR last_training::timestamp < $1)
-                      AND (last_reminded IS NULL 
-                           OR last_reminded::timestamp < $1)
-                """, today_reset)
+                """, today_reset_naive)
 
-                logger.info(f"   Found {len(rows)} players eligible for reminder")
+                logger.info(f"   Found {len(rows)} players who haven't trained since reset")
+            
+                sent_count = 0
+                for row in rows:
+                    # Check if already reminded today
+                    last_reminded = row.get('last_reminded')
+                    if last_reminded:
+                        # Parse the stored timestamp
+                        if isinstance(last_reminded, str):
+                            last_reminded_dt = datetime.fromisoformat(last_reminded)
+                        else:
+                            last_reminded_dt = last_reminded
+                    
+                        # Make timezone-aware for comparison
+                        if last_reminded_dt.tzinfo is None:
+                            last_reminded_dt = est.localize(last_reminded_dt)
+                    
+                        # Skip if already reminded today
+                        if last_reminded_dt >= today_reset:
+                            logger.debug(f"   - Skipped {row['player_name']}: already reminded today")
+                            continue
                 
-                for row in rows:
-                    logger.info(f"   - {row['player_name']}: last_training={row['last_training']}, last_reminded={row.get('last_reminded', 'NULL')}")
-
-                for row in rows:
+                    logger.info(f"   - Sending reminder to {row['player_name']}")
                     success = await self.send_training_reminder(row['user_id'])
 
                     if success:
+                        # ✅ FIX: Store as naive datetime string
                         await conn.execute("""
                             UPDATE players
                             SET last_reminded = $1
                             WHERE user_id = $2
-                        """, now_est.isoformat(), row['user_id'])
-
-                        logger.info(f"✅ Sent training reminder to user {row['user_id']}")
+                        """, now_est.replace(tzinfo=None).isoformat(), row['user_id'])
+                    
+                        sent_count += 1
+                        logger.info(f"     ✅ Reminder sent successfully")
+            
+                if sent_count > 0:
+                    logger.info(f"✅ Sent {sent_count} training reminders total")
+                else:
+                    logger.info(f"   No new reminders needed")
 
         except Exception as e:
             logger.error(f"❌ ERROR in check_training_reminders: {e}", exc_info=True)
