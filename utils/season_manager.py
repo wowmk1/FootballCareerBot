@@ -8,6 +8,7 @@ Season Management - Two Windows on Same Days
 ✅ FIXED: European window only shows on actual European weeks
 ✅ FIXED: Prevents duplicate window closes
 ✅ FIXED: Notification happens BEFORE week advances (correct week numbers)
+✅ NEW: Integrated NPC rating balance maintenance
 """
 import asyncio
 from datetime import datetime, timedelta, timezone
@@ -15,6 +16,8 @@ from database import db
 import config
 import logging
 import discord
+# ✅ NEW: Import NPC maintenance
+from utils.npc_rating_manager import weekly_npc_maintenance
 
 try:
     from zoneinfo import ZoneInfo
@@ -321,6 +324,14 @@ async def advance_week(bot=None):
         
         await conn.execute("UPDATE game_state SET current_week = $1", next_week)
         
+        # ✅ NEW: Run NPC maintenance AFTER week advances
+        try:
+            logger.info(f"🔧 Running NPC rating maintenance for Week {current_week}...")
+            await weekly_npc_maintenance(current_week)
+            logger.info(f"✅ NPC maintenance complete")
+        except Exception as e:
+            logger.error(f"❌ Error in NPC maintenance: {e}")
+        
         from utils import european_competitions as euro
         
         try:
@@ -434,6 +445,15 @@ async def end_season(bot=None):
         await draw_groups(f"{current_season + 1}/{current_season + 2}")
         
         await conn.execute("UPDATE game_state SET current_season = current_season + 1, current_week = 1, match_window_open = FALSE")
+        
+        # ✅ NEW: Run season start NPC update
+        try:
+            logger.info("🔄 Running season start NPC update...")
+            from utils.npc_rating_manager import season_start_npc_update
+            await season_start_npc_update()
+            logger.info("✅ Season start NPC update complete")
+        except Exception as e:
+            logger.error(f"❌ Error in season start NPC update: {e}")
 
 
 async def send_european_1h_warning(bot):
