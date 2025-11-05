@@ -194,6 +194,98 @@ async def boost_elite_npcs():
         
         print(f"✅ Boosted {len(elite_teams)} elite teams")
 
+async def update_npcs_after_match(match_id: int, home_score: int, away_score: int):
+    """
+    Update NPC player ratings after a match based on performance
+    NPCs on winning teams get small boosts, losers get small decreases
+    """
+    async with db.pool.acquire() as conn:
+        # Get match info - try active_matches first, then fixtures
+        match_info = await conn.fetchrow("""
+            SELECT home_team_id, away_team_id, fixture_id
+            FROM active_matches 
+            WHERE match_id = $1
+        """, match_id)
+        
+        if not match_info:
+            # Match already ended, try getting from fixtures via match_participants
+            match_info = await conn.fetchrow("""
+                SELECT DISTINCT f.home_team_id, f.away_team_id
+                FROM fixtures f
+                JOIN match_participants mp ON mp.match_id = $1
+                WHERE mp.team_id = f.home_team_id OR mp.team_id = f.away_team_id
+                LIMIT 1
+            """, match_id)
+        
+        if not match_info:
+            # Last resort: get teams directly from match_participants
+            teams = await conn.fetch("""
+                SELECT DISTINCT team_id 
+                FROM match_participants 
+                WHERE match_id = $1
+                ORDER BY team_id
+            """, match_id)
+            
+            if len(teams) >= 2:
+                home_team = teams[0]['team_id']
+                away_team = teams[1]['team_id']
+            else:
+                print(f"⚠️ Could not find teams for match {match_id}")
+                return
+        else:
+            home_team = match_info['home_team_id']
+            away_team = match_info['away_team_id']
+        
+        # Determine result
+        if home_score > away_score:
+            winner = home_team
+            loser = away_team
+        elif away_score > home_score:
+            winner = away_team
+            loser = home_team
+        else:
+            winner = None  # Draw
+            loser = None
+        
+        # Update winners (small boost)
+        if winner:
+            await conn.execute("""
+                UPDATE npc_players
+                SET overall_rating = LEAST(99, overall_rating + 1)
+                WHERE team_id = $1 
+                AND retired = FALSE
+                AND RANDOM() < 0.15
+            """, winner)
+            
+            # Also update European NPCs if any
+            await conn.execute("""
+                UPDATE european_npc_players
+                SET overall_rating = LEAST(99, overall_rating + 1)
+                WHERE team_id = $1 
+                AND retired = FALSE
+                AND RANDOM() < 0.15
+            """, winner)
+        
+        # Update losers (small decrease)
+        if loser:
+            await conn.execute("""
+                UPDATE npc_players
+                SET overall_rating = GREATEST(40, overall_rating - 1)
+                WHERE team_id = $1 
+                AND retired = FALSE
+                AND RANDOM() < 0.10
+            """, loser)
+            
+            await conn.execute("""
+                UPDATE european_npc_players
+                SET overall_rating = GREATEST(40, overall_rating - 1)
+                WHERE team_id = $1 
+                AND retired = FALSE
+                AND RANDOM() < 0.10
+            """, loser)
+        
+        print(f"✅ Updated NPC ratings after match {match_id} ({home_score}-{away_score})")
+
 
 async def get_accurate_team_strength(team_id: str, is_home: bool = False) -> int:
     """
