@@ -3106,12 +3106,21 @@ class MatchEngine:
         random.shuffle(complete_schedule)
 
         possible_minutes = list(range(3, 91, 3))
-        minutes = sorted(random.sample(possible_minutes, min(len(complete_schedule), len(possible_minutes))))
 
+        # ✅ FIX: Ensure we never try to sample more minutes than available
         if len(complete_schedule) > len(possible_minutes):
+            # Add more minute slots if needed
             additional_minutes = list(range(4, 91, 2))
             all_minutes = sorted(list(set(possible_minutes + additional_minutes)))
-            minutes = sorted(random.sample(all_minutes, len(complete_schedule)))
+    
+            # If STILL not enough, add every minute as last resort
+            if len(complete_schedule) > len(all_minutes):
+                all_minutes = list(range(1, 91))
+    
+            # Always use min() to prevent sampling more than available
+            minutes = sorted(random.sample(all_minutes, min(len(complete_schedule), len(all_minutes))))
+        else:
+            minutes = sorted(random.sample(possible_minutes, len(complete_schedule)))
 
         await self.update_pinned_score(channel, match_id, home_team, away_team, home_score, away_score, 0)
 
