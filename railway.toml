@@ -2,7 +2,10 @@
 nixPkgs = ["python311"]
 
 [phases.install]
-cmds = ["pip install --no-cache-dir -r requirements.txt"]
+cmds = [
+  "rm -f .mise.toml .tool-versions .mise.config.toml .rtx.toml || true",
+  "pip install --no-cache-dir -r requirements.txt"
+]
 
 [start]
 cmd = "python bot.py"
