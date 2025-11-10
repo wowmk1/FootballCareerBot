@@ -788,8 +788,8 @@ class MatchEngine:
 
         attacking_positions = ['ST', 'W', 'CAM']
         if player_position in attacking_positions:
-            return 3
-        return 2
+            return 2
+        return 1
 
     async def give_yellow_card(self, player, match_id, channel, reason="dangerous play"):
         """Give yellow card to player"""
@@ -2485,11 +2485,11 @@ class MatchEngine:
                     
                     keeper_stat = self.calculate_weighted_stat(keeper, 'defending', 'physical')
                     keeper_bonus_val = self.get_position_bonus('GK', 'save')
-                    keeper_stat_with_penalty = keeper_stat + keeper_bonus_val + 5 + config['keeper_penalty']
+                    keeper_stat_with_penalty = keeper_stat + keeper_bonus_val + 10 + config['keeper_penalty']
                     keeper_roll = random.randint(1, 20)
                     keeper_total = keeper_stat_with_penalty + keeper_roll
                     
-                    keeper_save = keeper_total > player_shoot_total
+                    keeper_save = keeper_total >= player_shoot_total
                     
                     # Determine where keeper dove
                     if chosen_placement in ['left_corner', 'top_center']:
@@ -2555,32 +2555,74 @@ class MatchEngine:
             )
             rating_change = 0.5
 
+            # ✅ FIX: Nat 20 doesn't guarantee goal - just very high chance
             if action in ['shoot', 'header']:
-                is_goal = True
-                scorer_name = player['player_name']
-                rating_change = 1.8
+                # Still need to beat keeper for non-two-stage shots
+                if not is_two_stage_shot:
+                    # Get keeper
+                    async with db.pool.acquire() as conn:
+                        if is_european:
+                            keeper = await conn.fetchrow("""
+                                SELECT * FROM npc_players
+                                WHERE team_id = $1 AND position = 'GK' AND retired = FALSE
+                                UNION ALL
+                                SELECT * FROM european_npc_players
+                                WHERE team_id = $1 AND position = 'GK' AND retired = FALSE LIMIT 1
+                            """, defending_team['team_id'])
+                        else:
+                            keeper = await conn.fetchrow("""
+                                SELECT * FROM npc_players
+                                WHERE team_id = $1 AND position = 'GK' AND retired = FALSE LIMIT 1
+                            """, defending_team['team_id'])
+            
+                    if keeper:
+                        keeper_stat = self.calculate_weighted_stat(keeper, 'defending', 'physical')
+                        keeper_roll = random.randint(1, 20)
+                        keeper_total = keeper_stat + keeper_roll + 10
+                
+                        # Nat 20 gives you +10 bonus vs keeper
+                        if (player_stat + 30) > keeper_total:
+                            is_goal = True
+                            scorer_name = player['player_name']
+                            rating_change = 1.8
+                        else:
+                            result_embed.add_field(
+                                name="🧤 KEEPER SAVES THE NAT 20!",
+                                value="Incredible reflexes!",
+                                inline=False
+                            )
+                    else:
+                        is_goal = True
+                        scorer_name = player['player_name']
+                        rating_change = 1.8
+                else:
+                    # Two-stage shot - nat 20 skips stage 2
+                    is_goal = True
+                    scorer_name = player['player_name']
+                    rating_change = 1.8
 
-                async with db.pool.acquire() as conn:
-                    await conn.execute("""
-                        UPDATE match_participants
-                        SET goals_scored = goals_scored + 1
-                        WHERE match_id = $1 AND user_id = $2
-                    """, match_id, player['user_id'])
+                if is_goal:
+                    async with db.pool.acquire() as conn:
+                        await conn.execute("""
+                            UPDATE match_participants
+                            SET goals_scored = goals_scored + 1
+                            WHERE match_id = $1 AND user_id = $2
+                        """, match_id, player['user_id'])
 
-                    await conn.execute(
-                        "UPDATE players SET season_goals = season_goals + 1, career_goals = career_goals + 1 WHERE user_id = $1",
-                        player['user_id']
-                    )
+                        await conn.execute(
+                            "UPDATE players SET season_goals = season_goals + 1, career_goals = career_goals + 1 WHERE user_id = $1",
+                            player['user_id']
+                        )
 
-                    goals_row = await conn.fetchrow(
-                        "SELECT goals_scored FROM match_participants WHERE match_id = $1 AND user_id = $2",
-                        match_id, player['user_id']
-                    )
-                    if goals_row and goals_row['goals_scored'] == 3:
-                        await self.send_hattrick_notification(player, attacking_team)
+                        goals_row = await conn.fetchrow(
+                            "SELECT goals_scored FROM match_participants WHERE match_id = $1 AND user_id = $2",
+                            match_id, player['user_id']
+                        )
+                        if goals_row and goals_row['goals_scored'] == 3:
+                            await self.send_hattrick_notification(player, attacking_team)
 
-                from utils.form_morale_system import update_player_morale
-                await update_player_morale(player['user_id'], 'goal')
+                    from utils.form_morale_system import update_player_morale
+                    await update_player_morale(player['user_id'], 'goal')
 
         elif critical_failure:
             result_embed.add_field(
@@ -2631,7 +2673,7 @@ class MatchEngine:
                         rating_change = 0.1  # Small bonus for getting shot on target
                 else:
                     # Single-stage shot (already vs GK) - use original logic
-                    if player_roll_with_bonus >= 18 or player_total >= defender_total + 10:
+                    if player_roll_with_bonus >= 19 or player_total >= defender_total + 15:
                         is_goal = True
                         scorer_name = player['player_name']
                         rating_change = 1.2
