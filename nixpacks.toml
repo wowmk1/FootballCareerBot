@@ -1,3 +1,8 @@
+[providers]
+# Force disable mise/rtx detection
+mise = false
+rtx = false
+
 [phases.setup]
 nixPkgs = ["python311"]
 
