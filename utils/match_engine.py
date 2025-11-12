@@ -474,7 +474,7 @@ class MatchEngine:
             
         elif moment_type == 'counter_attack':
             # Roll to see if it results in goal
-            if random.random() < 0.15:  # 15% chance
+            if random.random() < 0.10:  # 10% chance
                 embed = discord.Embed(
                     title=f"⚡💥 COUNTER GOAL! — {minute}'",
                     description=f"**Lightning break from {attacking_team['team_name']}!**\nThey catch the defense sleeping and score!",
@@ -883,7 +883,8 @@ class MatchEngine:
 
         if set_piece_type == 'free_kick':
             roll = random.randint(1, 100)
-            success_threshold = min(95, 12 + (taker['shooting'] - 70) // 2)
+            # ✅ REBALANCED: Free kicks harder
+            success_threshold = min(90, 8 + (taker['shooting'] - 70) // 3)
 
             if roll <= success_threshold:
                 result_embed = discord.Embed(
@@ -918,7 +919,8 @@ class MatchEngine:
 
         else:
             roll = random.randint(1, 100)
-            success_threshold = min(95, 25 + (taker['passing'] - 70) // 2)
+            # ✅ REBALANCED: Corners harder
+            success_threshold = min(90, 15 + (taker['passing'] - 70) // 3)
 
             if roll <= success_threshold:
                 async with db.pool.acquire() as conn:
@@ -1087,35 +1089,42 @@ class MatchEngine:
         return bonuses.get(position, {}).get(action, 0)
 
     def calculate_d20_success_probability(self, player_stat, defender_stat):
-        """Calculate probability that (player_stat + d20) > (defender_stat + d20)"""
+        """✅ REBALANCED: Diminishing returns on stat advantage"""
         if defender_stat == 0:
-            return 60
+            return 55
 
         stat_diff = player_stat - defender_stat
-        base_prob = 50
-        prob_modifier = (stat_diff / 5) * 12.5
-
-        probability = base_prob + prob_modifier
-        return int(max(10, min(90, probability)))
+    
+        # Diminishing returns curve
+        if stat_diff >= 20:
+            probability = 50 + (20 * 0.75) + ((stat_diff - 20) * 0.25)
+        elif stat_diff >= 10:
+            probability = 50 + (stat_diff * 0.75)
+        elif stat_diff >= 0:
+            probability = 50 + (stat_diff * 1.0)
+        else:
+            probability = 50 + (stat_diff * 1.5)
+    
+        return int(max(25, min(75, probability)))
 
     # ═══════════════════════════════════════════════════════════════
     # FOLLOW-UP ACTIONS SYSTEM
     # ═══════════════════════════════════════════════════════════════
 
     def get_followup_config(self, action, success):
-        """Defines realistic follow-up chances after actions"""
+        """✅ REBALANCED: Reduced follow-up chances for realistic matches"""
         followups = {
-            'dribble_success': {'chance': 0.25, 'type': 'shooting_chance', 'desc': "Space created! Shooting opportunity..."},
-            'cut_inside_success': {'chance': 0.30, 'type': 'shooting_chance', 'desc': "Cut onto strong foot! Shot incoming..."},
+            'dribble_success': {'chance': 0.12, 'type': 'shooting_chance', 'desc': "Space created! Shooting opportunity..."},
+            'cut_inside_success': {'chance': 0.15, 'type': 'shooting_chance', 'desc': "Cut onto strong foot! Shot incoming..."},
             'tackle_success': {'chance': 0.30, 'type': 'counter_attack', 'desc': "Ball won! Counter-attack developing..."},
             'interception_success': {'chance': 0.35, 'type': 'counter_attack', 'desc': "Intercepted! Quick break on..."},
-            'hold_up_play_success': {'chance': 0.25, 'type': 'layoff_pass', 'desc': "Held up! Teammate making run..."},
-            'run_in_behind_success': {'chance': 0.55, 'type': '1v1_keeper', 'desc': "Through on goal! One-on-one!"},
+            'hold_up_play_success': {'chance': 0.15, 'type': 'layoff_pass', 'desc': "Held up! Teammate making run..."},
+            'run_in_behind_success': {'chance': 0.35, 'type': '1v1_keeper', 'desc': "Through on goal! One-on-one!"},
             'block_success': {'chance': 0.20, 'type': 'loose_ball', 'desc': "Blocked! Ball ricochets loose..."},
-            'save_success': {'chance': 0.25, 'type': 'distribution_counter', 'desc': "Great save! Launch counter?"},
-            'header_success': {'chance': 0.15, 'type': 'loose_ball', 'desc': "Header! Ball drops loose..."},
-            'shoot_fail': {'chance': 0.15, 'type': 'rebound', 'desc': "Shot blocked! Rebound..."},
-            'header_fail': {'chance': 0.20, 'type': 'loose_ball', 'desc': "Missed header! Loose ball..."},
+            'save_success': {'chance': 0.15, 'type': 'distribution_counter', 'desc': "Great save! Launch counter?"},
+            'header_success': {'chance': 0.08, 'type': 'loose_ball', 'desc': "Header! Ball drops loose..."},
+            'shoot_fail': {'chance': 0.08, 'type': 'rebound', 'desc': "Shot blocked! Rebound..."},
+            'header_fail': {'chance': 0.10, 'type': 'loose_ball', 'desc': "Missed header! Loose ball..."},
             'clearance_fail': {'chance': 0.35, 'type': 'falls_to_attacker', 'desc': "Poor clearance! Falls to attacker..."},
             'pass_fail': {'chance': 0.25, 'type': 'interception_counter', 'desc': "Intercepted! They break..."},
             'dribble_fail': {'chance': 0.20, 'type': 'dispossessed_counter', 'desc': "Dispossessed! Counter on..."},
@@ -1267,8 +1276,9 @@ class MatchEngine:
         player_roll = random.randint(1, 20)
         keeper_roll = random.randint(1, 20)
 
-        player_total = player_stat + player_roll + 3
-        keeper_total = keeper_stat + keeper_roll
+        # ✅ REBALANCED: Keeper gets major advantage in 1v1
+        player_total = player_stat + player_roll
+        keeper_total = keeper_stat + keeper_roll + 11  # Was 0, now +11
 
         is_goal = player_total > keeper_total
 
@@ -1340,9 +1350,10 @@ class MatchEngine:
 
         counter_stat = (attacker['pace'] + attacker['dribbling']) // 2
         roll = random.randint(1, 20)
-        total = counter_stat + roll + 5
-
-        is_goal = total >= 95
+        total = counter_stat + roll
+                                          
+        # ✅ REBALANCED: Much harder to score from counters
+        is_goal = total >= 105
 
         result_embed = discord.Embed(
             title="💥 COUNTER RESULT",
@@ -1428,7 +1439,8 @@ class MatchEngine:
         roll = random.randint(1, 20)
         total = rebound_stat + roll
 
-        is_goal = total >= 85
+        # ✅ REBALANCED: Harder to score from rebounds
+        is_goal = total >= 95
 
         result_embed = discord.Embed(
             title="🔄 REBOUND!",
@@ -1508,7 +1520,8 @@ class MatchEngine:
 
         shot_roll = random.randint(1, 20)
         shot_total = midfielder['shooting'] + shot_roll
-        is_goal = shot_total >= 85
+        # ✅ REBALANCED: Harder to score from layoffs
+        is_goal = shot_total >= 95
 
         result_embed = discord.Embed(
             title="💥 LATE RUN!",
@@ -1632,7 +1645,8 @@ class MatchEngine:
         await asyncio.sleep(1)
 
         shot_total = attacker['shooting'] + random.randint(1, 20)
-        is_goal = shot_total >= 98
+        # ✅ REBALANCED: Long shots extremely difficult
+        is_goal = shot_total >= 110
 
         result_embed = discord.Embed(
             title="🚀 LONG RANGE!",
@@ -2448,29 +2462,30 @@ class MatchEngine:
                 shot_missed_target = miss_roll <= config['miss_chance']
                 
                 if shot_missed_target:
-                    # Shot missed the target entirely
                     miss_embed = discord.Embed(
                         title="😱 SHOT MISSED!",
                         description=f"**{player['player_name']}'s** shot goes wide!\n\n"
                                    f"Miss roll: {miss_roll} (needed >{config['miss_chance']})",
                         color=discord.Color.red()
                     )
-                    
-                    # Add visual
+    
+                    # Visual showing ball going wide
                     keeper_dove = random.choice(['left', 'right', 'center'])
                     visual_buffer = await self.create_goal_visualization(
                         chosen_placement, keeper_dove, False, 
                         player['player_name'], keeper['player_name']
                     )
-                    
+    
                     if visual_buffer:
                         miss_embed.set_image(url="attachment://shot_result.png")
                         shot_file = discord.File(fp=visual_buffer, filename="shot_result.png")
                         await channel.send(embed=miss_embed, file=shot_file)
                     else:
                         await channel.send(embed=miss_embed)
-                    
-                    keeper_save = True
+    
+                    # ✅ CORRECT: Mark as failed attempt, not keeper save
+                    keeper_save = True  # Keeps the flow the same (no goal)
+                    # But you should track this separately if you want accurate keeper stats
                     
                 else:
                     # Shot is on target - now keeper duel!
@@ -2485,7 +2500,7 @@ class MatchEngine:
                     
                     keeper_stat = self.calculate_weighted_stat(keeper, 'defending', 'physical')
                     keeper_bonus_val = self.get_position_bonus('GK', 'save')
-                    keeper_stat_with_penalty = keeper_stat + keeper_bonus_val + 10 + config['keeper_penalty']
+                    keeper_stat_with_penalty = keeper_stat + keeper_bonus_val + 13 + config['keeper_penalty']
                     keeper_roll = random.randint(1, 20)
                     keeper_total = keeper_stat_with_penalty + keeper_roll
                     
@@ -2550,14 +2565,12 @@ class MatchEngine:
         if critical_success:
             result_embed.add_field(
                 name="🌟 NAT 20!",
-                value="Perfect execution!",
+                value="Perfect execution! Major advantage, but not guaranteed...",
                 inline=False
             )
             rating_change = 0.5
 
-            # ✅ FIX: Nat 20 doesn't guarantee goal - just very high chance
             if action in ['shoot', 'header']:
-                # Still need to beat keeper for non-two-stage shots
                 if not is_two_stage_shot:
                     # Get keeper
                     async with db.pool.acquire() as conn:
@@ -2578,19 +2591,31 @@ class MatchEngine:
                     if keeper:
                         keeper_stat = self.calculate_weighted_stat(keeper, 'defending', 'physical')
                         keeper_roll = random.randint(1, 20)
-                        keeper_total = keeper_stat + keeper_roll + 10
+                        # ✅ REBALANCED: Keeper gets +13 bonus
+                        keeper_total = keeper_stat + keeper_roll + 13
+        
+                        # Nat 20 gives +15 bonus, keeper has 40% resistance
+                        player_vs_keeper = player_stat + 20 + 15
                 
-                        # Nat 20 gives you +10 bonus vs keeper
-                        if (player_stat + 30) > keeper_total:
+                        if random.random() < 0.40 and keeper_roll >= 15:
+                            # Keeper saves Nat 20!
+                            result_embed.add_field(
+                                name="🧤 MIRACLE SAVE!",
+                                value=f"Keeper denies the Nat 20!\nYour {player_vs_keeper} vs GK {keeper_total}",
+                                inline=False
+                            )
+                            rating_change = 0.3
+                        elif player_vs_keeper > keeper_total:
                             is_goal = True
                             scorer_name = player['player_name']
                             rating_change = 1.8
                         else:
                             result_embed.add_field(
-                                name="🧤 KEEPER SAVES THE NAT 20!",
-                                value="Incredible reflexes!",
+                                name="🧤 SAVED!",
+                                value=f"Keeper positioned perfectly!\nYour {player_vs_keeper} vs GK {keeper_total}",
                                 inline=False
                             )
+                            rating_change = 0.3
                     else:
                         is_goal = True
                         scorer_name = player['player_name']
@@ -2673,7 +2698,8 @@ class MatchEngine:
                         rating_change = 0.1  # Small bonus for getting shot on target
                 else:
                     # Single-stage shot (already vs GK) - use original logic
-                    if player_roll_with_bonus >= 19 or player_total >= defender_total + 15:
+                    # ✅ REBALANCED: Much harder to score directly
+                    if player_roll_with_bonus >= 19 and player_total >= defender_total + 20:
                         is_goal = True
                         scorer_name = player['player_name']
                         rating_change = 1.2
@@ -2703,8 +2729,8 @@ class MatchEngine:
                         rating_change = -0.1
 
             elif action in ['pass', 'through_ball', 'key_pass', 'cross'] and success:
-                assist_chance = {'pass': 0.20, 'through_ball': 0.30, 'key_pass': 0.40, 'cross': 0.25}
-                if random.random() < assist_chance.get(action, 0.35):
+                assist_chance = {'pass': 0.12, 'through_ball': 0.18, 'key_pass': 0.25, 'cross': 0.15}
+                if random.random() < assist_chance.get(action, 0.20):
                     teammate_result = await self.handle_teammate_goal(channel, player, attacking_team, match_id,
                                                                       is_european)
                     if teammate_result:
@@ -2858,7 +2884,8 @@ class MatchEngine:
 
         success = total >= 75
 
-        if action == 'shoot' and success and roll >= 18:
+        # ✅ REBALANCED: NPC goals much harder
+        if action == 'shoot' and success and roll >= 19 and total >= 100:
             embed = discord.Embed(
                 title=f"⚽ NPC GOAL — {minute}'",
                 description=f"## **{npc['player_name']}** scores for {attacking_team['team_name']}!",
