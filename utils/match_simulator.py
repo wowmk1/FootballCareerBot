@@ -35,7 +35,7 @@ async def simulate_match(fixture: dict):
         )
         has_user_players = result['count'] > 0
     
-    # ✅ FIX: Calculate team strength using WEIGHTED average
+    # Calculate team strength using WEIGHTED average
     home_strength = await calculate_team_strength(fixture['home_team_id'], is_home=True)
     away_strength = await calculate_team_strength(fixture['away_team_id'], is_home=False)
     
@@ -64,7 +64,7 @@ async def simulate_match(fixture: dict):
 
 async def calculate_team_strength(team_id: str, is_home: bool = False) -> int:
     """
-    ✅ FIX: Calculate team strength using WEIGHTED average
+    Calculate team strength using WEIGHTED average
     User players count 1.5x more than NPCs to reflect their training/growth
     
     This prevents teams with one 90-rated user + ten 65-rated NPCs
@@ -88,7 +88,7 @@ async def calculate_team_strength(team_id: str, is_home: bool = False) -> int:
             team_id
         )
     
-    # ✅ FIX: Calculate WEIGHTED average (user players count 1.5x)
+    # Calculate WEIGHTED average (user players count 1.5x)
     total_weight = 0
     total_rating = 0
     
@@ -113,6 +113,7 @@ async def calculate_team_strength(team_id: str, is_home: bool = False) -> int:
     avg_rating = total_rating / total_weight
     
     # Team quality modifier based on average rating
+    # This is how elite teams are identified!
     if avg_rating >= 85:
         team_modifier = 25  # Elite teams (Man City, Real Madrid, Bayern)
     elif avg_rating >= 80:
@@ -136,37 +137,105 @@ async def calculate_team_strength(team_id: str, is_home: bool = False) -> int:
     return min(strength, 95)
 
 def simulate_score(home_strength: int, away_strength: int) -> tuple:
-    """Simulate match score based on team strengths"""
+    """
+    ✅ REBALANCED: More realistic scorelines (0-3 goals typical)
+    Works for both domestic and European competitions
+    
+    Uses a probabilistic system where:
+    - Each team gets multiple "chances" to score
+    - Stronger teams have higher conversion rates
+    - Strength difference affects both chances and conversion
+    - Elite teams (85+ strength) naturally score more
+    """
     
     # Calculate strength difference
     diff = home_strength - away_strength
     
-    # Base goals from strength (stronger teams score more)
-    home_base = max(0, (home_strength - 50) // 15)
-    away_base = max(0, (away_strength - 50) // 15)
+    # ═══════════════════════════════════════════════════════════
+    # STEP 1: Determine number of scoring chances (attacks)
+    # ═══════════════════════════════════════════════════════════
     
-    # Add randomness (luck factor)
-    home_score = home_base + random.randint(0, 2)
-    away_score = away_base + random.randint(0, 2)
+    # Base chances (6-10 per team is realistic for 90 min match)
+    # Elite teams (90+ strength) will get 9-10 chances
+    # Weak teams (60 strength) will get 5-6 chances
+    home_base_chances = 7 + (home_strength - 70) // 10  # 5-9 chances
+    away_base_chances = 7 + (away_strength - 70) // 10
     
-    # Apply strength difference bonuses
-    if diff > 20:
-        home_score += 1
+    # Adjust for strength difference (stronger team dominates possession)
+    if diff > 15:
+        home_base_chances += 2
+        away_base_chances -= 1
     elif diff > 30:
-        home_score += 2
-    elif diff < -20:
-        away_score += 1
+        home_base_chances += 3
+        away_base_chances -= 2
+    elif diff < -15:
+        away_base_chances += 2
+        home_base_chances -= 1
     elif diff < -30:
-        away_score += 2
+        away_base_chances += 3
+        home_base_chances -= 2
     
-    # Occasional upsets (10% chance - this is the "luck" factor)
-    if random.random() < 0.1:
-        if diff > 0:
-            away_score += random.randint(1, 2)
-        else:
-            home_score += random.randint(1, 2)
+    # Add randomness (form/tactics variation)
+    home_chances = max(4, home_base_chances + random.randint(-1, 1))
+    away_chances = max(4, away_base_chances + random.randint(-1, 1))
     
-    # Ensure scores are non-negative
+    # ═══════════════════════════════════════════════════════════
+    # STEP 2: Convert chances to goals (realistic conversion ~10-20%)
+    # ═══════════════════════════════════════════════════════════
+    
+    home_score = 0
+    away_score = 0
+    
+    # Home team conversion rate (higher strength = better finishing)
+    # Elite teams (90 strength) get ~20% conversion
+    # Weak teams (60 strength) get ~8% conversion
+    home_conversion = min(25, 8 + (home_strength - 70) // 5)  # 8-25% range
+    if diff > 20:  # Boost against weak opponents
+        home_conversion += 5
+    
+    # Away team conversion (slight penalty for being away)
+    away_conversion = min(25, 6 + (away_strength - 70) // 5)  # 6-25% range
+    if diff < -20:  # Boost against weak opponents
+        away_conversion += 5
+    
+    # Simulate each chance
+    for _ in range(home_chances):
+        if random.randint(1, 100) <= home_conversion:
+            home_score += 1
+    
+    for _ in range(away_chances):
+        if random.randint(1, 100) <= away_conversion:
+            away_score += 1
+    
+    # ═══════════════════════════════════════════════════════════
+    # STEP 3: Special scenarios (rare events)
+    # ═══════════════════════════════════════════════════════════
+    
+    # Occasional upset bonus (10% chance if losing badly)
+    if diff > 25 and random.random() < 0.10:
+        away_score += random.randint(1, 2)  # Underdog fights back
+    elif diff < -25 and random.random() < 0.10:
+        home_score += random.randint(1, 2)
+    
+    # Very rare high-scoring thriller (3% chance)
+    if random.random() < 0.03:
+        home_score += random.randint(0, 1)
+        away_score += random.randint(0, 1)
+    
+    # Rare defensive masterclass (5% chance - very low scoring)
+    if random.random() < 0.05:
+        home_score = min(home_score, 1)
+        away_score = min(away_score, 1)
+    
+    # ═══════════════════════════════════════════════════════════
+    # STEP 4: Cap scores for realism
+    # ═══════════════════════════════════════════════════════════
+    
+    # Cap at 6 goals per team (extremely rare to score more)
+    home_score = min(home_score, 6)
+    away_score = min(away_score, 6)
+    
+    # Ensure non-negative
     home_score = max(0, home_score)
     away_score = max(0, away_score)
     
