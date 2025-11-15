@@ -608,19 +608,21 @@ class MatchEngine:
             if is_european:
                 npc_teammate = await conn.fetchrow("""
                     SELECT player_name, npc_id, team_id, position, pace, shooting, passing, 
-                           dribbling, defending, physical, overall_rating
+                            dribbling, defending, physical, overall_rating
                     FROM npc_players
                     WHERE team_id = $1 AND position IN ('ST', 'W', 'CAM') AND retired = FALSE
                     UNION ALL
                     SELECT player_name, european_npc_id as npc_id, team_id, position, pace, shooting, passing, 
-                           dribbling, defending, physical, overall_rating
+                            dribbling, defending, physical, overall_rating
                     FROM european_npc_players
                     WHERE team_id = $1 AND position IN ('ST', 'W', 'CAM') AND retired = FALSE
                     ORDER BY RANDOM() LIMIT 1
                 """, attacking_team['team_id'])
             else:
                 npc_teammate = await conn.fetchrow("""
-                    SELECT player_name, npc_id FROM npc_players
+                    SELECT player_name, npc_id, team_id, position, pace, shooting, passing, 
+                            dribbling, defending, physical, overall_rating
+                    FROM npc_players
                     WHERE team_id = $1 AND position IN ('ST', 'W', 'CAM') AND retired = FALSE
                     ORDER BY RANDOM() LIMIT 1
                 """, attacking_team['team_id'])
@@ -2009,19 +2011,21 @@ class MatchEngine:
                 if is_european:
                     result = await conn.fetchrow(f"""
                         SELECT player_name, npc_id, team_id, position, pace, shooting, passing, 
-                               dribbling, defending, physical, overall_rating, season_goals, season_assists, retired
+                               dribbling, defending, physical, overall_rating
                         FROM npc_players
                         WHERE team_id = $1 AND position IN ({position_filter}) AND retired = FALSE
                         UNION ALL
                         SELECT player_name, european_npc_id as npc_id, team_id, position, pace, shooting, passing, 
-                               dribbling, defending, physical, overall_rating, season_goals, season_assists, retired
+                               dribbling, defending, physical, overall_rating
                         FROM european_npc_players
                         WHERE team_id = $1 AND position IN ({position_filter}) AND retired = FALSE
                         ORDER BY RANDOM() LIMIT 1
                     """, defending_team['team_id'])
                 else:
                     result = await conn.fetchrow(f"""
-                        SELECT * FROM npc_players 
+                        SELECT player_name, npc_id, team_id, position, pace, shooting, passing, 
+                               dribbling, defending, physical, overall_rating
+                        FROM npc_players 
                         WHERE team_id = $1 AND position IN ({position_filter}) AND retired = FALSE
                         ORDER BY RANDOM() LIMIT 1
                     """, defending_team['team_id'])
@@ -2054,45 +2058,56 @@ class MatchEngine:
         async with db.pool.acquire() as conn:
             if is_european:
                 result = await conn.fetchrow(f"""
-                    SELECT * FROM npc_players
-                    WHERE team_id = $1 AND position IN ({position_filter}) AND retired = FALSE
-                    ORDER BY RANDOM() LIMIT 1
-                """, defending_team['team_id'])
-                if not result:
-                    result = await conn.fetchrow(f"""
-                        SELECT * FROM european_npc_players
+                        SELECT player_name, npc_id, team_id, position, pace, shooting, passing, 
+                               dribbling, defending, physical, overall_rating
+                        FROM npc_players
                         WHERE team_id = $1 AND position IN ({position_filter}) AND retired = FALSE
                         ORDER BY RANDOM() LIMIT 1
                     """, defending_team['team_id'])
+                if not result:
+                    result = await conn.fetchrow(f"""
+                            SELECT player_name, european_npc_id as npc_id, team_id, position, pace, shooting, passing, 
+                                   dribbling, defending, physical, overall_rating
+                            FROM european_npc_players
+                            WHERE team_id = $1 AND position IN ({position_filter}) AND retired = FALSE
+                            ORDER BY RANDOM() LIMIT 1
+                        """, defending_team['team_id'])
             else:
                 result = await conn.fetchrow(f"""
-                    SELECT * FROM npc_players 
-                    WHERE team_id = $1 AND position IN ({position_filter}) AND retired = FALSE
-                    ORDER BY RANDOM() LIMIT 1
-                """, defending_team['team_id'])
+                        SELECT player_name, npc_id, team_id, position, pace, shooting, passing, 
+                               dribbling, defending, physical, overall_rating
+                        FROM npc_players 
+                        WHERE team_id = $1 AND position IN ({position_filter}) AND retired = FALSE
+                        ORDER BY RANDOM() LIMIT 1
+                    """, defending_team['team_id'])
             defender = dict(result) if result else None
 
         if not defender:
             async with db.pool.acquire() as conn:
                 if is_european:
                     result = await conn.fetchrow("""
-                        SELECT player_name, npc_id, team_id, position, pace, shooting, passing, 
-                               dribbling, defending, physical, overall_rating, season_goals, season_assists, retired
-                        FROM npc_players
-                        WHERE team_id = $1 AND retired = FALSE
-                        UNION ALL
-                        SELECT player_name, european_npc_id as npc_id, team_id, position, pace, shooting, passing, 
-                               dribbling, defending, physical, overall_rating, season_goals, season_assists, retired
-                        FROM european_npc_players
-                        WHERE team_id = $1 AND retired = FALSE
-                        ORDER BY RANDOM() LIMIT 1
-                    """, defending_team['team_id'])
+                            SELECT player_name, npc_id, team_id, position, pace, shooting, passing, 
+                                   dribbling, defending, physical, overall_rating
+                            FROM npc_players
+                            WHERE team_id = $1 AND retired = FALSE
+                            ORDER BY RANDOM() LIMIT 1
+                        """, defending_team['team_id'])
+                    if not result:
+                        result = await conn.fetchrow("""
+                                SELECT player_name, european_npc_id as npc_id, team_id, position, pace, shooting, passing, 
+                                       dribbling, defending, physical, overall_rating
+                                FROM european_npc_players
+                                WHERE team_id = $1 AND retired = FALSE
+                                ORDER BY RANDOM() LIMIT 1
+                            """, defending_team['team_id'])
                 else:
                     result = await conn.fetchrow("""
-                        SELECT * FROM npc_players
-                        WHERE team_id = $1 AND retired = FALSE
-                        ORDER BY RANDOM() LIMIT 1
-                    """, defending_team['team_id'])
+                            SELECT player_name, npc_id, team_id, position, pace, shooting, passing, 
+                                   dribbling, defending, physical, overall_rating
+                            FROM npc_players
+                            WHERE team_id = $1 AND retired = FALSE
+                            ORDER BY RANDOM() LIMIT 1
+                        """, defending_team['team_id'])
                 defender = dict(result) if result else None
 
         if defender:
@@ -2133,19 +2148,24 @@ class MatchEngine:
             if is_european:
                 keeper = await conn.fetchrow("""
                     SELECT player_name, npc_id, team_id, position, pace, shooting, passing, 
-                           dribbling, defending, physical, overall_rating, season_goals, season_assists, retired
+                           dribbling, defending, physical, overall_rating
                     FROM npc_players
-                    WHERE team_id = $1 AND position = 'GK' AND retired = FALSE
-                    UNION ALL
-                    SELECT player_name, european_npc_id as npc_id, team_id, position, pace, shooting, passing, 
-                           dribbling, defending, physical, overall_rating, season_goals, season_assists, retired
-                    FROM european_npc_players
                     WHERE team_id = $1 AND position = 'GK' AND retired = FALSE
                     LIMIT 1
                 """, defending_team['team_id'])
+                if not keeper:
+                    keeper = await conn.fetchrow("""
+                        SELECT player_name, european_npc_id as npc_id, team_id, position, pace, shooting, passing, 
+                               dribbling, defending, physical, overall_rating
+                        FROM european_npc_players
+                        WHERE team_id = $1 AND position = 'GK' AND retired = FALSE
+                        LIMIT 1
+                    """, defending_team['team_id'])
             else:
                 keeper = await conn.fetchrow("""
-                    SELECT * FROM npc_players
+                    SELECT player_name, npc_id, team_id, position, pace, shooting, passing, 
+                           dribbling, defending, physical, overall_rating
+                    FROM npc_players
                     WHERE team_id = $1 AND position = 'GK' AND retired = FALSE LIMIT 1
                 """, defending_team['team_id'])
             keeper = dict(keeper) if keeper else None
