@@ -17,6 +17,7 @@ ENHANCED MATCH ENGINE - COMPLETE VERSION WITH ALL FIXES + SKIP/AFK BUTTONS + SHO
 ✅ NEW: Interactive Shot Placement System with 5 options
 ✅ NEW: Beautiful goal visualization graphics
 ✅ NEW: Risk/reward shooting mechanics
+✅ FIXED: european_npc_id column error
 """
 import discord
 from discord.ext import commands
@@ -520,6 +521,7 @@ class MatchEngine:
         """
         ✅ FIX #2: Teammate scoring with priority for user players
         75% chance user teammates score, position-weighted
+        ✅ FIXED: Corrected SQL query to not select european_npc_id from npc_players
         """
         async with db.pool.acquire() as conn:
             # ✅ FIRST: Check for user teammates in attacking positions
@@ -605,19 +607,26 @@ class MatchEngine:
                     }
 
             # Fallback to NPC if no user teammates or 25% random chance
+            # ✅ FIXED: Separated queries for npc_players and european_npc_players
             if is_european:
+                # Try regular NPCs first
                 npc_teammate = await conn.fetchrow("""
                     SELECT player_name, npc_id, team_id, position, pace, shooting, passing, 
                             dribbling, defending, physical, overall_rating
                     FROM npc_players
                     WHERE team_id = $1 AND position IN ('ST', 'W', 'CAM') AND retired = FALSE
-                    UNION ALL
-                    SELECT player_name, european_npc_id as npc_id, team_id, position, pace, shooting, passing, 
-                            dribbling, defending, physical, overall_rating
-                    FROM european_npc_players
-                    WHERE team_id = $1 AND position IN ('ST', 'W', 'CAM') AND retired = FALSE
                     ORDER BY RANDOM() LIMIT 1
                 """, attacking_team['team_id'])
+                
+                # If no regular NPC found, try European NPCs
+                if not npc_teammate:
+                    npc_teammate = await conn.fetchrow("""
+                        SELECT player_name, european_npc_id as npc_id, team_id, position, pace, shooting, passing, 
+                                dribbling, defending, physical, overall_rating
+                        FROM european_npc_players
+                        WHERE team_id = $1 AND position IN ('ST', 'W', 'CAM') AND retired = FALSE
+                        ORDER BY RANDOM() LIMIT 1
+                    """, attacking_team['team_id'])
             else:
                 npc_teammate = await conn.fetchrow("""
                     SELECT player_name, npc_id, team_id, position, pace, shooting, passing, 
@@ -853,20 +862,28 @@ class MatchEngine:
                                dribbling, defending, physical, overall_rating, season_goals, season_assists, retired
                         FROM npc_players
                         WHERE team_id = $1 AND retired = FALSE
-                        UNION ALL
-                        SELECT player_name, european_npc_id as npc_id, team_id, position, pace, shooting, passing, 
-                               dribbling, defending, physical, overall_rating, season_goals, season_assists, retired
-                        FROM european_npc_players
-                        WHERE team_id = $1 AND retired = FALSE
                         ORDER BY passing DESC LIMIT 1
                     """, attacking_team['team_id'])
+                    
+                    if not taker:
+                        taker = await conn.fetchrow("""
+                            SELECT player_name, european_npc_id as npc_id, team_id, position, pace, shooting, passing, 
+                                   dribbling, defending, physical, overall_rating, season_goals, season_assists, retired
+                            FROM european_npc_players
+                            WHERE team_id = $1 AND retired = FALSE
+                            ORDER BY passing DESC LIMIT 1
+                        """, attacking_team['team_id'])
                 else:
                     taker = await conn.fetchrow("""
-                            SELECT player_name, npc_id, team_id, position, pace, shooting, passing, 
-                                   dribbling, defending, physical, overall_rating, season_goals, season_assists, retired
-                            FROM npc_players
-                            WHERE team_id = $1 AND retired = FALSE
-                            UNION ALL
+                        SELECT player_name, npc_id, team_id, position, pace, shooting, passing, 
+                               dribbling, defending, physical, overall_rating, season_goals, season_assists, retired
+                        FROM npc_players
+                        WHERE team_id = $1 AND retired = FALSE
+                        ORDER BY shooting DESC LIMIT 1
+                    """, attacking_team['team_id'])
+                    
+                    if not taker:
+                        taker = await conn.fetchrow("""
                             SELECT player_name, european_npc_id as npc_id, team_id, position, pace, shooting, passing, 
                                    dribbling, defending, physical, overall_rating, season_goals, season_assists, retired
                             FROM european_npc_players
@@ -947,13 +964,17 @@ class MatchEngine:
                                    dribbling, defending, physical, overall_rating, season_goals, season_assists, retired
                             FROM npc_players
                             WHERE team_id = $1 AND position IN ('ST', 'CB') AND retired = FALSE
-                            UNION ALL
-                            SELECT player_name, european_npc_id as npc_id, team_id, position, pace, shooting, passing, 
-                                   dribbling, defending, physical, overall_rating, season_goals, season_assists, retired
-                            FROM european_npc_players
-                            WHERE team_id = $1 AND position IN ('ST', 'CB') AND retired = FALSE
                             ORDER BY physical DESC LIMIT 1
                         """, attacking_team['team_id'])
+                        
+                        if not header_player:
+                            header_player = await conn.fetchrow("""
+                                SELECT player_name, european_npc_id as npc_id, team_id, position, pace, shooting, passing, 
+                                       dribbling, defending, physical, overall_rating, season_goals, season_assists, retired
+                                FROM european_npc_players
+                                WHERE team_id = $1 AND position IN ('ST', 'CB') AND retired = FALSE
+                                ORDER BY physical DESC LIMIT 1
+                            """, attacking_team['team_id'])
                     else:
                         header_player = await conn.fetchrow("""
                             SELECT * FROM npc_players
@@ -1212,13 +1233,17 @@ class MatchEngine:
                            dribbling, defending, physical, overall_rating, season_goals, season_assists, retired
                     FROM npc_players
                     WHERE team_id = $1 AND position = 'GK' AND retired = FALSE
-                    UNION ALL
-                    SELECT player_name, european_npc_id as npc_id, team_id, position, pace, shooting, passing, 
-                           dribbling, defending, physical, overall_rating, season_goals, season_assists, retired
-                    FROM european_npc_players
-                    WHERE team_id = $1 AND position = 'GK' AND retired = FALSE
                     LIMIT 1
                 """, defending_team['team_id'])
+                
+                if not keeper:
+                    keeper = await conn.fetchrow("""
+                        SELECT player_name, european_npc_id as npc_id, team_id, position, pace, shooting, passing, 
+                               dribbling, defending, physical, overall_rating, season_goals, season_assists, retired
+                        FROM european_npc_players
+                        WHERE team_id = $1 AND position = 'GK' AND retired = FALSE
+                        LIMIT 1
+                    """, defending_team['team_id'])
             else:
                 keeper = await conn.fetchrow("""
                     SELECT * FROM npc_players
@@ -1292,13 +1317,17 @@ class MatchEngine:
                            dribbling, defending, physical, overall_rating, season_goals, season_assists, retired
                     FROM npc_players
                     WHERE team_id = $1 AND position = 'GK' AND retired = FALSE
-                    UNION ALL
-                    SELECT player_name, european_npc_id as npc_id, team_id, position, pace, shooting, passing, 
-                           dribbling, defending, physical, overall_rating, season_goals, season_assists, retired
-                    FROM european_npc_players
-                    WHERE team_id = $1 AND position = 'GK' AND retired = FALSE
                     LIMIT 1
                 """, defending_team['team_id'])
+                
+                if not keeper:
+                    keeper = await conn.fetchrow("""
+                        SELECT player_name, european_npc_id as npc_id, team_id, position, pace, shooting, passing, 
+                               dribbling, defending, physical, overall_rating, season_goals, season_assists, retired
+                        FROM european_npc_players
+                        WHERE team_id = $1 AND position = 'GK' AND retired = FALSE
+                        LIMIT 1
+                    """, defending_team['team_id'])
             else:
                 keeper = await conn.fetchrow("""
                     SELECT * FROM npc_players
@@ -1369,13 +1398,17 @@ class MatchEngine:
                            dribbling, defending, physical, overall_rating, season_goals, season_assists, retired
                     FROM npc_players
                     WHERE team_id = $1 AND position IN ('ST', 'W') AND retired = FALSE
-                    UNION ALL
-                    SELECT player_name, european_npc_id as npc_id, team_id, position, pace, shooting, passing, 
-                           dribbling, defending, physical, overall_rating, season_goals, season_assists, retired
-                    FROM european_npc_players
-                    WHERE team_id = $1 AND position IN ('ST', 'W') AND retired = FALSE
                     ORDER BY pace DESC LIMIT 1
                 """, attacking_team['team_id'])
+                
+                if not attacker:
+                    attacker = await conn.fetchrow("""
+                        SELECT player_name, european_npc_id as npc_id, team_id, position, pace, shooting, passing, 
+                               dribbling, defending, physical, overall_rating, season_goals, season_assists, retired
+                        FROM european_npc_players
+                        WHERE team_id = $1 AND position IN ('ST', 'W') AND retired = FALSE
+                        ORDER BY pace DESC LIMIT 1
+                    """, attacking_team['team_id'])
             else:
                 attacker = await conn.fetchrow("""
                     SELECT * FROM npc_players
@@ -1459,13 +1492,17 @@ class MatchEngine:
                            dribbling, defending, physical, overall_rating, season_goals, season_assists, retired
                     FROM npc_players
                     WHERE team_id = $1 AND position IN ('ST', 'W', 'CAM') AND retired = FALSE
-                    UNION ALL
-                    SELECT player_name, european_npc_id as npc_id, team_id, position, pace, shooting, passing, 
-                           dribbling, defending, physical, overall_rating, season_goals, season_assists, retired
-                    FROM european_npc_players
-                    WHERE team_id = $1 AND position IN ('ST', 'W', 'CAM') AND retired = FALSE
                     ORDER BY RANDOM() LIMIT 1
                 """, attacking_team['team_id'])
+                
+                if not attacker:
+                    attacker = await conn.fetchrow("""
+                        SELECT player_name, european_npc_id as npc_id, team_id, position, pace, shooting, passing, 
+                               dribbling, defending, physical, overall_rating, season_goals, season_assists, retired
+                        FROM european_npc_players
+                        WHERE team_id = $1 AND position IN ('ST', 'W', 'CAM') AND retired = FALSE
+                        ORDER BY RANDOM() LIMIT 1
+                    """, attacking_team['team_id'])
             else:
                 attacker = await conn.fetchrow("""
                     SELECT * FROM npc_players
@@ -1537,13 +1574,17 @@ class MatchEngine:
                            dribbling, defending, physical, overall_rating, season_goals, season_assists, retired
                     FROM npc_players
                     WHERE team_id = $1 AND position IN ('CAM', 'CM') AND retired = FALSE
-                    UNION ALL
-                    SELECT player_name, european_npc_id as npc_id, team_id, position, pace, shooting, passing, 
-                           dribbling, defending, physical, overall_rating, season_goals, season_assists, retired
-                    FROM european_npc_players
-                    WHERE team_id = $1 AND position IN ('CAM', 'CM') AND retired = FALSE
                     ORDER BY RANDOM() LIMIT 1
                 """, attacking_team['team_id'])
+                
+                if not midfielder:
+                    midfielder = await conn.fetchrow("""
+                        SELECT player_name, european_npc_id as npc_id, team_id, position, pace, shooting, passing, 
+                               dribbling, defending, physical, overall_rating, season_goals, season_assists, retired
+                        FROM european_npc_players
+                        WHERE team_id = $1 AND position IN ('CAM', 'CM') AND retired = FALSE
+                        ORDER BY RANDOM() LIMIT 1
+                    """, attacking_team['team_id'])
             else:
                 midfielder = await conn.fetchrow("""
                     SELECT * FROM npc_players
@@ -1611,25 +1652,34 @@ class MatchEngine:
                            dribbling, defending, physical, overall_rating, season_goals, season_assists, retired
                     FROM npc_players
                     WHERE team_id = $1 AND retired = FALSE
-                    UNION ALL
-                    SELECT player_name, european_npc_id as npc_id, team_id, position, pace, shooting, passing, 
-                           dribbling, defending, physical, overall_rating, season_goals, season_assists, retired
-                    FROM european_npc_players
-                    WHERE team_id = $1 AND retired = FALSE
                     ORDER BY RANDOM() LIMIT 1
                 """, attacking_team['team_id'])
+                
+                if not attacker:
+                    attacker = await conn.fetchrow("""
+                        SELECT player_name, european_npc_id as npc_id, team_id, position, pace, shooting, passing, 
+                               dribbling, defending, physical, overall_rating, season_goals, season_assists, retired
+                        FROM european_npc_players
+                        WHERE team_id = $1 AND retired = FALSE
+                        ORDER BY RANDOM() LIMIT 1
+                    """, attacking_team['team_id'])
+                
                 defender = await conn.fetchrow("""
                     SELECT player_name, npc_id, team_id, position, pace, shooting, passing, 
                            dribbling, defending, physical, overall_rating, season_goals, season_assists, retired
                     FROM npc_players
                     WHERE team_id = $1 AND retired = FALSE
-                    UNION ALL
-                    SELECT player_name, european_npc_id as npc_id, team_id, position, pace, shooting, passing, 
-                           dribbling, defending, physical, overall_rating, season_goals, season_assists, retired
-                    FROM european_npc_players
-                    WHERE team_id = $1 AND retired = FALSE
                     ORDER BY RANDOM() LIMIT 1
                 """, defending_team['team_id'])
+                
+                if not defender:
+                    defender = await conn.fetchrow("""
+                        SELECT player_name, european_npc_id as npc_id, team_id, position, pace, shooting, passing, 
+                               dribbling, defending, physical, overall_rating, season_goals, season_assists, retired
+                        FROM european_npc_players
+                        WHERE team_id = $1 AND retired = FALSE
+                        ORDER BY RANDOM() LIMIT 1
+                    """, defending_team['team_id'])
             else:
                 attacker = await conn.fetchrow("""
                     SELECT * FROM npc_players
@@ -1674,13 +1724,17 @@ class MatchEngine:
                            dribbling, defending, physical, overall_rating, season_goals, season_assists, retired
                     FROM npc_players
                     WHERE team_id = $1 AND position IN ('CAM', 'CM') AND retired = FALSE
-                    UNION ALL
-                    SELECT player_name, european_npc_id as npc_id, team_id, position, pace, shooting, passing, 
-                           dribbling, defending, physical, overall_rating, season_goals, season_assists, retired
-                    FROM european_npc_players
-                    WHERE team_id = $1 AND position IN ('CAM', 'CM') AND retired = FALSE
                     ORDER BY shooting DESC LIMIT 1
                 """, attacking_team['team_id'])
+                
+                if not attacker:
+                    attacker = await conn.fetchrow("""
+                        SELECT player_name, european_npc_id as npc_id, team_id, position, pace, shooting, passing, 
+                               dribbling, defending, physical, overall_rating, season_goals, season_assists, retired
+                        FROM european_npc_players
+                        WHERE team_id = $1 AND position IN ('CAM', 'CM') AND retired = FALSE
+                        ORDER BY shooting DESC LIMIT 1
+                    """, attacking_team['team_id'])
             else:
                 attacker = await conn.fetchrow("""
                     SELECT * FROM npc_players
@@ -2014,13 +2068,17 @@ class MatchEngine:
                                dribbling, defending, physical, overall_rating
                         FROM npc_players
                         WHERE team_id = $1 AND position IN ({position_filter}) AND retired = FALSE
-                        UNION ALL
-                        SELECT player_name, european_npc_id as npc_id, team_id, position, pace, shooting, passing, 
-                               dribbling, defending, physical, overall_rating
-                        FROM european_npc_players
-                        WHERE team_id = $1 AND position IN ({position_filter}) AND retired = FALSE
                         ORDER BY RANDOM() LIMIT 1
                     """, defending_team['team_id'])
+                    
+                    if not result:
+                        result = await conn.fetchrow(f"""
+                            SELECT player_name, european_npc_id as npc_id, team_id, position, pace, shooting, passing, 
+                                   dribbling, defending, physical, overall_rating
+                            FROM european_npc_players
+                            WHERE team_id = $1 AND position IN ({position_filter}) AND retired = FALSE
+                            ORDER BY RANDOM() LIMIT 1
+                        """, defending_team['team_id'])
                 else:
                     result = await conn.fetchrow(f"""
                         SELECT player_name, npc_id, team_id, position, pace, shooting, passing, 
@@ -2445,13 +2503,17 @@ class MatchEngine:
                                dribbling, defending, physical, overall_rating, season_goals, season_assists, retired
                         FROM npc_players
                         WHERE team_id = $1 AND position = 'GK' AND retired = FALSE
-                        UNION ALL
-                        SELECT player_name, european_npc_id as npc_id, team_id, position, pace, shooting, passing, 
-                               dribbling, defending, physical, overall_rating, season_goals, season_assists, retired
-                        FROM european_npc_players
-                        WHERE team_id = $1 AND position = 'GK' AND retired = FALSE
                         LIMIT 1
                     """, defending_team['team_id'])
+                    
+                    if not keeper:
+                        keeper = await conn.fetchrow("""
+                            SELECT player_name, european_npc_id as npc_id, team_id, position, pace, shooting, passing, 
+                                   dribbling, defending, physical, overall_rating, season_goals, season_assists, retired
+                            FROM european_npc_players
+                            WHERE team_id = $1 AND position = 'GK' AND retired = FALSE
+                            LIMIT 1
+                        """, defending_team['team_id'])
                 else:
                     keeper = await conn.fetchrow("""
                         SELECT * FROM npc_players
@@ -2666,13 +2728,17 @@ class MatchEngine:
                                        dribbling, defending, physical, overall_rating, season_goals, season_assists, retired
                                 FROM npc_players
                                 WHERE team_id = $1 AND position = 'GK' AND retired = FALSE
-                                UNION ALL
-                                SELECT player_name, european_npc_id as npc_id, team_id, position, pace, shooting, passing, 
-                                       dribbling, defending, physical, overall_rating, season_goals, season_assists, retired
-                                FROM european_npc_players
-                                WHERE team_id = $1 AND position = 'GK' AND retired = FALSE
                                 LIMIT 1
                             """, defending_team['team_id'])
+                            
+                            if not keeper:
+                                keeper = await conn.fetchrow("""
+                                    SELECT player_name, european_npc_id as npc_id, team_id, position, pace, shooting, passing, 
+                                           dribbling, defending, physical, overall_rating, season_goals, season_assists, retired
+                                    FROM european_npc_players
+                                    WHERE team_id = $1 AND position = 'GK' AND retired = FALSE
+                                    LIMIT 1
+                                """, defending_team['team_id'])
                         else:
                             keeper = await conn.fetchrow("""
                                 SELECT * FROM npc_players
@@ -2954,13 +3020,17 @@ class MatchEngine:
                            dribbling, defending, physical, overall_rating, season_goals, season_assists, retired
                     FROM npc_players
                     WHERE team_id = $1 AND retired = FALSE
-                    UNION ALL
-                    SELECT player_name, european_npc_id as npc_id, team_id, position, pace, shooting, passing, 
-                           dribbling, defending, physical, overall_rating, season_goals, season_assists, retired
-                    FROM european_npc_players
-                    WHERE team_id = $1 AND retired = FALSE
                     ORDER BY RANDOM() LIMIT 1
                 """, team_id)
+                
+                if not result:
+                    result = await conn.fetchrow("""
+                        SELECT player_name, european_npc_id as npc_id, team_id, position, pace, shooting, passing, 
+                               dribbling, defending, physical, overall_rating, season_goals, season_assists, retired
+                        FROM european_npc_players
+                        WHERE team_id = $1 AND retired = FALSE
+                        ORDER BY RANDOM() LIMIT 1
+                    """, team_id)
             else:
                 result = await conn.fetchrow(
                     "SELECT * FROM npc_players WHERE team_id = $1 AND retired = FALSE ORDER BY RANDOM() LIMIT 1",
@@ -3625,22 +3695,6 @@ class MatchEngine:
                     SELECT team_id, team_name FROM european_teams WHERE team_id = $1
                 """, home_team_id)
                 away_team = await conn.fetchrow("""
-                    SELECT team_id, team_name FROM european_teams WHERE team_id = $1
-                """, away_team_id)
-
-                if not home_team:
-                    home_team = await conn.fetchrow("""
-                        SELECT team_id, team_name FROM teams WHERE team_id = $1
-                    """, home_team_id)
-                if not away_team:
-                    away_team = await conn.fetchrow("""
-                        SELECT team_id, team_name FROM teams WHERE team_id = $1
-                    """, away_team_id)
-            else:
-                home_team = await conn.fetchrow("""
-                    SELECT team_id, team_name FROM teams WHERE team_id = $1
-                """, home_team_id)
-                away_team = await conn.fetchrow("""
                     SELECT team_id, team_name FROM teams WHERE team_id = $1
                 """, away_team_id)
 
@@ -3651,18 +3705,24 @@ class MatchEngine:
                 home_npcs = await conn.fetch("""
                     SELECT overall_rating FROM npc_players
                     WHERE team_id = $1 AND retired = FALSE
-                    UNION ALL
-                    SELECT overall_rating FROM european_npc_players
-                    WHERE team_id = $2 AND retired = FALSE
-                """, home_team_id, home_team_id)
+                """, home_team_id)
+                
+                if not home_npcs:
+                    home_npcs = await conn.fetch("""
+                        SELECT overall_rating FROM european_npc_players
+                        WHERE team_id = $1 AND retired = FALSE
+                    """, home_team_id)
 
                 away_npcs = await conn.fetch("""
                     SELECT overall_rating FROM npc_players
                     WHERE team_id = $1 AND retired = FALSE
-                    UNION ALL
-                    SELECT overall_rating FROM european_npc_players
-                    WHERE team_id = $2 AND retired = FALSE
-                """, away_team_id, away_team_id)
+                """, away_team_id)
+                
+                if not away_npcs:
+                    away_npcs = await conn.fetch("""
+                        SELECT overall_rating FROM european_npc_players
+                        WHERE team_id = $1 AND retired = FALSE
+                    """, away_team_id)
             else:
                 home_npcs = await conn.fetch("""
                     SELECT overall_rating FROM npc_players
@@ -3999,4 +4059,20 @@ class ShotPlacementButton(discord.ui.Button):
         self.view.stop()
 
 
-match_engine = None
+match_engine = Nonefetchrow("""
+                    SELECT team_id, team_name FROM european_teams WHERE team_id = $1
+                """, away_team_id)
+
+                if not home_team:
+                    home_team = await conn.fetchrow("""
+                        SELECT team_id, team_name FROM teams WHERE team_id = $1
+                    """, home_team_id)
+                if not away_team:
+                    away_team = await conn.fetchrow("""
+                        SELECT team_id, team_name FROM teams WHERE team_id = $1
+                    """, away_team_id)
+            else:
+                home_team = await conn.fetchrow("""
+                    SELECT team_id, team_name FROM teams WHERE team_id = $1
+                """, home_team_id)
+                away_team = await conn.
