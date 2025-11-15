@@ -4076,3 +4076,5 @@ match_engine = Nonefetchrow("""
                     SELECT team_id, team_name FROM teams WHERE team_id = $1
                 """, home_team_id)
                 away_team = await conn.
+
+match_engine = None
