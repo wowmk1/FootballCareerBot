@@ -34,11 +34,16 @@ logger = logging.getLogger(__name__)
 
 try:
     from utils.football_data_api import get_team_crest_url, get_competition_logo
+
     print("✅ Loaded crests_database directly")
 except ImportError:
     print("⚠️ crests_database not found, using fallback")
+
+
     def get_team_crest_url(team_id):
         return ""
+
+
     def get_competition_logo(comp):
         return ""
 
@@ -52,7 +57,7 @@ class MatchEngine:
         self._match_timestamps: Dict[int, datetime] = {}
         self.match_yellow_cards: Dict[int, Dict[int, int]] = {}
         self.match_stats: Dict[int, dict] = {}
-        
+
         # ✅ NEW: Timeout and AFK tracking
         self.player_timeouts: Dict[int, set] = {}  # match_id -> {user_ids who timed out}
         self.afk_players: Dict[int, set] = {}  # match_id -> {user_ids marked AFK}
@@ -67,7 +72,7 @@ class MatchEngine:
         High-engagement system with lots of action
         """
         total_players = len(home_participants) + len(away_participants)
-        
+
         if total_players == 0:
             return {
                 'player_moments': 0,
@@ -75,11 +80,11 @@ class MatchEngine:
                 'set_pieces': 10,
                 'total': 40
             }
-        
+
         # ✅ Each player gets 13 moments (sweet spot for engagement)
         moments_per_player = 13
         player_moments = total_players * moments_per_player
-        
+
         # ✅ Solo players get slightly more NPC opposition
         if total_players == 1:
             npc_moments = 20
@@ -87,15 +92,15 @@ class MatchEngine:
         else:
             npc_moments = 15
             set_pieces = 8
-        
+
         total_events = player_moments + npc_moments + set_pieces
-        
+
         # ✅ Cap at 55 events to keep matches reasonable (~45 min)
         if total_events > 55:
             excess = total_events - 55
             player_moments = max(total_players * 10, player_moments - excess)
             total_events = player_moments + npc_moments + set_pieces
-        
+
         return {
             'player_moments': player_moments,
             'npc_moments': npc_moments,
@@ -109,40 +114,40 @@ class MatchEngine:
         Better players get +1 extra moment
         """
         all_participants = home_participants + away_participants
-        
+
         if not all_participants or player_moments == 0:
             return []
-        
+
         # Base moments per player
         base_moments = player_moments // len(all_participants)
         extra_moments = player_moments % len(all_participants)
-        
+
         moments_distribution = {}
-        
+
         # Everyone gets base amount
         for participant in all_participants:
             moments_distribution[participant['user_id']] = base_moments
-        
+
         # Distribute extras weighted by rating
         if extra_moments > 0:
             player_ratings = []
             for p in all_participants:
                 player = await db.get_player(p['user_id'])
                 player_ratings.append((p, player['overall_rating'] if player else 70))
-            
+
             # Give extras to top-rated players
             player_ratings.sort(key=lambda x: x[1], reverse=True)
             for i in range(extra_moments):
                 participant = player_ratings[i][0]
                 moments_distribution[participant['user_id']] += 1
-        
+
         # Create schedule
         schedule = []
         for participant in all_participants:
             player = await db.get_player(participant['user_id'])
             count = moments_distribution[participant['user_id']]
             team_side = 'home' if participant in home_participants else 'away'
-            
+
             for _ in range(count):
                 schedule.append({
                     'type': 'player',
@@ -150,9 +155,9 @@ class MatchEngine:
                     'player': player,
                     'team_side': team_side
                 })
-            
+
             print(f"   {player['player_name']}: {count} moments")
-        
+
         random.shuffle(schedule)
         return schedule
 
@@ -327,7 +332,7 @@ class MatchEngine:
             width, height = 800, 500
             img = Image.new('RGB', (width, height), color='#2b5329')  # Football pitch green
             draw = ImageDraw.Draw(img)
-            
+
             # Try to load a font, fallback to default
             try:
                 title_font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 32)
@@ -335,32 +340,32 @@ class MatchEngine:
             except:
                 title_font = ImageFont.load_default()
                 text_font = ImageFont.load_default()
-            
+
             # Draw goal frame (white posts)
             goal_left = 200
             goal_right = 600
             goal_top = 100
             goal_bottom = 350
-            
+
             # Goal posts
-            draw.rectangle([goal_left-10, goal_top-10, goal_left, goal_bottom], fill='white')
-            draw.rectangle([goal_right, goal_top-10, goal_right+10, goal_bottom], fill='white')
-            draw.rectangle([goal_left, goal_top-10, goal_right, goal_top], fill='white')
-            
+            draw.rectangle([goal_left - 10, goal_top - 10, goal_left, goal_bottom], fill='white')
+            draw.rectangle([goal_right, goal_top - 10, goal_right + 10, goal_bottom], fill='white')
+            draw.rectangle([goal_left, goal_top - 10, goal_right, goal_top], fill='white')
+
             # Net pattern
             for i in range(goal_left, goal_right, 30):
                 draw.line([(i, goal_top), (i, goal_bottom)], fill='#cccccc', width=1)
             for i in range(goal_top, goal_bottom, 30):
                 draw.line([(goal_left, i), (goal_right, i)], fill='#cccccc', width=1)
-            
+
             # Divide goal into sections (visualize the zones)
             mid_x = (goal_left + goal_right) // 2
             mid_y = (goal_top + goal_bottom) // 2
-            
+
             # Draw section lines (light)
             draw.line([(mid_x, goal_top), (mid_x, goal_bottom)], fill='#888888', width=2)
             draw.line([(goal_left, mid_y), (goal_right, mid_y)], fill='#888888', width=2)
-            
+
             # Determine shot position
             shot_positions = {
                 'left_corner': (goal_left + 60, goal_top + 60),
@@ -369,22 +374,22 @@ class MatchEngine:
                 'low_center': (mid_x, goal_bottom - 60),
                 'power_shot': (mid_x, mid_y)
             }
-            
+
             shot_x, shot_y = shot_positions.get(placement, (mid_x, mid_y))
-            
+
             # Determine keeper position
             keeper_positions = {
                 'left': (goal_left + 80, mid_y),
                 'right': (goal_right - 80, mid_y),
                 'center': (mid_x, mid_y)
             }
-            
+
             keeper_x, keeper_y = keeper_positions.get(keeper_dove, (mid_x, mid_y))
-            
+
             # Draw ball trajectory (from penalty spot to shot position)
             ball_start_x = width // 2
             ball_start_y = height - 50
-            
+
             # Curved line for ball path
             points = []
             for i in range(20):
@@ -393,17 +398,17 @@ class MatchEngine:
                 x = ball_start_x + (shot_x - ball_start_x) * t
                 y = ball_start_y - (ball_start_y - shot_y) * t - (50 * (1 - (t * 2 - 1) ** 2))
                 points.append((x, y))
-            
+
             # Draw trajectory line
             for i in range(len(points) - 1):
                 draw.line([points[i], points[i + 1]], fill='white', width=4)
-            
+
             # Draw keeper (emoji-like circle with gloves)
             keeper_radius = 30
             draw.ellipse([keeper_x - keeper_radius, keeper_y - keeper_radius,
                           keeper_x + keeper_radius, keeper_y + keeper_radius],
                          fill='#FFD700', outline='black', width=3)
-            
+
             # Keeper arms (stretched toward ball)
             if keeper_dove == 'left':
                 draw.line([(keeper_x, keeper_y), (keeper_x - 40, keeper_y - 20)], fill='#FFD700', width=8)
@@ -411,37 +416,37 @@ class MatchEngine:
                 draw.line([(keeper_x, keeper_y), (keeper_x + 40, keeper_y - 20)], fill='#FFD700', width=8)
             else:
                 draw.line([(keeper_x - 30, keeper_y), (keeper_x + 30, keeper_y)], fill='#FFD700', width=8)
-            
+
             # Draw ball at final position
             ball_radius = 15
             ball_color = '#00FF00' if is_goal else '#FF0000'
             draw.ellipse([shot_x - ball_radius, shot_y - ball_radius,
                           shot_x + ball_radius, shot_y + ball_radius],
                          fill=ball_color, outline='black', width=3)
-            
+
             # Draw result text at top
             result_text = "⚽ GOAL!" if is_goal else "🧤 SAVED / MISSED!"
             result_color = '#00FF00' if is_goal else '#FF4444'
-            
+
             # Background for text
             draw.rectangle([50, 10, 750, 60], fill='black')
             draw.text((400, 30), result_text, fill=result_color, font=title_font, anchor="mm")
-            
+
             # Bottom info
             info_text = f"{player_name} → {placement.replace('_', ' ').title()}"
             draw.rectangle([50, height - 50, 750, height - 10], fill='black')
             draw.text((400, height - 30), info_text, fill='white', font=text_font, anchor="mm")
-            
+
             # Add keeper name
             keeper_text = f"🧤 {keeper_name} (Dove {keeper_dove})"
             draw.text((400, height - 70), keeper_text, fill='#FFD700', font=text_font, anchor="mm")
-            
+
             # Save to buffer
             buffer = BytesIO()
             img.save(buffer, format='PNG')
             buffer.seek(0)
             return buffer
-            
+
         except Exception as e:
             print(f"❌ Error creating goal visualization: {e}")
             return None
@@ -453,7 +458,7 @@ class MatchEngine:
         """
         attacking_team = home_team if team_side == 'home' else away_team
         defending_team = away_team if team_side == 'home' else home_team
-        
+
         if moment_type == 'dramatic_save':
             embed = discord.Embed(
                 title=f"🧤 DRAMATIC SAVE! — {minute}'",
@@ -462,7 +467,7 @@ class MatchEngine:
             )
             await channel.send(embed=embed)
             await asyncio.sleep(1)
-            
+
         elif moment_type == 'near_miss':
             embed = discord.Embed(
                 title=f"😱 SO CLOSE! — {minute}'",
@@ -471,7 +476,7 @@ class MatchEngine:
             )
             await channel.send(embed=embed)
             await asyncio.sleep(1)
-            
+
         elif moment_type == 'counter_attack':
             # Roll to see if it results in goal
             if random.random() < 0.10:  # 10% chance
@@ -490,7 +495,7 @@ class MatchEngine:
                 )
                 await channel.send(embed=embed)
                 await asyncio.sleep(1)
-                
+
         elif moment_type == 'defensive_block':
             embed = discord.Embed(
                 title=f"🛡️ HEROIC BLOCK! — {minute}'",
@@ -499,7 +504,7 @@ class MatchEngine:
             )
             await channel.send(embed=embed)
             await asyncio.sleep(1)
-            
+
         elif moment_type == 'midfield_battle':
             embed = discord.Embed(
                 title=f"⚔️ MIDFIELD BATTLE! — {minute}'",
@@ -508,7 +513,7 @@ class MatchEngine:
             )
             await channel.send(embed=embed)
             await asyncio.sleep(1)
-        
+
         return None
 
     async def handle_teammate_goal(self, channel, assisting_player, attacking_team, match_id, is_european=False):
@@ -529,7 +534,7 @@ class MatchEngine:
                   AND p.position IN ('ST', 'W', 'CAM')
                 ORDER BY p.overall_rating DESC
             """, match_id, attacking_team['team_id'], assisting_player['user_id'])
-            
+
             if user_teammates:
                 # ✅ 75% chance to pass to user teammate
                 if random.random() < 0.75:
@@ -543,9 +548,9 @@ class MatchEngine:
                             weights.append(2)  # Wingers 2x
                         else:
                             weights.append(1)  # CAMs base chance
-                    
+
                     teammate = random.choices(teammates_list, weights=weights, k=1)[0]
-                    
+
                     # Update assister
                     await conn.execute("""
                         UPDATE players
@@ -553,7 +558,7 @@ class MatchEngine:
                             career_assists = career_assists + 1
                         WHERE user_id = $1
                     """, assisting_player['user_id'])
-                    
+
                     # Update scorer
                     await conn.execute("""
                         UPDATE match_participants
@@ -561,14 +566,14 @@ class MatchEngine:
                             match_rating = GREATEST(0.0, LEAST(10.0, match_rating + 1.2))
                         WHERE match_id = $1 AND user_id = $2
                     """, match_id, teammate['user_id'])
-                    
+
                     await conn.execute("""
                         UPDATE players
                         SET season_goals = season_goals + 1,
                             career_goals = career_goals + 1
                         WHERE user_id = $1
                     """, teammate['user_id'])
-                    
+
                     # ✅ FIX #2: Send DM notification to scorer
                     try:
                         scorer_user = await self.bot.fetch_user(teammate['user_id'])
@@ -588,25 +593,28 @@ class MatchEngine:
                         await scorer_user.send(embed=embed)
                     except Exception as e:
                         print(f"⚠️ Could not send goal DM to {teammate['user_id']}: {e}")
-                    
+
                     # Update morale
                     from utils.form_morale_system import update_player_morale
                     await update_player_morale(teammate['user_id'], 'goal')
-                    
+
                     return {
                         'scorer_name': teammate['player_name'],
                         'scorer_user_id': teammate['user_id'],
                         'is_user_player': True
                     }
-            
+
             # Fallback to NPC if no user teammates or 25% random chance
             if is_european:
                 npc_teammate = await conn.fetchrow("""
-                    SELECT player_name, npc_id FROM npc_players
+                    SELECT player_name, npc_id, team_id, position, pace, shooting, passing, 
+                           dribbling, defending, physical, overall_rating
+                    FROM npc_players
                     WHERE team_id = $1 AND position IN ('ST', 'W', 'CAM') AND retired = FALSE
-                    ORDER BY RANDOM() LIMIT 1
                     UNION ALL
-                    SELECT player_name, european_npc_id as npc_id FROM european_npc_players
+                    SELECT player_name, european_npc_id as npc_id, team_id, position, pace, shooting, passing, 
+                           dribbling, defending, physical, overall_rating
+                    FROM european_npc_players
                     WHERE team_id = $1 AND position IN ('ST', 'W', 'CAM') AND retired = FALSE
                     ORDER BY RANDOM() LIMIT 1
                 """, attacking_team['team_id'])
@@ -616,7 +624,7 @@ class MatchEngine:
                     WHERE team_id = $1 AND position IN ('ST', 'W', 'CAM') AND retired = FALSE
                     ORDER BY RANDOM() LIMIT 1
                 """, attacking_team['team_id'])
-            
+
             if npc_teammate:
                 await conn.execute("""
                     UPDATE players
@@ -624,12 +632,12 @@ class MatchEngine:
                         career_assists = career_assists + 1
                     WHERE user_id = $1
                 """, assisting_player['user_id'])
-                
+
                 return {
                     'scorer_name': npc_teammate['player_name'],
                     'is_user_player': False
                 }
-        
+
         return None
 
     # ═══════════════════════════════════════════════════════════════
@@ -779,7 +787,8 @@ class MatchEngine:
         if success:
             stats['possession'] = min(70, stats['possession'] + 1)
             opponent = 'away' if team_side == 'home' else 'home'
-            self.match_stats[match_id][opponent]['possession'] = max(30, self.match_stats[match_id][opponent]['possession'] - 1)
+            self.match_stats[match_id][opponent]['possession'] = max(30, self.match_stats[match_id][opponent][
+                'possession'] - 1)
 
     def get_home_advantage_bonus(self, is_home, player_position):
         """Calculate home advantage bonus"""
@@ -838,24 +847,30 @@ class MatchEngine:
             if is_european:
                 if set_piece_type == 'corner':
                     taker = await conn.fetchrow("""
-                        SELECT * FROM npc_players
+                        SELECT player_name, npc_id, team_id, position, pace, shooting, passing, 
+                               dribbling, defending, physical, overall_rating, season_goals, season_assists, retired
+                        FROM npc_players
                         WHERE team_id = $1 AND retired = FALSE
-                        ORDER BY passing DESC LIMIT 1
                         UNION ALL
-                        SELECT * FROM european_npc_players
+                        SELECT player_name, european_npc_id as npc_id, team_id, position, pace, shooting, passing, 
+                               dribbling, defending, physical, overall_rating, season_goals, season_assists, retired
+                        FROM european_npc_players
                         WHERE team_id = $1 AND retired = FALSE
                         ORDER BY passing DESC LIMIT 1
                     """, attacking_team['team_id'])
                 else:
                     taker = await conn.fetchrow("""
-                        SELECT * FROM npc_players
-                        WHERE team_id = $1 AND retired = FALSE
-                        ORDER BY shooting DESC LIMIT 1
-                        UNION ALL
-                        SELECT * FROM european_npc_players
-                        WHERE team_id = $1 AND retired = FALSE
-                        ORDER BY shooting DESC LIMIT 1
-                    """, attacking_team['team_id'])
+                            SELECT player_name, npc_id, team_id, position, pace, shooting, passing, 
+                                   dribbling, defending, physical, overall_rating, season_goals, season_assists, retired
+                            FROM npc_players
+                            WHERE team_id = $1 AND retired = FALSE
+                            UNION ALL
+                            SELECT player_name, european_npc_id as npc_id, team_id, position, pace, shooting, passing, 
+                                   dribbling, defending, physical, overall_rating, season_goals, season_assists, retired
+                            FROM european_npc_players
+                            WHERE team_id = $1 AND retired = FALSE
+                            ORDER BY shooting DESC LIMIT 1
+                        """, attacking_team['team_id'])
             else:
                 if set_piece_type == 'corner':
                     taker = await conn.fetchrow("""
@@ -926,11 +941,14 @@ class MatchEngine:
                 async with db.pool.acquire() as conn:
                     if is_european:
                         header_player = await conn.fetchrow("""
-                            SELECT * FROM npc_players
+                            SELECT player_name, npc_id, team_id, position, pace, shooting, passing, 
+                                   dribbling, defending, physical, overall_rating, season_goals, season_assists, retired
+                            FROM npc_players
                             WHERE team_id = $1 AND position IN ('ST', 'CB') AND retired = FALSE
-                            ORDER BY physical DESC LIMIT 1
                             UNION ALL
-                            SELECT * FROM european_npc_players
+                            SELECT player_name, european_npc_id as npc_id, team_id, position, pace, shooting, passing, 
+                                   dribbling, defending, physical, overall_rating, season_goals, season_assists, retired
+                            FROM european_npc_players
                             WHERE team_id = $1 AND position IN ('ST', 'CB') AND retired = FALSE
                             ORDER BY physical DESC LIMIT 1
                         """, attacking_team['team_id'])
@@ -1094,7 +1112,7 @@ class MatchEngine:
             return 55
 
         stat_diff = player_stat - defender_stat
-    
+
         # Diminishing returns curve
         if stat_diff >= 20:
             probability = 50 + (20 * 0.75) + ((stat_diff - 20) * 0.25)
@@ -1104,7 +1122,7 @@ class MatchEngine:
             probability = 50 + (stat_diff * 1.0)
         else:
             probability = 50 + (stat_diff * 1.5)
-    
+
         return int(max(25, min(75, probability)))
 
     # ═══════════════════════════════════════════════════════════════
@@ -1114,10 +1132,14 @@ class MatchEngine:
     def get_followup_config(self, action, success):
         """✅ REBALANCED: Reduced follow-up chances for realistic matches"""
         followups = {
-            'dribble_success': {'chance': 0.12, 'type': 'shooting_chance', 'desc': "Space created! Shooting opportunity..."},
-            'cut_inside_success': {'chance': 0.15, 'type': 'shooting_chance', 'desc': "Cut onto strong foot! Shot incoming..."},
-            'tackle_success': {'chance': 0.30, 'type': 'counter_attack', 'desc': "Ball won! Counter-attack developing..."},
-            'interception_success': {'chance': 0.35, 'type': 'counter_attack', 'desc': "Intercepted! Quick break on..."},
+            'dribble_success': {'chance': 0.12, 'type': 'shooting_chance',
+                                'desc': "Space created! Shooting opportunity..."},
+            'cut_inside_success': {'chance': 0.15, 'type': 'shooting_chance',
+                                   'desc': "Cut onto strong foot! Shot incoming..."},
+            'tackle_success': {'chance': 0.30, 'type': 'counter_attack',
+                               'desc': "Ball won! Counter-attack developing..."},
+            'interception_success': {'chance': 0.35, 'type': 'counter_attack',
+                                     'desc': "Intercepted! Quick break on..."},
             'hold_up_play_success': {'chance': 0.15, 'type': 'layoff_pass', 'desc': "Held up! Teammate making run..."},
             'run_in_behind_success': {'chance': 0.35, 'type': '1v1_keeper', 'desc': "Through on goal! One-on-one!"},
             'block_success': {'chance': 0.20, 'type': 'loose_ball', 'desc': "Blocked! Ball ricochets loose..."},
@@ -1125,7 +1147,8 @@ class MatchEngine:
             'header_success': {'chance': 0.08, 'type': 'loose_ball', 'desc': "Header! Ball drops loose..."},
             'shoot_fail': {'chance': 0.08, 'type': 'rebound', 'desc': "Shot blocked! Rebound..."},
             'header_fail': {'chance': 0.10, 'type': 'loose_ball', 'desc': "Missed header! Loose ball..."},
-            'clearance_fail': {'chance': 0.35, 'type': 'falls_to_attacker', 'desc': "Poor clearance! Falls to attacker..."},
+            'clearance_fail': {'chance': 0.35, 'type': 'falls_to_attacker',
+                               'desc': "Poor clearance! Falls to attacker..."},
             'pass_fail': {'chance': 0.25, 'type': 'interception_counter', 'desc': "Intercepted! They break..."},
             'dribble_fail': {'chance': 0.20, 'type': 'dispossessed_counter', 'desc': "Dispossessed! Counter on..."},
         }
@@ -1183,11 +1206,16 @@ class MatchEngine:
         async with db.pool.acquire() as conn:
             if is_european:
                 keeper = await conn.fetchrow("""
-                    SELECT * FROM npc_players
+                    SELECT player_name, npc_id, team_id, position, pace, shooting, passing, 
+                           dribbling, defending, physical, overall_rating, season_goals, season_assists, retired
+                    FROM npc_players
                     WHERE team_id = $1 AND position = 'GK' AND retired = FALSE
                     UNION ALL
-                    SELECT * FROM european_npc_players
-                    WHERE team_id = $1 AND position = 'GK' AND retired = FALSE LIMIT 1
+                    SELECT player_name, european_npc_id as npc_id, team_id, position, pace, shooting, passing, 
+                           dribbling, defending, physical, overall_rating, season_goals, season_assists, retired
+                    FROM european_npc_players
+                    WHERE team_id = $1 AND position = 'GK' AND retired = FALSE
+                    LIMIT 1
                 """, defending_team['team_id'])
             else:
                 keeper = await conn.fetchrow("""
@@ -1258,11 +1286,16 @@ class MatchEngine:
         async with db.pool.acquire() as conn:
             if is_european:
                 keeper = await conn.fetchrow("""
-                    SELECT * FROM npc_players
+                    SELECT player_name, npc_id, team_id, position, pace, shooting, passing, 
+                           dribbling, defending, physical, overall_rating, season_goals, season_assists, retired
+                    FROM npc_players
                     WHERE team_id = $1 AND position = 'GK' AND retired = FALSE
                     UNION ALL
-                    SELECT * FROM european_npc_players
-                    WHERE team_id = $1 AND position = 'GK' AND retired = FALSE LIMIT 1
+                    SELECT player_name, european_npc_id as npc_id, team_id, position, pace, shooting, passing, 
+                           dribbling, defending, physical, overall_rating, season_goals, season_assists, retired
+                    FROM european_npc_players
+                    WHERE team_id = $1 AND position = 'GK' AND retired = FALSE
+                    LIMIT 1
                 """, defending_team['team_id'])
             else:
                 keeper = await conn.fetchrow("""
@@ -1330,11 +1363,14 @@ class MatchEngine:
         async with db.pool.acquire() as conn:
             if is_european:
                 attacker = await conn.fetchrow("""
-                    SELECT * FROM npc_players
+                    SELECT player_name, npc_id, team_id, position, pace, shooting, passing, 
+                           dribbling, defending, physical, overall_rating, season_goals, season_assists, retired
+                    FROM npc_players
                     WHERE team_id = $1 AND position IN ('ST', 'W') AND retired = FALSE
-                    ORDER BY pace DESC LIMIT 1
                     UNION ALL
-                    SELECT * FROM european_npc_players
+                    SELECT player_name, european_npc_id as npc_id, team_id, position, pace, shooting, passing, 
+                           dribbling, defending, physical, overall_rating, season_goals, season_assists, retired
+                    FROM european_npc_players
                     WHERE team_id = $1 AND position IN ('ST', 'W') AND retired = FALSE
                     ORDER BY pace DESC LIMIT 1
                 """, attacking_team['team_id'])
@@ -1351,7 +1387,7 @@ class MatchEngine:
         counter_stat = (attacker['pace'] + attacker['dribbling']) // 2
         roll = random.randint(1, 20)
         total = counter_stat + roll
-                                          
+
         # ✅ REBALANCED: Much harder to score from counters
         is_goal = total >= 105
 
@@ -1417,11 +1453,14 @@ class MatchEngine:
         async with db.pool.acquire() as conn:
             if is_european:
                 attacker = await conn.fetchrow("""
-                    SELECT * FROM npc_players
+                    SELECT player_name, npc_id, team_id, position, pace, shooting, passing, 
+                           dribbling, defending, physical, overall_rating, season_goals, season_assists, retired
+                    FROM npc_players
                     WHERE team_id = $1 AND position IN ('ST', 'W', 'CAM') AND retired = FALSE
-                    ORDER BY RANDOM() LIMIT 1
                     UNION ALL
-                    SELECT * FROM european_npc_players
+                    SELECT player_name, european_npc_id as npc_id, team_id, position, pace, shooting, passing, 
+                           dribbling, defending, physical, overall_rating, season_goals, season_assists, retired
+                    FROM european_npc_players
                     WHERE team_id = $1 AND position IN ('ST', 'W', 'CAM') AND retired = FALSE
                     ORDER BY RANDOM() LIMIT 1
                 """, attacking_team['team_id'])
@@ -1492,11 +1531,14 @@ class MatchEngine:
         async with db.pool.acquire() as conn:
             if is_european:
                 midfielder = await conn.fetchrow("""
-                    SELECT * FROM npc_players
+                    SELECT player_name, npc_id, team_id, position, pace, shooting, passing, 
+                           dribbling, defending, physical, overall_rating, season_goals, season_assists, retired
+                    FROM npc_players
                     WHERE team_id = $1 AND position IN ('CAM', 'CM') AND retired = FALSE
-                    ORDER BY RANDOM() LIMIT 1
                     UNION ALL
-                    SELECT * FROM european_npc_players
+                    SELECT player_name, european_npc_id as npc_id, team_id, position, pace, shooting, passing, 
+                           dribbling, defending, physical, overall_rating, season_goals, season_assists, retired
+                    FROM european_npc_players
                     WHERE team_id = $1 AND position IN ('CAM', 'CM') AND retired = FALSE
                     ORDER BY RANDOM() LIMIT 1
                 """, attacking_team['team_id'])
@@ -1563,20 +1605,26 @@ class MatchEngine:
         async with db.pool.acquire() as conn:
             if is_european:
                 attacker = await conn.fetchrow("""
-                    SELECT * FROM npc_players
+                    SELECT player_name, npc_id, team_id, position, pace, shooting, passing, 
+                           dribbling, defending, physical, overall_rating, season_goals, season_assists, retired
+                    FROM npc_players
                     WHERE team_id = $1 AND retired = FALSE
-                    ORDER BY RANDOM() LIMIT 1
                     UNION ALL
-                    SELECT * FROM european_npc_players
+                    SELECT player_name, european_npc_id as npc_id, team_id, position, pace, shooting, passing, 
+                           dribbling, defending, physical, overall_rating, season_goals, season_assists, retired
+                    FROM european_npc_players
                     WHERE team_id = $1 AND retired = FALSE
                     ORDER BY RANDOM() LIMIT 1
                 """, attacking_team['team_id'])
                 defender = await conn.fetchrow("""
-                    SELECT * FROM npc_players
+                    SELECT player_name, npc_id, team_id, position, pace, shooting, passing, 
+                           dribbling, defending, physical, overall_rating, season_goals, season_assists, retired
+                    FROM npc_players
                     WHERE team_id = $1 AND retired = FALSE
-                    ORDER BY RANDOM() LIMIT 1
                     UNION ALL
-                    SELECT * FROM european_npc_players
+                    SELECT player_name, european_npc_id as npc_id, team_id, position, pace, shooting, passing, 
+                           dribbling, defending, physical, overall_rating, season_goals, season_assists, retired
+                    FROM european_npc_players
                     WHERE team_id = $1 AND retired = FALSE
                     ORDER BY RANDOM() LIMIT 1
                 """, defending_team['team_id'])
@@ -1606,9 +1654,11 @@ class MatchEngine:
         )
 
         if attacker_total > defender_total:
-            result_embed.add_field(name="✅ ATTACKER WINS!", value=f"{attacking_team['team_name']} keeps it!", inline=False)
+            result_embed.add_field(name="✅ ATTACKER WINS!", value=f"{attacking_team['team_name']} keeps it!",
+                                   inline=False)
         else:
-            result_embed.add_field(name="🛡️ DEFENDER CLEARS!", value=f"{defending_team['team_name']} wins it!", inline=False)
+            result_embed.add_field(name="🛡️ DEFENDER CLEARS!", value=f"{defending_team['team_name']} wins it!",
+                                   inline=False)
 
         await channel.send(embed=result_embed)
         return None
@@ -1618,11 +1668,14 @@ class MatchEngine:
         async with db.pool.acquire() as conn:
             if is_european:
                 attacker = await conn.fetchrow("""
-                    SELECT * FROM npc_players
+                    SELECT player_name, npc_id, team_id, position, pace, shooting, passing, 
+                           dribbling, defending, physical, overall_rating, season_goals, season_assists, retired
+                    FROM npc_players
                     WHERE team_id = $1 AND position IN ('CAM', 'CM') AND retired = FALSE
-                    ORDER BY shooting DESC LIMIT 1
                     UNION ALL
-                    SELECT * FROM european_npc_players
+                    SELECT player_name, european_npc_id as npc_id, team_id, position, pace, shooting, passing, 
+                           dribbling, defending, physical, overall_rating, season_goals, season_assists, retired
+                    FROM european_npc_players
                     WHERE team_id = $1 AND position IN ('CAM', 'CM') AND retired = FALSE
                     ORDER BY shooting DESC LIMIT 1
                 """, attacking_team['team_id'])
@@ -1695,7 +1748,8 @@ class MatchEngine:
         await channel.send(embed=result_embed)
         return None
 
-    async def followup_interception_counter(self, channel, player, defending_team, attacking_team, match_id, is_european=False):
+    async def followup_interception_counter(self, channel, player, defending_team, attacking_team, match_id,
+                                            is_european=False):
         """When your pass is intercepted - they counter"""
         return await self.followup_counter_attack(channel, None, defending_team, attacking_team, match_id, is_european)
 
@@ -1942,28 +1996,29 @@ class MatchEngine:
             scenario_type, defender_positions, scenario_description = self.get_position_scenario(player['position'])
             available_actions = self.get_actions_for_scenario(player['position'], scenario_type)
             action = available_actions[0]  # Use best action
-        
+
             await channel.send(
                 f"💤 **{player['player_name']}** (AFK) - Auto-playing: **{action.upper()}**"
             )
-        
+
             # Execute action immediately
             adjusted_stats = self.apply_form_to_stats(player)
-        
+
             async with db.pool.acquire() as conn:
                 position_filter = ', '.join([f"'{pos}'" for pos in defender_positions])
                 if is_european:
                     result = await conn.fetchrow(f"""
-                        SELECT * FROM npc_players
+                        SELECT player_name, npc_id, team_id, position, pace, shooting, passing, 
+                               dribbling, defending, physical, overall_rating, season_goals, season_assists, retired
+                        FROM npc_players
+                        WHERE team_id = $1 AND position IN ({position_filter}) AND retired = FALSE
+                        UNION ALL
+                        SELECT player_name, european_npc_id as npc_id, team_id, position, pace, shooting, passing, 
+                               dribbling, defending, physical, overall_rating, season_goals, season_assists, retired
+                        FROM european_npc_players
                         WHERE team_id = $1 AND position IN ({position_filter}) AND retired = FALSE
                         ORDER BY RANDOM() LIMIT 1
                     """, defending_team['team_id'])
-                    if not result:
-                        result = await conn.fetchrow(f"""
-                            SELECT * FROM european_npc_players
-                            WHERE team_id = $1 AND position IN ({position_filter}) AND retired = FALSE
-                            ORDER BY RANDOM() LIMIT 1
-                        """, defending_team['team_id'])
                 else:
                     result = await conn.fetchrow(f"""
                         SELECT * FROM npc_players 
@@ -1971,7 +2026,7 @@ class MatchEngine:
                         ORDER BY RANDOM() LIMIT 1
                     """, defending_team['team_id'])
                 defender = dict(result) if result else None
-        
+
             result = await self.execute_action_with_duel(
                 channel, player, adjusted_stats, defender, action, minute,
                 match_id, member, attacking_team, defending_team, is_european, is_home
@@ -1984,7 +2039,7 @@ class MatchEngine:
         # ✅ NEW: Check if this player has timed out before
         if match_id not in self.player_timeouts:
             self.player_timeouts[match_id] = set()
-    
+
         has_timed_out = player['user_id'] in self.player_timeouts[match_id]
 
         adjusted_stats = self.apply_form_to_stats(player)
@@ -2021,16 +2076,17 @@ class MatchEngine:
             async with db.pool.acquire() as conn:
                 if is_european:
                     result = await conn.fetchrow("""
-                        SELECT * FROM npc_players
+                        SELECT player_name, npc_id, team_id, position, pace, shooting, passing, 
+                               dribbling, defending, physical, overall_rating, season_goals, season_assists, retired
+                        FROM npc_players
+                        WHERE team_id = $1 AND retired = FALSE
+                        UNION ALL
+                        SELECT player_name, european_npc_id as npc_id, team_id, position, pace, shooting, passing, 
+                               dribbling, defending, physical, overall_rating, season_goals, season_assists, retired
+                        FROM european_npc_players
                         WHERE team_id = $1 AND retired = FALSE
                         ORDER BY RANDOM() LIMIT 1
                     """, defending_team['team_id'])
-                    if not result:
-                        result = await conn.fetchrow("""
-                            SELECT * FROM european_npc_players
-                            WHERE team_id = $1 AND retired = FALSE
-                            ORDER BY RANDOM() LIMIT 1
-                        """, defending_team['team_id'])
                 else:
                     result = await conn.fetchrow("""
                         SELECT * FROM npc_players
@@ -2050,7 +2106,7 @@ class MatchEngine:
             description=f"## {player['player_name']} ({player['position']})\n**{minute}'** | Form: {form_desc}\n\n{scenario_text}",
             color=discord.Color.gold()
         )
-    
+
         # ✅ NEW: Add timeout warning if they've been AFK before
         if has_timed_out:
             embed.description += "\n\n⚠️ _This player timed out last turn_"
@@ -2076,11 +2132,16 @@ class MatchEngine:
         async with db.pool.acquire() as conn:
             if is_european:
                 keeper = await conn.fetchrow("""
-                    SELECT * FROM npc_players
+                    SELECT player_name, npc_id, team_id, position, pace, shooting, passing, 
+                           dribbling, defending, physical, overall_rating, season_goals, season_assists, retired
+                    FROM npc_players
                     WHERE team_id = $1 AND position = 'GK' AND retired = FALSE
                     UNION ALL
-                    SELECT * FROM european_npc_players
-                    WHERE team_id = $1 AND position = 'GK' AND retired = FALSE LIMIT 1
+                    SELECT player_name, european_npc_id as npc_id, team_id, position, pace, shooting, passing, 
+                           dribbling, defending, physical, overall_rating, season_goals, season_assists, retired
+                    FROM european_npc_players
+                    WHERE team_id = $1 AND position = 'GK' AND retired = FALSE
+                    LIMIT 1
                 """, defending_team['team_id'])
             else:
                 keeper = await conn.fetchrow("""
@@ -2117,36 +2178,36 @@ class MatchEngine:
             keeper_stat_val = None
             keeper_effective = None
             player_shoot_stat = None
-        
+
             if action in ['shoot', 'header'] and defender and defender.get('position') != 'GK' and keeper:
                 # Stage 1: vs defender chance (already calculated above)
                 stage1_chance = chance
-            
+
                 # Stage 2: vs keeper chance
                 keeper_att_p, keeper_att_s, keeper_def_p, keeper_def_s = self.get_action_stats('save')
                 player_shoot_stat = self.calculate_weighted_stat(adjusted_stats, keeper_att_p, keeper_att_s)
                 keeper_stat_val = self.calculate_weighted_stat(keeper, keeper_def_p, keeper_def_s)
                 keeper_bonus_val = self.get_position_bonus('GK', 'save')
                 keeper_effective = keeper_stat_val + keeper_bonus_val + 5  # GK gets +5 bonus
-            
+
                 stage2_chance = self.calculate_d20_success_probability(player_shoot_stat, keeper_effective)
-            
+
                 # Combined probability (both must succeed)
                 combined_chance = int((stage1_chance / 100) * (stage2_chance / 100) * 100)
                 keeper_chance = int(stage2_chance)
 
             actions_data.append({
-                'action': action, 
-                'chance': int(chance), 
+                'action': action,
+                'chance': int(chance),
                 'keeper_chance': keeper_chance,
                 'combined_chance': combined_chance,
                 'player_stat': player_weighted,
-                'player_bonus': player_pos_bonus, 
+                'player_bonus': player_pos_bonus,
                 'player_effective': player_effective,
                 'defender_stat': defender_weighted if defender else 0,
                 'defender_bonus': defender_pos_bonus if defender else 0,
                 'defender_effective': defender_effective if defender else 0,
-                'primary': att_p[:3].upper(), 
+                'primary': att_p[:3].upper(),
                 'secondary': att_s[:3].upper(),
                 'keeper_stat_val': keeper_stat_val,
                 'keeper_effective': keeper_effective,
@@ -2155,7 +2216,7 @@ class MatchEngine:
 
         # ✅ FIXED: Safe sorting that handles None values
         actions_data.sort(
-            key=lambda x: x.get('combined_chance') or x.get('chance') or 0, 
+            key=lambda x: x.get('combined_chance') or x.get('chance') or 0,
             reverse=True
         )
         recommended_action = actions_data[0]['action']
@@ -2182,11 +2243,11 @@ class MatchEngine:
                 difficulty = "★ BEST"
 
             action_name = action.replace('_', ' ').title()
-        
+
             # ✅ NEW: Show 2-stage breakdown for shoot/header with full stats
             if combined_chance is not None:
                 actions_text += f"{emoji} **{action_name}** — {chance}% vs {defender.get('position', 'DEF')} → {keeper_chance}% vs GK = **{combined_chance}% total** `[{difficulty}]`\n"
-            
+
                 # Stage 1: vs Defender
                 actions_text += f"   📊 Stage 1: {data['primary']}/{data['secondary']} "
                 if data['player_bonus'] > 0:
@@ -2199,7 +2260,7 @@ class MatchEngine:
                 else:
                     actions_text += f"**{data['defender_effective']}**"
                 actions_text += "\n"
-            
+
                 # Stage 2: vs Goalkeeper
                 keeper_att_p, keeper_att_s = self.get_action_stats('save')[:2]
                 actions_text += f"   📊 Stage 2: {keeper_att_p[:3].upper()}/{keeper_att_s[:3].upper()} **{data['player_shoot_stat']}** vs GK **{data['keeper_effective']}** (+5 save bonus)\n"
@@ -2220,7 +2281,7 @@ class MatchEngine:
                         actions_text += f"{data['defender_stat']}+{data['defender_bonus']}=**{data['defender_effective']}**"
                     else:
                         actions_text += f"**{data['defender_effective']}**"
-            
+
                 actions_text += f"\n   ↪️ {self.get_followup_description(action)}\n\n"
 
         embed.add_field(name="⚡ CHOOSE YOUR ACTION", value=actions_text, inline=False)
@@ -2232,7 +2293,7 @@ class MatchEngine:
             embed.set_footer(text="⭐ = Best Choice | 🎲 = Die Roll After Choice | ⏱️ 30 seconds")
 
         # ✅ NEW: Create view with AFK button if needed, pass match_engine
-        view = EnhancedActionView(available_actions, player['user_id'], timeout=30, 
+        view = EnhancedActionView(available_actions, player['user_id'], timeout=30,
                                   show_afk_button=has_timed_out, match_engine=self)
         view.match_id = match_id  # Pass match context
 
@@ -2244,7 +2305,7 @@ class MatchEngine:
         await view.wait()
 
         action = view.chosen_action if view.chosen_action else random.choice(available_actions)
-    
+
         # ✅ FIXED: Distinguish between skip and timeout
         if not view.chosen_action:
             if view.skipped:
@@ -2286,11 +2347,11 @@ class MatchEngine:
             defender_total = defender_stat_value + defender_roll + defender_position_bonus
 
         success = player_total > defender_total if defender_total > 0 else player_roll_with_bonus >= 10
-        
+
         # ✅ NEW: Check if this is a shoot/header vs non-GK (needs 2-stage system)
-        is_two_stage_shot = (action in ['shoot', 'header'] and 
+        is_two_stage_shot = (action in ['shoot', 'header'] and
                              success and  # Only if we beat the defender
-                             defender and 
+                             defender and
                              defender.get('position') != 'GK')
 
         team_side = 'home' if is_home else 'away'
@@ -2351,20 +2412,25 @@ class MatchEngine:
         # ✅ NEW: STAGE 2 - Shot Placement System (if applicable)
         keeper_save = False
         keeper_result_embed = result_embed
-        
+
         if is_two_stage_shot:
             await channel.send(embed=result_embed)
             await asyncio.sleep(1)
-            
+
             # Get the goalkeeper
             async with db.pool.acquire() as conn:
                 if is_european:
                     keeper = await conn.fetchrow("""
-                        SELECT * FROM npc_players
+                        SELECT player_name, npc_id, team_id, position, pace, shooting, passing, 
+                               dribbling, defending, physical, overall_rating, season_goals, season_assists, retired
+                        FROM npc_players
                         WHERE team_id = $1 AND position = 'GK' AND retired = FALSE
                         UNION ALL
-                        SELECT * FROM european_npc_players
-                        WHERE team_id = $1 AND position = 'GK' AND retired = FALSE LIMIT 1
+                        SELECT player_name, european_npc_id as npc_id, team_id, position, pace, shooting, passing, 
+                               dribbling, defending, physical, overall_rating, season_goals, season_assists, retired
+                        FROM european_npc_players
+                        WHERE team_id = $1 AND position = 'GK' AND retired = FALSE
+                        LIMIT 1
                     """, defending_team['team_id'])
                 else:
                     keeper = await conn.fetchrow("""
@@ -2372,11 +2438,11 @@ class MatchEngine:
                         WHERE team_id = $1 AND position = 'GK' AND retired = FALSE LIMIT 1
                     """, defending_team['team_id'])
                 keeper = dict(keeper) if keeper else None
-            
+
             if keeper:
                 # 🎯 SHOT PLACEMENT SYSTEM
                 shot_placement_config = self.get_shot_placement_config()
-                
+
                 # Create placement choice embed
                 placement_embed = discord.Embed(
                     title="🎯 SHOT PLACEMENT - Choose Where to Aim!",
@@ -2384,34 +2450,34 @@ class MatchEngine:
                                 f"Now choose where to place your shot:",
                     color=discord.Color.gold()
                 )
-                
+
                 # Calculate stats for each placement option
                 options_text = ""
                 for key in ['left_corner', 'right_corner', 'top_center', 'low_center', 'power_shot']:
                     config = shot_placement_config[key]
-                    
+
                     # Get player stat
                     if config['stat_used'] == 'physical':
                         player_placement_stat = adjusted_stats['physical']
                     else:
                         player_placement_stat = adjusted_stats['shooting']
-                    
+
                     player_total_with_bonus = player_placement_stat + config['player_bonus']
-                    
+
                     # Get keeper stat
                     keeper_stat = self.calculate_weighted_stat(keeper, 'defending', 'physical')
                     keeper_bonus_val = self.get_position_bonus('GK', 'save')
                     keeper_total_adjusted = keeper_stat + keeper_bonus_val + 5 + config['keeper_penalty']
-                    
+
                     # Calculate success probability
                     goal_chance = self.calculate_d20_success_probability(
-                        player_total_with_bonus, 
+                        player_total_with_bonus,
                         keeper_total_adjusted
                     )
-                    
+
                     # Account for miss chance
-                    actual_chance = int(goal_chance * (1 - config['miss_chance']/100))
-                    
+                    actual_chance = int(goal_chance * (1 - config['miss_chance'] / 100))
+
                     # Determine color indicator
                     if actual_chance >= 55:
                         indicator = "🟢"
@@ -2419,35 +2485,35 @@ class MatchEngine:
                         indicator = "🟡"
                     else:
                         indicator = "🔴"
-                    
+
                     options_text += f"{config['emoji']} **{config['name']}** {indicator} — {actual_chance}% chance\n"
                     options_text += f"   Your: {player_total_with_bonus} vs GK: {keeper_total_adjusted} | Miss risk: {config['miss_chance']}%\n"
                     options_text += f"   _{config['description']}_\n\n"
-                
+
                 placement_embed.add_field(
                     name="⚽ Placement Options",
                     value=options_text,
                     inline=False
                 )
-                
+
                 placement_embed.set_footer(text="⏱️ 15 seconds to choose | 🟢 = Good | 🟡 = Fair | 🔴 = Risky")
-                
+
                 # Create button view
                 placement_view = ShotPlacementView(
                     player, keeper, adjusted_stats, shot_placement_config, timeout=15
                 )
-                
+
                 placement_msg = await channel.send(
                     content=f"📢 {member.mention}",
                     embed=placement_embed,
                     view=placement_view
                 )
-                
+
                 await placement_view.wait()
-                
+
                 chosen_placement = placement_view.chosen_placement or 'low_center'
                 config = shot_placement_config[chosen_placement]
-                
+
                 # Show choice
                 choice_embed = discord.Embed(
                     title=f"{config['emoji']} {config['name']} Chosen!",
@@ -2456,56 +2522,56 @@ class MatchEngine:
                 )
                 await channel.send(embed=choice_embed)
                 await asyncio.sleep(1.5)
-                
+
                 # STEP 1: Check if shot is on target (miss check)
                 miss_roll = random.randint(1, 100)
                 shot_missed_target = miss_roll <= config['miss_chance']
-                
+
                 if shot_missed_target:
                     miss_embed = discord.Embed(
                         title="😱 SHOT MISSED!",
                         description=f"**{player['player_name']}'s** shot goes wide!\n\n"
-                                   f"Miss roll: {miss_roll} (needed >{config['miss_chance']})",
+                                    f"Miss roll: {miss_roll} (needed >{config['miss_chance']})",
                         color=discord.Color.red()
                     )
-    
+
                     # Visual showing ball going wide
                     keeper_dove = random.choice(['left', 'right', 'center'])
                     visual_buffer = await self.create_goal_visualization(
-                        chosen_placement, keeper_dove, False, 
+                        chosen_placement, keeper_dove, False,
                         player['player_name'], keeper['player_name']
                     )
-    
+
                     if visual_buffer:
                         miss_embed.set_image(url="attachment://shot_result.png")
                         shot_file = discord.File(fp=visual_buffer, filename="shot_result.png")
                         await channel.send(embed=miss_embed, file=shot_file)
                     else:
                         await channel.send(embed=miss_embed)
-    
+
                     # ✅ CORRECT: Mark as failed attempt, not keeper save
                     keeper_save = True  # Keeps the flow the same (no goal)
                     # But you should track this separately if you want accurate keeper stats
-                    
+
                 else:
                     # Shot is on target - now keeper duel!
                     if config['stat_used'] == 'physical':
                         player_shoot_stat = adjusted_stats['physical']
                     else:
                         player_shoot_stat = adjusted_stats['shooting']
-                    
+
                     player_shoot_stat_with_bonus = player_shoot_stat + config['player_bonus']
                     player_shoot_roll = random.randint(1, 20)
                     player_shoot_total = player_shoot_stat_with_bonus + player_shoot_roll
-                    
+
                     keeper_stat = self.calculate_weighted_stat(keeper, 'defending', 'physical')
                     keeper_bonus_val = self.get_position_bonus('GK', 'save')
                     keeper_stat_with_penalty = keeper_stat + keeper_bonus_val + 13 + config['keeper_penalty']
                     keeper_roll = random.randint(1, 20)
                     keeper_total = keeper_stat_with_penalty + keeper_roll
-                    
+
                     keeper_save = keeper_total >= player_shoot_total
-                    
+
                     # Determine where keeper dove
                     if chosen_placement in ['left_corner', 'top_center']:
                         keeper_dove = 'left'
@@ -2513,43 +2579,43 @@ class MatchEngine:
                         keeper_dove = 'right'
                     else:
                         keeper_dove = 'center'
-                    
+
                     # Show stage 2 results
                     keeper_result_embed = discord.Embed(
                         title="🥅 SHOT vs GOALKEEPER",
                         color=discord.Color.red() if keeper_save else discord.Color.green()
                     )
-                    
+
                     keeper_duel_text = f"**YOU ({config['name'].upper()})**\n"
                     keeper_duel_text += f"{config['stat_used'].upper()[:3]}: **{player_shoot_stat}** +{config['player_bonus']} (placement)\n"
                     keeper_duel_text += f"🎲 **{player_shoot_roll}**\n"
                     keeper_duel_text += f"Total: **{player_shoot_total}**\n\n"
-                    
+
                     keeper_duel_text += f"**{keeper['player_name']} (GK)**\n"
                     keeper_duel_text += f"DEF/PHY: **{keeper_stat}**\n"
                     keeper_duel_text += f"🎲 **{keeper_roll}** +{keeper_bonus_val} (GK) +5 (save) {config['keeper_penalty']:+d} (placement)\n"
                     keeper_duel_text += f"Total: **{keeper_total}**\n\n"
-                    
+
                     if keeper_save:
                         keeper_duel_text += f"🧤 **KEEPER SAVES!**\n_{config['fail_text']}_"
                     else:
                         keeper_duel_text += f"⚽ **GOAL!!!**\n_{config['success_text']}_"
-                    
+
                     keeper_result_embed.add_field(name="⚔️ Duel", value=keeper_duel_text, inline=False)
-                    
+
                     # Add visual
                     visual_buffer = await self.create_goal_visualization(
-                        chosen_placement, keeper_dove, not keeper_save, 
+                        chosen_placement, keeper_dove, not keeper_save,
                         player['player_name'], keeper['player_name']
                     )
-                    
+
                     if visual_buffer:
                         keeper_result_embed.set_image(url="attachment://shot_result.png")
                         shot_file = discord.File(fp=visual_buffer, filename="shot_result.png")
                         await channel.send(embed=keeper_result_embed, file=shot_file)
                     else:
                         await channel.send(embed=keeper_result_embed)
-                
+
                 result_embed = keeper_result_embed
 
         is_goal = False
@@ -2576,27 +2642,32 @@ class MatchEngine:
                     async with db.pool.acquire() as conn:
                         if is_european:
                             keeper = await conn.fetchrow("""
-                                SELECT * FROM npc_players
+                                SELECT player_name, npc_id, team_id, position, pace, shooting, passing, 
+                                       dribbling, defending, physical, overall_rating, season_goals, season_assists, retired
+                                FROM npc_players
                                 WHERE team_id = $1 AND position = 'GK' AND retired = FALSE
                                 UNION ALL
-                                SELECT * FROM european_npc_players
-                                WHERE team_id = $1 AND position = 'GK' AND retired = FALSE LIMIT 1
+                                SELECT player_name, european_npc_id as npc_id, team_id, position, pace, shooting, passing, 
+                                       dribbling, defending, physical, overall_rating, season_goals, season_assists, retired
+                                FROM european_npc_players
+                                WHERE team_id = $1 AND position = 'GK' AND retired = FALSE
+                                LIMIT 1
                             """, defending_team['team_id'])
                         else:
                             keeper = await conn.fetchrow("""
                                 SELECT * FROM npc_players
                                 WHERE team_id = $1 AND position = 'GK' AND retired = FALSE LIMIT 1
                             """, defending_team['team_id'])
-            
+
                     if keeper:
                         keeper_stat = self.calculate_weighted_stat(keeper, 'defending', 'physical')
                         keeper_roll = random.randint(1, 20)
                         # ✅ REBALANCED: Keeper gets +13 bonus
                         keeper_total = keeper_stat + keeper_roll + 13
-        
+
                         # Nat 20 gives +15 bonus, keeper has 40% resistance
                         player_vs_keeper = player_stat + 20 + 15
-                
+
                         if random.random() < 0.40 and keeper_roll >= 15:
                             # Keeper saves Nat 20!
                             result_embed.add_field(
@@ -2859,11 +2930,14 @@ class MatchEngine:
         async with db.pool.acquire() as conn:
             if is_european:
                 result = await conn.fetchrow("""
-                    SELECT * FROM npc_players
+                    SELECT player_name, npc_id, team_id, position, pace, shooting, passing, 
+                           dribbling, defending, physical, overall_rating, season_goals, season_assists, retired
+                    FROM npc_players
                     WHERE team_id = $1 AND retired = FALSE
-                    ORDER BY RANDOM() LIMIT 1
                     UNION ALL
-                    SELECT * FROM european_npc_players
+                    SELECT player_name, european_npc_id as npc_id, team_id, position, pace, shooting, passing, 
+                           dribbling, defending, physical, overall_rating, season_goals, season_assists, retired
+                    FROM european_npc_players
                     WHERE team_id = $1 AND retired = FALSE
                     ORDER BY RANDOM() LIMIT 1
                 """, team_id)
@@ -2945,7 +3019,8 @@ class MatchEngine:
                 fixture['fixture_id']
             )
             if existing:
-                print(f"⚠️ Cleaning up existing active match {existing['match_id']} for fixture {fixture['fixture_id']}")
+                print(
+                    f"⚠️ Cleaning up existing active match {existing['match_id']} for fixture {fixture['fixture_id']}")
                 await conn.execute(
                     "DELETE FROM active_matches WHERE fixture_id = $1",
                     fixture['fixture_id']
@@ -3115,7 +3190,7 @@ class MatchEngine:
 
             return dict(team) if team else None
 
-    async def run_match(self, match_id: int, fixture: dict, channel: discord.TextChannel, 
+    async def run_match(self, match_id: int, fixture: dict, channel: discord.TextChannel,
                         is_european: bool = False):
         """Complete match engine with all fixes"""
         await self.maybe_cleanup()
@@ -3181,11 +3256,11 @@ class MatchEngine:
             # Add more minute slots if needed
             additional_minutes = list(range(4, 91, 2))
             all_minutes = sorted(list(set(possible_minutes + additional_minutes)))
-    
+
             # If STILL not enough, add every minute as last resort
             if len(complete_schedule) > len(all_minutes):
                 all_minutes = list(range(1, 91))
-    
+
             # Always use min() to prevent sampling more than available
             minutes = sorted(random.sample(all_minutes, min(len(complete_schedule), len(all_minutes))))
         else:
@@ -3196,31 +3271,32 @@ class MatchEngine:
         for i, minute in enumerate(minutes):
             if i >= len(complete_schedule):
                 break
-                
+
             event = complete_schedule[i]
-            
+
             await self.update_pinned_score(channel, match_id, home_team, away_team, home_score, away_score, minute)
 
             if minute >= 45 and minute < 48 and not hasattr(self, f'_halftime_shown_{match_id}'):
                 setattr(self, f'_halftime_shown_{match_id}', True)
-                await self.post_halftime_summary(channel, home_team, away_team, home_score, away_score, participants, match_id)
+                await self.post_halftime_summary(channel, home_team, away_team, home_score, away_score, participants,
+                                                 match_id)
                 await self.display_match_stats(channel, match_id, home_team, away_team)
 
             result = None
-            
+
             if event['type'] == 'player':
                 participant = event['participant']
                 player = event['player']
                 is_home = (event['team_side'] == 'home')
                 attacking_team_obj = home_team if is_home else away_team
                 defending_team_obj = away_team if is_home else home_team
-                
+
                 result = await self.handle_player_moment(
                     channel, player, participant, minute,
                     attacking_team_obj, defending_team_obj,
                     is_home, match_id, is_european
                 )
-                
+
                 if result and result.get('goal'):
                     if is_home:
                         home_score += 1
@@ -3233,15 +3309,15 @@ class MatchEngine:
                         home_score, away_score,
                         result.get('assister_name')
                     )
-            
+
             elif event['type'] == 'set_piece':
                 attacking_team_obj = home_team if event['team_side'] == 'home' else away_team
                 defending_team_obj = away_team if event['team_side'] == 'home' else home_team
-                
+
                 set_result = await self.handle_set_piece(
                     channel, attacking_team_obj, defending_team_obj, minute, match_id, is_european
                 )
-                
+
                 if set_result and set_result.get('goal'):
                     if event['team_side'] == 'home':
                         home_score += 1
@@ -3254,35 +3330,37 @@ class MatchEngine:
                         home_score, away_score,
                         set_result.get('assister_name')
                     )
-            
+
             elif event['type'] == 'npc_attack':
                 attacking_team_obj = home_team if event['team_side'] == 'home' else away_team
                 defending_team_obj = away_team if event['team_side'] == 'home' else home_team
                 is_home = (event['team_side'] == 'home')
-                
+
                 npc_result = await self.handle_npc_moment(
                     channel, attacking_team_obj['team_id'], minute,
                     attacking_team_obj, defending_team_obj, is_home, is_european
                 )
-                
+
                 if npc_result == 'goal':
                     if event['team_side'] == 'home':
                         home_score += 1
                     else:
                         away_score += 1
-                    await self.update_pinned_score(channel, match_id, home_team, away_team, home_score, away_score, minute)
-            
+                    await self.update_pinned_score(channel, match_id, home_team, away_team, home_score, away_score,
+                                                   minute)
+
             else:
                 exciting_result = await self.handle_exciting_npc_moment(
                     channel, event['type'], minute, home_team, away_team, event['team_side']
                 )
-                
+
                 if exciting_result == 'goal':
                     if event['team_side'] == 'home':
                         home_score += 1
                     else:
                         away_score += 1
-                    await self.update_pinned_score(channel, match_id, home_team, away_team, home_score, away_score, minute)
+                    await self.update_pinned_score(channel, match_id, home_team, away_team, home_score, away_score,
+                                                   minute)
 
             async with db.pool.acquire() as conn:
                 await conn.execute(
@@ -3329,7 +3407,8 @@ class MatchEngine:
             if participant['user_id']:
                 actual_rating = rating_lookup.get(participant['user_id'], participant['match_rating'])
                 new_form = await update_player_form(participant['user_id'], actual_rating)
-                print(f"  📊 Form updated for user {participant['user_id']}: Rating {actual_rating:.1f} → Form {new_form}")
+                print(
+                    f"  📊 Form updated for user {participant['user_id']}: Rating {actual_rating:.1f} → Form {new_form}")
 
         for participant in participants:
             if participant['user_id']:
@@ -3421,7 +3500,7 @@ class MatchEngine:
                             SET motm = TRUE
                             WHERE match_id = $1 AND user_id = $2
                         """, match_id, motm['user_id'])
-        
+
                         await conn.execute("""
                             UPDATE players
                             SET season_motm = season_motm + 1,
@@ -3661,11 +3740,11 @@ class EnhancedActionView(discord.ui.View):
         for action in available_actions[:5]:
             button = ActionButton(action, emoji_map.get(action, '⚽'))
             self.add_item(button)
-        
+
         # Add skip button (second row) - ALWAYS visible
         skip_button = SkipTurnButton()
         self.add_item(skip_button)
-        
+
         # Add AFK button (second row) - ONLY if player has timed out before
         if show_afk_button:
             afk_button = MarkAFKButton()
@@ -3715,56 +3794,56 @@ class SkipTurnButton(discord.ui.Button):
 
     async def callback(self, interaction: discord.Interaction):
         match_id = getattr(self.view, 'match_id', None)
-        
+
         if not match_id:
             await interaction.response.send_message(
                 "❌ Error: Match context not found!",
                 ephemeral=True
             )
             return
-        
+
         # Check if clicker is a participant
         async with db.pool.acquire() as conn:
             participant = await conn.fetchrow("""
                 SELECT user_id, team_id FROM match_participants 
                 WHERE match_id = $1 AND user_id = $2
             """, match_id, interaction.user.id)
-        
+
         if not participant:
             await interaction.response.send_message(
                 "❌ Only players in this match can skip turns!",
                 ephemeral=True
             )
             return
-        
+
         # Just skip immediately
         await interaction.response.defer()
-        
+
         # Select best action
         available_actions = [item.action for item in self.view.children if isinstance(item, ActionButton)]
         if available_actions:
             self.view.chosen_action = available_actions[0]
             self.view.skipped = True
-        
+
         # Disable buttons
         for item in self.view.children:
             item.disabled = True
-        
+
         try:
             await interaction.edit_original_response(view=self.view)
         except discord.errors.NotFound:
             pass
         except Exception as e:
             print(f"⚠️ Failed to edit interaction: {e}")
-        
+
         # Public feedback
         skipper_member = interaction.guild.get_member(interaction.user.id)
         skipper_name = skipper_member.display_name if skipper_member else "Player"
-        
+
         turn_owner_id = self.view.owner_user_id
         turn_owner_member = interaction.guild.get_member(turn_owner_id)
         turn_owner_name = turn_owner_member.display_name if turn_owner_member else "Player"
-        
+
         if interaction.user.id == turn_owner_id:
             skip_msg = (
                 f"⏭️ **{skipper_name}** skipped their turn\n"
@@ -3775,9 +3854,9 @@ class SkipTurnButton(discord.ui.Button):
                 f"⏭️ **{skipper_name}** skipped **{turn_owner_name}**'s turn\n"
                 f"Auto-selected: **{self.view.chosen_action.upper()}**"
             )
-        
+
         await interaction.followup.send(skip_msg, ephemeral=False)
-        
+
         self.view.stop()
 
 
@@ -3789,75 +3868,75 @@ class MarkAFKButton(discord.ui.Button):
             style=discord.ButtonStyle.danger,
             row=1
         )
-    
+
     async def callback(self, interaction: discord.Interaction):
         match_id = getattr(self.view, 'match_id', None)
         turn_owner_id = self.view.owner_user_id
-        
+
         if not match_id:
             await interaction.response.send_message("❌ Error: Match context not found!", ephemeral=True)
             return
-        
+
         # Check if clicker is opponent
         async with db.pool.acquire() as conn:
             skipper = await conn.fetchrow("""
                 SELECT team_id FROM match_participants 
                 WHERE match_id = $1 AND user_id = $2
             """, match_id, interaction.user.id)
-            
+
             turn_owner = await conn.fetchrow("""
                 SELECT team_id FROM match_participants 
                 WHERE match_id = $1 AND user_id = $2
             """, match_id, turn_owner_id)
-        
+
         if not skipper or not turn_owner:
             await interaction.response.send_message("❌ Error: Players not found!", ephemeral=True)
             return
-        
+
         if skipper['team_id'] == turn_owner['team_id']:
             await interaction.response.send_message("❌ You can only mark opponents as AFK!", ephemeral=True)
             return
-        
+
         # Mark player as AFK
         if self.view.match_engine:
             if match_id not in self.view.match_engine.afk_players:
                 self.view.match_engine.afk_players[match_id] = set()
             self.view.match_engine.afk_players[match_id].add(turn_owner_id)
-        
+
         await interaction.response.defer()
-        
+
         # Disable buttons
         for item in self.view.children:
             item.disabled = True
-        
+
         try:
             await interaction.edit_original_response(view=self.view)
         except:
             pass
-        
+
         # Public announcement
         turn_owner_member = interaction.guild.get_member(turn_owner_id)
         turn_owner_name = turn_owner_member.display_name if turn_owner_member else "player"
-        
+
         await interaction.followup.send(
             f"💤 **{turn_owner_name} marked as AFK**\n"
             f"All remaining turns will auto-play with recommended actions.",
             ephemeral=False
         )
-        
+
         # Auto-select this turn
         available_actions = [item.action for item in self.view.children if isinstance(item, ActionButton)]
         if available_actions:
             self.view.chosen_action = available_actions[0]
             self.view.skipped = True
-        
+
         self.view.stop()
 
 
 # ✅ NEW: Shot Placement View and Buttons
 class ShotPlacementView(discord.ui.View):
     """Interactive view for shot placement selection"""
-    
+
     def __init__(self, player, keeper, adjusted_stats, shot_placement_config, timeout=15):
         super().__init__(timeout=timeout)
         self.chosen_placement = None
@@ -3865,12 +3944,12 @@ class ShotPlacementView(discord.ui.View):
         self.keeper = keeper
         self.adjusted_stats = adjusted_stats
         self.config = shot_placement_config
-        
+
         # Add all 5 placement buttons
         for placement_key in ['left_corner', 'right_corner', 'top_center', 'low_center', 'power_shot']:
             button = ShotPlacementButton(placement_key, shot_placement_config[placement_key])
             self.add_item(button)
-    
+
     async def on_timeout(self):
         # Auto-select safest option if timeout
         self.chosen_placement = 'low_center'
@@ -3880,7 +3959,7 @@ class ShotPlacementView(discord.ui.View):
 
 class ShotPlacementButton(discord.ui.Button):
     """Individual shot placement button"""
-    
+
     def __init__(self, placement_key, config):
         super().__init__(
             label=config['name'],
@@ -3890,7 +3969,7 @@ class ShotPlacementButton(discord.ui.Button):
         )
         self.placement_key = placement_key
         self.config = config
-    
+
     async def callback(self, interaction: discord.Interaction):
         await interaction.response.defer()
         self.view.chosen_placement = self.placement_key
