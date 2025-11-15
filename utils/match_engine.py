@@ -4058,23 +4058,4 @@ class ShotPlacementButton(discord.ui.Button):
         await interaction.edit_original_response(view=self.view)
         self.view.stop()
 
-
-match_engine = Nonefetchrow("""
-                    SELECT team_id, team_name FROM european_teams WHERE team_id = $1
-                """, away_team_id)
-
-                if not home_team:
-                    home_team = await conn.fetchrow("""
-                        SELECT team_id, team_name FROM teams WHERE team_id = $1
-                    """, home_team_id)
-                if not away_team:
-                    away_team = await conn.fetchrow("""
-                        SELECT team_id, team_name FROM teams WHERE team_id = $1
-                    """, away_team_id)
-            else:
-                home_team = await conn.fetchrow("""
-                    SELECT team_id, team_name FROM teams WHERE team_id = $1
-                """, home_team_id)
-                away_team = await conn.
-
 match_engine = None
