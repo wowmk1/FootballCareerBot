@@ -3689,16 +3689,41 @@ class MatchEngine:
 
     async def simulate_npc_match(self, home_team_id, away_team_id, week=None, is_european=False):
         """Simulate NPC match using actual team strength"""
+        home_team = None
+        away_team = None
+        
         async with db.pool.acquire() as conn:
             if is_european:
+                # For European matches, try european_teams first, then teams table
                 home_team = await conn.fetchrow("""
                     SELECT team_id, team_name FROM european_teams WHERE team_id = $1
                 """, home_team_id)
+                
+                if not home_team:
+                    home_team = await conn.fetchrow("""
+                        SELECT team_id, team_name FROM teams WHERE team_id = $1
+                    """, home_team_id)
+                
+                away_team = await conn.fetchrow("""
+                    SELECT team_id, team_name FROM european_teams WHERE team_id = $1
+                """, away_team_id)
+                
+                if not away_team:
+                    away_team = await conn.fetchrow("""
+                        SELECT team_id, team_name FROM teams WHERE team_id = $1
+                    """, away_team_id)
+            else:
+                # For domestic matches, only check teams table
+                home_team = await conn.fetchrow("""
+                    SELECT team_id, team_name FROM teams WHERE team_id = $1
+                """, home_team_id)
+                
                 away_team = await conn.fetchrow("""
                     SELECT team_id, team_name FROM teams WHERE team_id = $1
                 """, away_team_id)
 
             if not home_team or not away_team:
+                logger.error(f"Could not find teams - home_team_id: {home_team_id} (found: {home_team is not None}), away_team_id: {away_team_id} (found: {away_team is not None}), is_european: {is_european}")
                 raise ValueError(f"Could not find teams: {home_team_id}, {away_team_id}")
 
             if is_european:
