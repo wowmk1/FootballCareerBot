@@ -51,7 +51,7 @@ class AdminCommands(commands.Cog):
         app_commands.Choice(name="🔍 Debug Fixtures", value="debug_fixtures"),
         app_commands.Choice(name="🔄 Restart Bot", value="restart"),
         app_commands.Choice(name="🧪 Test Training System", value="test_training"),
-        app_commands.Choice(name="⚽ Simulate Week 5", value="simulate_week_5"),
+        app_commands.Choice(name="⚽ Simulate Week 17", value="simulate_week_5"),
     ])
     @app_commands.checks.has_permissions(administrator=True)
     async def adm(
@@ -344,28 +344,28 @@ class AdminCommands(commands.Cog):
         
         await interaction.followup.send(embed=embed)
 
-    async def _simulate_week_5(self, interaction: discord.Interaction):
-        """Simulate missing Week 5 fixtures"""
+    async def _simulate_week_17(self, interaction: discord.Interaction):
+        """Simulate missing Week 17 fixtures"""
         await interaction.response.defer()
     
         from utils.match_simulator import simulate_match
     
         async with db.pool.acquire() as conn:
-            week5_fixtures = await conn.fetch("""
+            week17_fixtures = await conn.fetch("""
                 SELECT * FROM fixtures WHERE week_number = 5 AND played = false
             """)
     
-        if not week5_fixtures:
-            await interaction.followup.send("❌ No unplayed Week 5 fixtures!")
+        if not week17_fixtures:
+            await interaction.followup.send("❌ No unplayed Week 17 fixtures!")
             return
     
-        await interaction.followup.send(f"⏳ Simulating {len(week5_fixtures)} Week 5 fixtures...")
+        await interaction.followup.send(f"⏳ Simulating {len(week17_fixtures)} Week 17 fixtures...")
     
-        for fixture in week5_fixtures:
+        for fixture in week17_fixtures:
             await simulate_match(dict(fixture))
     
         await interaction.followup.send(
-            f"✅ **Simulated {len(week5_fixtures)} Week 5 fixtures!**\n\n"
+            f"✅ **Simulated {len(week5_fixtures)} Week 17 fixtures!**\n\n"
             f"Now run `/adm action:Recalculate Tables` to update standings!"
         )
 
