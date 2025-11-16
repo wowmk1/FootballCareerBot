@@ -51,7 +51,7 @@ class AdminCommands(commands.Cog):
         app_commands.Choice(name="🔍 Debug Fixtures", value="debug_fixtures"),
         app_commands.Choice(name="🔄 Restart Bot", value="restart"),
         app_commands.Choice(name="🧪 Test Training System", value="test_training"),
-        app_commands.Choice(name="⚽ Simulate Week 18", value="simulate_week_5"),
+        app_commands.Choice(name="⚽ Simulate Week 18", value="simulate_week_18"),
     ])
     @app_commands.checks.has_permissions(administrator=True)
     async def adm(
@@ -114,8 +114,8 @@ class AdminCommands(commands.Cog):
             await self._recalculate_tables(interaction)
         elif action == "debug_fixtures":
             await self._debug_fixtures(interaction)
-        elif action == "simulate_week_5":
-            await self._simulate_week_5(interaction)
+        elif action == "simulate_week_18":
+            await self._simulate_week_18(interaction)
     
     async def _advance_week(self, interaction: discord.Interaction):
         """Advance to the next week"""
