@@ -518,115 +518,81 @@ class MatchEngine:
         return None
 
     async def handle_teammate_goal(self, channel, assisting_player, attacking_team, match_id, is_european=False):
-        """
-        ✅ FIX #2: Teammate scoring with priority for user players
-        75% chance user teammates score, position-weighted
-        ✅ FIXED: Corrected SQL query to not select european_npc_id from npc_players
-        """
+        """✅ FIXED: Use correct NPC table based on match type"""
         async with db.pool.acquire() as conn:
-            # ✅ FIRST: Check for user teammates in attacking positions
             user_teammates = await conn.fetch("""
                 SELECT p.user_id, p.player_name, p.position, p.overall_rating
                 FROM players p
                 JOIN match_participants mp ON p.user_id = mp.user_id
-                WHERE mp.match_id = $1
-                  AND p.team_id = $2
-                  AND p.user_id != $3
-                  AND p.retired = FALSE
-                  AND p.position IN ('ST', 'W', 'CAM')
+                WHERE mp.match_id = $1 AND p.team_id = $2 AND p.user_id != $3
+                  AND p.retired = FALSE AND p.position IN ('ST', 'W', 'CAM')
                 ORDER BY p.overall_rating DESC
             """, match_id, attacking_team['team_id'], assisting_player['user_id'])
 
-            if user_teammates:
-                # ✅ 75% chance to pass to user teammate
-                if random.random() < 0.75:
-                    # ✅ FIX #2: Position-weighted (strikers 3x more likely)
-                    weights = []
-                    teammates_list = [dict(t) for t in user_teammates]
-                    for t in teammates_list:
-                        if t['position'] == 'ST':
-                            weights.append(3)  # Strikers 3x more likely
-                        elif t['position'] == 'W':
-                            weights.append(2)  # Wingers 2x
-                        else:
-                            weights.append(1)  # CAMs base chance
+            if user_teammates and random.random() < 0.75:
+                weights = []
+                teammates_list = [dict(t) for t in user_teammates]
+                for t in teammates_list:
+                    if t['position'] == 'ST':
+                        weights.append(3)
+                    elif t['position'] == 'W':
+                        weights.append(2)
+                    else:
+                        weights.append(1)
 
-                    teammate = random.choices(teammates_list, weights=weights, k=1)[0]
+                teammate = random.choices(teammates_list, weights=weights, k=1)[0]
 
-                    # Update assister
-                    await conn.execute("""
-                        UPDATE players
-                        SET season_assists = season_assists + 1,
-                            career_assists = career_assists + 1
-                        WHERE user_id = $1
-                    """, assisting_player['user_id'])
+                # Update stats...
+                await conn.execute("""
+                    UPDATE players SET season_assists = season_assists + 1, career_assists = career_assists + 1
+                    WHERE user_id = $1
+                """, assisting_player['user_id'])
 
-                    # Update scorer
-                    await conn.execute("""
-                        UPDATE match_participants
-                        SET goals_scored = goals_scored + 1,
-                            match_rating = GREATEST(0.0, LEAST(10.0, match_rating + 1.2))
-                        WHERE match_id = $1 AND user_id = $2
-                    """, match_id, teammate['user_id'])
+                await conn.execute("""
+                    UPDATE match_participants SET goals_scored = goals_scored + 1,
+                        match_rating = GREATEST(0.0, LEAST(10.0, match_rating + 1.2))
+                    WHERE match_id = $1 AND user_id = $2
+                """, match_id, teammate['user_id'])
 
-                    await conn.execute("""
-                        UPDATE players
-                        SET season_goals = season_goals + 1,
-                            career_goals = career_goals + 1
-                        WHERE user_id = $1
-                    """, teammate['user_id'])
+                await conn.execute("""
+                    UPDATE players SET season_goals = season_goals + 1, career_goals = career_goals + 1
+                    WHERE user_id = $1
+                """, teammate['user_id'])
 
-                    # ✅ FIX #2: Send DM notification to scorer
-                    try:
-                        scorer_user = await self.bot.fetch_user(teammate['user_id'])
-                        embed = discord.Embed(
-                            title="⚽ GOAL - TEAMMATE ASSIST!",
-                            description=f"**{teammate['player_name']}**, you finished beautifully!\n\n🅰️ **{assisting_player['player_name']}** with the assist!",
-                            color=discord.Color.green()
-                        )
-                        embed.add_field(
-                            name="📊 Impact",
-                            value=f"⚽ Goals: +1\n⭐ Rating: +1.2",
-                            inline=False
-                        )
-                        team_crest = get_team_crest_url(attacking_team['team_id'])
-                        if team_crest:
-                            embed.set_thumbnail(url=team_crest)
-                        await scorer_user.send(embed=embed)
-                    except Exception as e:
-                        print(f"⚠️ Could not send goal DM to {teammate['user_id']}: {e}")
+                # Send DM notification
+                try:
+                    scorer_user = await self.bot.fetch_user(teammate['user_id'])
+                    embed = discord.Embed(
+                        title="⚽ GOAL - TEAMMATE ASSIST!",
+                        description=f"**{teammate['player_name']}**, you finished beautifully!\n\n🅰️ **{assisting_player['player_name']}** with the assist!",
+                        color=discord.Color.green()
+                    )
+                    embed.add_field(name="📊 Impact", value=f"⚽ Goals: +1\n⭐ Rating: +1.2", inline=False)
+                    team_crest = get_team_crest_url(attacking_team['team_id'])
+                    if team_crest:
+                        embed.set_thumbnail(url=team_crest)
+                    await scorer_user.send(embed=embed)
+                except Exception as e:
+                    print(f"⚠️ Could not send goal DM to {teammate['user_id']}: {e}")
 
-                    # Update morale
-                    from utils.form_morale_system import update_player_morale
-                    await update_player_morale(teammate['user_id'], 'goal')
+                from utils.form_morale_system import update_player_morale
+                await update_player_morale(teammate['user_id'], 'goal')
 
-                    return {
-                        'scorer_name': teammate['player_name'],
-                        'scorer_user_id': teammate['user_id'],
-                        'is_user_player': True
-                    }
+                return {
+                    'scorer_name': teammate['player_name'],
+                    'scorer_user_id': teammate['user_id'],
+                    'is_user_player': True
+                }
 
-            # Fallback to NPC if no user teammates or 25% random chance
-            # ✅ FIXED: Separated queries for npc_players and european_npc_players
+            # ✅ FIXED: Use correct table based on match type
             if is_european:
-                # Try regular NPCs first
                 npc_teammate = await conn.fetchrow("""
                     SELECT player_name, npc_id, team_id, position, pace, shooting, passing, 
                             dribbling, defending, physical, overall_rating
-                    FROM npc_players
+                    FROM european_npc_players
                     WHERE team_id = $1 AND position IN ('ST', 'W', 'CAM') AND retired = FALSE
                     ORDER BY RANDOM() LIMIT 1
                 """, attacking_team['team_id'])
-                
-                # If no regular NPC found, try European NPCs
-                if not npc_teammate:
-                    npc_teammate = await conn.fetchrow("""
-                        SELECT player_name, european_npc_id as npc_id, team_id, position, pace, shooting, passing, 
-                                dribbling, defending, physical, overall_rating
-                        FROM european_npc_players
-                        WHERE team_id = $1 AND position IN ('ST', 'W', 'CAM') AND retired = FALSE
-                        ORDER BY RANDOM() LIMIT 1
-                    """, attacking_team['team_id'])
             else:
                 npc_teammate = await conn.fetchrow("""
                     SELECT player_name, npc_id, team_id, position, pace, shooting, passing, 
@@ -638,9 +604,7 @@ class MatchEngine:
 
             if npc_teammate:
                 await conn.execute("""
-                    UPDATE players
-                    SET season_assists = season_assists + 1,
-                        career_assists = career_assists + 1
+                    UPDATE players SET season_assists = season_assists + 1, career_assists = career_assists + 1
                     WHERE user_id = $1
                 """, assisting_player['user_id'])
 
@@ -851,57 +815,34 @@ class MatchEngine:
         await channel.send(embed=embed)
 
     async def handle_set_piece(self, channel, attacking_team, defending_team, minute, match_id, is_european=False):
-        """Handle corner kick or free kick"""
+        """✅ FIXED: Use correct NPC table based on match type"""
         set_piece_type = random.choice(['corner', 'free_kick'])
 
         async with db.pool.acquire() as conn:
+            # ✅ FIXED: Use correct table based on match type
             if is_european:
                 if set_piece_type == 'corner':
                     taker = await conn.fetchrow("""
                         SELECT player_name, npc_id, team_id, position, pace, shooting, passing, 
                                dribbling, defending, physical, overall_rating, season_goals, season_assists, retired
-                        FROM npc_players
-                        WHERE team_id = $1 AND retired = FALSE
-                        ORDER BY passing DESC LIMIT 1
+                        FROM european_npc_players
+                        WHERE team_id = $1 AND retired = FALSE ORDER BY passing DESC LIMIT 1
                     """, attacking_team['team_id'])
-                    
-                    if not taker:
-                        taker = await conn.fetchrow("""
-                            SELECT player_name, european_npc_id as npc_id, team_id, position, pace, shooting, passing, 
-                                   dribbling, defending, physical, overall_rating, season_goals, season_assists, retired
-                            FROM european_npc_players
-                            WHERE team_id = $1 AND retired = FALSE
-                            ORDER BY passing DESC LIMIT 1
-                        """, attacking_team['team_id'])
                 else:
                     taker = await conn.fetchrow("""
                         SELECT player_name, npc_id, team_id, position, pace, shooting, passing, 
                                dribbling, defending, physical, overall_rating, season_goals, season_assists, retired
-                        FROM npc_players
-                        WHERE team_id = $1 AND retired = FALSE
-                        ORDER BY shooting DESC LIMIT 1
+                        FROM european_npc_players
+                        WHERE team_id = $1 AND retired = FALSE ORDER BY shooting DESC LIMIT 1
                     """, attacking_team['team_id'])
-                    
-                    if not taker:
-                        taker = await conn.fetchrow("""
-                            SELECT player_name, european_npc_id as npc_id, team_id, position, pace, shooting, passing, 
-                                   dribbling, defending, physical, overall_rating, season_goals, season_assists, retired
-                            FROM european_npc_players
-                            WHERE team_id = $1 AND retired = FALSE
-                            ORDER BY shooting DESC LIMIT 1
-                        """, attacking_team['team_id'])
             else:
                 if set_piece_type == 'corner':
                     taker = await conn.fetchrow("""
-                        SELECT * FROM npc_players
-                        WHERE team_id = $1 AND retired = FALSE
-                        ORDER BY passing DESC LIMIT 1
+                        SELECT * FROM npc_players WHERE team_id = $1 AND retired = FALSE ORDER BY passing DESC LIMIT 1
                     """, attacking_team['team_id'])
                 else:
                     taker = await conn.fetchrow("""
-                        SELECT * FROM npc_players
-                        WHERE team_id = $1 AND retired = FALSE
-                        ORDER BY shooting DESC LIMIT 1
+                        SELECT * FROM npc_players WHERE team_id = $1 AND retired = FALSE ORDER BY shooting DESC LIMIT 1
                     """, attacking_team['team_id'])
 
         if not taker:
@@ -917,7 +858,6 @@ class MatchEngine:
 
         if set_piece_type == 'free_kick':
             roll = random.randint(1, 100)
-            # ✅ REBALANCED: Free kicks harder
             success_threshold = min(90, 8 + (taker['shooting'] - 70) // 3)
 
             if roll <= success_threshold:
@@ -929,17 +869,13 @@ class MatchEngine:
                 await channel.send(embed=result_embed)
 
                 async with db.pool.acquire() as conn:
-                    if is_european and 'european_npc_id' in taker:
+                    if is_european:
                         await conn.execute("""
-                            UPDATE european_npc_players
-                            SET season_goals = season_goals + 1
-                            WHERE european_npc_id = $1
-                        """, taker['european_npc_id'])
+                            UPDATE european_npc_players SET season_goals = season_goals + 1 WHERE npc_id = $1
+                        """, taker['npc_id'])
                     else:
                         await conn.execute("""
-                            UPDATE npc_players
-                            SET season_goals = season_goals + 1
-                            WHERE npc_id = $1
+                            UPDATE npc_players SET season_goals = season_goals + 1 WHERE npc_id = $1
                         """, taker['npc_id'])
 
                 return {'goal': True, 'scorer_name': taker['player_name'], 'set_piece': True}
@@ -951,9 +887,8 @@ class MatchEngine:
                 )
                 await channel.send(embed=result_embed)
 
-        else:
+        else:  # Corner
             roll = random.randint(1, 100)
-            # ✅ REBALANCED: Corners harder
             success_threshold = min(90, 15 + (taker['passing'] - 70) // 3)
 
             if roll <= success_threshold:
@@ -962,19 +897,10 @@ class MatchEngine:
                         header_player = await conn.fetchrow("""
                             SELECT player_name, npc_id, team_id, position, pace, shooting, passing, 
                                    dribbling, defending, physical, overall_rating, season_goals, season_assists, retired
-                            FROM npc_players
+                            FROM european_npc_players
                             WHERE team_id = $1 AND position IN ('ST', 'CB') AND retired = FALSE
                             ORDER BY physical DESC LIMIT 1
                         """, attacking_team['team_id'])
-                        
-                        if not header_player:
-                            header_player = await conn.fetchrow("""
-                                SELECT player_name, european_npc_id as npc_id, team_id, position, pace, shooting, passing, 
-                                       dribbling, defending, physical, overall_rating, season_goals, season_assists, retired
-                                FROM european_npc_players
-                                WHERE team_id = $1 AND position IN ('ST', 'CB') AND retired = FALSE
-                                ORDER BY physical DESC LIMIT 1
-                            """, attacking_team['team_id'])
                     else:
                         header_player = await conn.fetchrow("""
                             SELECT * FROM npc_players
@@ -991,17 +917,13 @@ class MatchEngine:
                     await channel.send(embed=result_embed)
 
                     async with db.pool.acquire() as conn:
-                        if is_european and 'european_npc_id' in header_player:
+                        if is_european:
                             await conn.execute("""
-                                UPDATE european_npc_players
-                                SET season_goals = season_goals + 1
-                                WHERE european_npc_id = $1
-                            """, header_player['european_npc_id'])
+                                UPDATE european_npc_players SET season_goals = season_goals + 1 WHERE npc_id = $1
+                            """, header_player['npc_id'])
                         else:
                             await conn.execute("""
-                                UPDATE npc_players
-                                SET season_goals = season_goals + 1
-                                WHERE npc_id = $1
+                                UPDATE npc_players SET season_goals = season_goals + 1 WHERE npc_id = $1
                             """, header_player['npc_id'])
 
                     return {'goal': True, 'scorer_name': header_player['player_name'], 'set_piece': True}
@@ -1221,9 +1143,9 @@ class MatchEngine:
 
         return None
 
-    async def followup_shooting_chance(self, channel, player, attacking_team, defending_team,
-                                       match_id, is_european=False):
-        """After successful dribble - you get a shot!"""
+    async def followup_shooting_chance(self, channel, player, attacking_team, defending_team, match_id,
+                                       is_european=False):
+        """✅ FIXED: Use correct NPC table for keeper"""
         adjusted_stats = self.apply_form_to_stats(player)
 
         async with db.pool.acquire() as conn:
@@ -1231,19 +1153,9 @@ class MatchEngine:
                 keeper = await conn.fetchrow("""
                     SELECT player_name, npc_id, team_id, position, pace, shooting, passing, 
                            dribbling, defending, physical, overall_rating, season_goals, season_assists, retired
-                    FROM npc_players
-                    WHERE team_id = $1 AND position = 'GK' AND retired = FALSE
-                    LIMIT 1
+                    FROM european_npc_players
+                    WHERE team_id = $1 AND position = 'GK' AND retired = FALSE LIMIT 1
                 """, defending_team['team_id'])
-                
-                if not keeper:
-                    keeper = await conn.fetchrow("""
-                        SELECT player_name, european_npc_id as npc_id, team_id, position, pace, shooting, passing, 
-                               dribbling, defending, physical, overall_rating, season_goals, season_assists, retired
-                        FROM european_npc_players
-                        WHERE team_id = $1 AND position = 'GK' AND retired = FALSE
-                        LIMIT 1
-                    """, defending_team['team_id'])
             else:
                 keeper = await conn.fetchrow("""
                     SELECT * FROM npc_players
@@ -1278,15 +1190,12 @@ class MatchEngine:
             result_embed.add_field(name="⚽ GOAL!", value=f"**{player['player_name']}** scores!", inline=False)
             async with db.pool.acquire() as conn:
                 await conn.execute("""
-                    UPDATE match_participants
-                    SET goals_scored = goals_scored + 1,
+                    UPDATE match_participants SET goals_scored = goals_scored + 1,
                         match_rating = GREATEST(0.0, LEAST(10.0, match_rating + 1.0))
                     WHERE match_id = $1 AND user_id = $2
                 """, match_id, player['user_id'])
                 await conn.execute("""
-                    UPDATE players
-                    SET season_goals = season_goals + 1,
-                        career_goals = career_goals + 1
+                    UPDATE players SET season_goals = season_goals + 1, career_goals = career_goals + 1
                     WHERE user_id = $1
                 """, player['user_id'])
         elif success:
@@ -1297,9 +1206,8 @@ class MatchEngine:
         await channel.send(embed=result_embed)
         return {'goal': is_goal, 'scorer_name': player['player_name'] if is_goal else None}
 
-    async def followup_1v1_keeper(self, channel, player, attacking_team, defending_team,
-                                  match_id, is_european=False):
-        """1v1 with keeper - high pressure moment"""
+    async def followup_1v1_keeper(self, channel, player, attacking_team, defending_team, match_id, is_european=False):
+        """✅ FIXED: Use correct NPC table for keeper"""
         adjusted_stats = self.apply_form_to_stats(player)
 
         embed = discord.Embed(
@@ -1315,19 +1223,9 @@ class MatchEngine:
                 keeper = await conn.fetchrow("""
                     SELECT player_name, npc_id, team_id, position, pace, shooting, passing, 
                            dribbling, defending, physical, overall_rating, season_goals, season_assists, retired
-                    FROM npc_players
-                    WHERE team_id = $1 AND position = 'GK' AND retired = FALSE
-                    LIMIT 1
+                    FROM european_npc_players
+                    WHERE team_id = $1 AND position = 'GK' AND retired = FALSE LIMIT 1
                 """, defending_team['team_id'])
-                
-                if not keeper:
-                    keeper = await conn.fetchrow("""
-                        SELECT player_name, european_npc_id as npc_id, team_id, position, pace, shooting, passing, 
-                               dribbling, defending, physical, overall_rating, season_goals, season_assists, retired
-                        FROM european_npc_players
-                        WHERE team_id = $1 AND position = 'GK' AND retired = FALSE
-                        LIMIT 1
-                    """, defending_team['team_id'])
             else:
                 keeper = await conn.fetchrow("""
                     SELECT * FROM npc_players
@@ -1340,9 +1238,8 @@ class MatchEngine:
         player_roll = random.randint(1, 20)
         keeper_roll = random.randint(1, 20)
 
-        # ✅ REBALANCED: Keeper gets major advantage in 1v1
         player_total = player_stat + player_roll
-        keeper_total = keeper_stat + keeper_roll + 11  # Was 0, now +11
+        keeper_total = keeper_stat + keeper_roll + 11  # Keeper advantage
 
         is_goal = player_total > keeper_total
 
@@ -1359,15 +1256,12 @@ class MatchEngine:
             )
             async with db.pool.acquire() as conn:
                 await conn.execute("""
-                    UPDATE match_participants
-                    SET goals_scored = goals_scored + 1,
+                    UPDATE match_participants SET goals_scored = goals_scored + 1,
                         match_rating = GREATEST(0.0, LEAST(10.0, match_rating + 1.5))
                     WHERE match_id = $1 AND user_id = $2
                 """, match_id, player['user_id'])
                 await conn.execute("""
-                    UPDATE players
-                    SET season_goals = season_goals + 1,
-                        career_goals = career_goals + 1
+                    UPDATE players SET season_goals = season_goals + 1, career_goals = career_goals + 1
                     WHERE user_id = $1
                 """, player['user_id'])
         else:
@@ -1380,9 +1274,9 @@ class MatchEngine:
         await channel.send(embed=result_embed)
         return {'goal': is_goal, 'scorer_name': player['player_name'] if is_goal else None}
 
-    async def followup_counter_attack(self, channel, player, attacking_team, defending_team,
-                                      match_id, is_european=False):
-        """Quick counter-attack"""
+    async def followup_counter_attack(self, channel, player, attacking_team, defending_team, match_id,
+                                      is_european=False):
+        """✅ FIXED: Use correct NPC table"""
         embed = discord.Embed(
             title="⚡💨 COUNTER-ATTACK!",
             description=f"**{attacking_team['team_name']}** breaks forward!",
@@ -1396,19 +1290,10 @@ class MatchEngine:
                 attacker = await conn.fetchrow("""
                     SELECT player_name, npc_id, team_id, position, pace, shooting, passing, 
                            dribbling, defending, physical, overall_rating, season_goals, season_assists, retired
-                    FROM npc_players
+                    FROM european_npc_players
                     WHERE team_id = $1 AND position IN ('ST', 'W') AND retired = FALSE
                     ORDER BY pace DESC LIMIT 1
                 """, attacking_team['team_id'])
-                
-                if not attacker:
-                    attacker = await conn.fetchrow("""
-                        SELECT player_name, european_npc_id as npc_id, team_id, position, pace, shooting, passing, 
-                               dribbling, defending, physical, overall_rating, season_goals, season_assists, retired
-                        FROM european_npc_players
-                        WHERE team_id = $1 AND position IN ('ST', 'W') AND retired = FALSE
-                        ORDER BY pace DESC LIMIT 1
-                    """, attacking_team['team_id'])
             else:
                 attacker = await conn.fetchrow("""
                     SELECT * FROM npc_players
@@ -1423,7 +1308,6 @@ class MatchEngine:
         roll = random.randint(1, 20)
         total = counter_stat + roll
 
-        # ✅ REBALANCED: Much harder to score from counters
         is_goal = total >= 105
 
         result_embed = discord.Embed(
@@ -1447,23 +1331,18 @@ class MatchEngine:
 
                 async with db.pool.acquire() as conn:
                     await conn.execute("""
-                        UPDATE match_participants
-                        SET match_rating = GREATEST(0.0, LEAST(10.0, match_rating + 0.6))
+                        UPDATE match_participants SET match_rating = GREATEST(0.0, LEAST(10.0, match_rating + 0.6))
                         WHERE match_id = $1 AND user_id = $2
                     """, match_id, player['user_id'])
 
             async with db.pool.acquire() as conn:
-                if is_european and 'european_npc_id' in attacker:
+                if is_european:
                     await conn.execute("""
-                        UPDATE european_npc_players
-                        SET season_goals = season_goals + 1
-                        WHERE european_npc_id = $1
-                    """, attacker['european_npc_id'])
+                        UPDATE european_npc_players SET season_goals = season_goals + 1 WHERE npc_id = $1
+                    """, attacker['npc_id'])
                 else:
                     await conn.execute("""
-                        UPDATE npc_players
-                        SET season_goals = season_goals + 1
-                        WHERE npc_id = $1
+                        UPDATE npc_players SET season_goals = season_goals + 1 WHERE npc_id = $1
                     """, attacker['npc_id'])
         else:
             result_embed.add_field(
@@ -1475,8 +1354,7 @@ class MatchEngine:
             if player:
                 async with db.pool.acquire() as conn:
                     await conn.execute("""
-                        UPDATE match_participants
-                        SET match_rating = GREATEST(0.0, LEAST(10.0, match_rating + 0.2))
+                        UPDATE match_participants SET match_rating = GREATEST(0.0, LEAST(10.0, match_rating + 0.2))
                         WHERE match_id = $1 AND user_id = $2
                     """, match_id, player['user_id'])
 
@@ -1484,25 +1362,16 @@ class MatchEngine:
         return {'goal': is_goal, 'scorer_name': attacker['player_name'] if is_goal else None}
 
     async def followup_rebound(self, channel, player, attacking_team, defending_team, match_id, is_european=False):
-        """Rebound falls to teammate"""
+        """✅ FIXED: Use correct NPC table"""
         async with db.pool.acquire() as conn:
             if is_european:
                 attacker = await conn.fetchrow("""
                     SELECT player_name, npc_id, team_id, position, pace, shooting, passing, 
                            dribbling, defending, physical, overall_rating, season_goals, season_assists, retired
-                    FROM npc_players
+                    FROM european_npc_players
                     WHERE team_id = $1 AND position IN ('ST', 'W', 'CAM') AND retired = FALSE
                     ORDER BY RANDOM() LIMIT 1
                 """, attacking_team['team_id'])
-                
-                if not attacker:
-                    attacker = await conn.fetchrow("""
-                        SELECT player_name, european_npc_id as npc_id, team_id, position, pace, shooting, passing, 
-                               dribbling, defending, physical, overall_rating, season_goals, season_assists, retired
-                        FROM european_npc_players
-                        WHERE team_id = $1 AND position IN ('ST', 'W', 'CAM') AND retired = FALSE
-                        ORDER BY RANDOM() LIMIT 1
-                    """, attacking_team['team_id'])
             else:
                 attacker = await conn.fetchrow("""
                     SELECT * FROM npc_players
@@ -1517,7 +1386,6 @@ class MatchEngine:
         roll = random.randint(1, 20)
         total = rebound_stat + roll
 
-        # ✅ REBALANCED: Harder to score from rebounds
         is_goal = total >= 95
 
         result_embed = discord.Embed(
@@ -1541,23 +1409,18 @@ class MatchEngine:
 
                 async with db.pool.acquire() as conn:
                     await conn.execute("""
-                        UPDATE match_participants
-                        SET match_rating = GREATEST(0.0, LEAST(10.0, match_rating + 0.4))
+                        UPDATE match_participants SET match_rating = GREATEST(0.0, LEAST(10.0, match_rating + 0.4))
                         WHERE match_id = $1 AND user_id = $2
                     """, match_id, player['user_id'])
 
             async with db.pool.acquire() as conn:
-                if is_european and 'european_npc_id' in attacker:
+                if is_european:
                     await conn.execute("""
-                        UPDATE european_npc_players
-                        SET season_goals = season_goals + 1
-                        WHERE european_npc_id = $1
-                    """, attacker['european_npc_id'])
+                        UPDATE european_npc_players SET season_goals = season_goals + 1 WHERE npc_id = $1
+                    """, attacker['npc_id'])
                 else:
                     await conn.execute("""
-                        UPDATE npc_players
-                        SET season_goals = season_goals + 1
-                        WHERE npc_id = $1
+                        UPDATE npc_players SET season_goals = season_goals + 1 WHERE npc_id = $1
                     """, attacker['npc_id'])
         else:
             result_embed.add_field(name="❌ CLEARED!", value="Defender gets there first!", inline=False)
@@ -1566,25 +1429,16 @@ class MatchEngine:
         return {'goal': is_goal, 'scorer_name': attacker['player_name'] if is_goal else None}
 
     async def followup_layoff_pass(self, channel, player, attacking_team, match_id, is_european=False):
-        """Hold-up play leads to layoff"""
+        """✅ FIXED: Use correct NPC table"""
         async with db.pool.acquire() as conn:
             if is_european:
                 midfielder = await conn.fetchrow("""
                     SELECT player_name, npc_id, team_id, position, pace, shooting, passing, 
                            dribbling, defending, physical, overall_rating, season_goals, season_assists, retired
-                    FROM npc_players
+                    FROM european_npc_players
                     WHERE team_id = $1 AND position IN ('CAM', 'CM') AND retired = FALSE
                     ORDER BY RANDOM() LIMIT 1
                 """, attacking_team['team_id'])
-                
-                if not midfielder:
-                    midfielder = await conn.fetchrow("""
-                        SELECT player_name, european_npc_id as npc_id, team_id, position, pace, shooting, passing, 
-                               dribbling, defending, physical, overall_rating, season_goals, season_assists, retired
-                        FROM european_npc_players
-                        WHERE team_id = $1 AND position IN ('CAM', 'CM') AND retired = FALSE
-                        ORDER BY RANDOM() LIMIT 1
-                    """, attacking_team['team_id'])
             else:
                 midfielder = await conn.fetchrow("""
                     SELECT * FROM npc_players
@@ -1605,7 +1459,6 @@ class MatchEngine:
 
         shot_roll = random.randint(1, 20)
         shot_total = midfielder['shooting'] + shot_roll
-        # ✅ REBALANCED: Harder to score from layoffs
         is_goal = shot_total >= 95
 
         result_embed = discord.Embed(
@@ -1621,15 +1474,12 @@ class MatchEngine:
             )
             async with db.pool.acquire() as conn:
                 await conn.execute("""
-                    UPDATE match_participants
-                    SET assists = assists + 1,
+                    UPDATE match_participants SET assists = assists + 1,
                         match_rating = GREATEST(0.0, LEAST(10.0, match_rating + 0.8))
                     WHERE match_id = $1 AND user_id = $2
                 """, match_id, player['user_id'])
                 await conn.execute("""
-                    UPDATE players
-                    SET season_assists = season_assists + 1,
-                        career_assists = career_assists + 1
+                    UPDATE players SET season_assists = season_assists + 1, career_assists = career_assists + 1
                     WHERE user_id = $1
                 """, player['user_id'])
             return {
@@ -1644,52 +1494,30 @@ class MatchEngine:
         return None
 
     async def followup_loose_ball(self, channel, attacking_team, defending_team, match_id, is_european=False):
-        """50-50 ball"""
+        """✅ FIXED: Use correct NPC table"""
         async with db.pool.acquire() as conn:
             if is_european:
                 attacker = await conn.fetchrow("""
                     SELECT player_name, npc_id, team_id, position, pace, shooting, passing, 
                            dribbling, defending, physical, overall_rating, season_goals, season_assists, retired
-                    FROM npc_players
-                    WHERE team_id = $1 AND retired = FALSE
-                    ORDER BY RANDOM() LIMIT 1
+                    FROM european_npc_players
+                    WHERE team_id = $1 AND retired = FALSE ORDER BY RANDOM() LIMIT 1
                 """, attacking_team['team_id'])
-                
-                if not attacker:
-                    attacker = await conn.fetchrow("""
-                        SELECT player_name, european_npc_id as npc_id, team_id, position, pace, shooting, passing, 
-                               dribbling, defending, physical, overall_rating, season_goals, season_assists, retired
-                        FROM european_npc_players
-                        WHERE team_id = $1 AND retired = FALSE
-                        ORDER BY RANDOM() LIMIT 1
-                    """, attacking_team['team_id'])
-                
+
                 defender = await conn.fetchrow("""
                     SELECT player_name, npc_id, team_id, position, pace, shooting, passing, 
                            dribbling, defending, physical, overall_rating, season_goals, season_assists, retired
-                    FROM npc_players
-                    WHERE team_id = $1 AND retired = FALSE
-                    ORDER BY RANDOM() LIMIT 1
+                    FROM european_npc_players
+                    WHERE team_id = $1 AND retired = FALSE ORDER BY RANDOM() LIMIT 1
                 """, defending_team['team_id'])
-                
-                if not defender:
-                    defender = await conn.fetchrow("""
-                        SELECT player_name, european_npc_id as npc_id, team_id, position, pace, shooting, passing, 
-                               dribbling, defending, physical, overall_rating, season_goals, season_assists, retired
-                        FROM european_npc_players
-                        WHERE team_id = $1 AND retired = FALSE
-                        ORDER BY RANDOM() LIMIT 1
-                    """, defending_team['team_id'])
             else:
                 attacker = await conn.fetchrow("""
                     SELECT * FROM npc_players
-                    WHERE team_id = $1 AND retired = FALSE
-                    ORDER BY RANDOM() LIMIT 1
+                    WHERE team_id = $1 AND retired = FALSE ORDER BY RANDOM() LIMIT 1
                 """, attacking_team['team_id'])
                 defender = await conn.fetchrow("""
                     SELECT * FROM npc_players
-                    WHERE team_id = $1 AND retired = FALSE
-                    ORDER BY RANDOM() LIMIT 1
+                    WHERE team_id = $1 AND retired = FALSE ORDER BY RANDOM() LIMIT 1
                 """, defending_team['team_id'])
 
         if not attacker or not defender:
@@ -1716,25 +1544,16 @@ class MatchEngine:
         return None
 
     async def followup_long_shot(self, channel, player, attacking_team, match_id, is_european=False):
-        """Long shot from edge of box"""
+        """✅ FIXED: Use correct NPC table"""
         async with db.pool.acquire() as conn:
             if is_european:
                 attacker = await conn.fetchrow("""
                     SELECT player_name, npc_id, team_id, position, pace, shooting, passing, 
                            dribbling, defending, physical, overall_rating, season_goals, season_assists, retired
-                    FROM npc_players
+                    FROM european_npc_players
                     WHERE team_id = $1 AND position IN ('CAM', 'CM') AND retired = FALSE
                     ORDER BY shooting DESC LIMIT 1
                 """, attacking_team['team_id'])
-                
-                if not attacker:
-                    attacker = await conn.fetchrow("""
-                        SELECT player_name, european_npc_id as npc_id, team_id, position, pace, shooting, passing, 
-                               dribbling, defending, physical, overall_rating, season_goals, season_assists, retired
-                        FROM european_npc_players
-                        WHERE team_id = $1 AND position IN ('CAM', 'CM') AND retired = FALSE
-                        ORDER BY shooting DESC LIMIT 1
-                    """, attacking_team['team_id'])
             else:
                 attacker = await conn.fetchrow("""
                     SELECT * FROM npc_players
@@ -1754,7 +1573,6 @@ class MatchEngine:
         await asyncio.sleep(1)
 
         shot_total = attacker['shooting'] + random.randint(1, 20)
-        # ✅ REBALANCED: Long shots extremely difficult
         is_goal = shot_total >= 110
 
         result_embed = discord.Embed(
@@ -1778,23 +1596,18 @@ class MatchEngine:
 
                 async with db.pool.acquire() as conn:
                     await conn.execute("""
-                        UPDATE match_participants
-                        SET match_rating = GREATEST(0.0, LEAST(10.0, match_rating - 0.3))
+                        UPDATE match_participants SET match_rating = GREATEST(0.0, LEAST(10.0, match_rating - 0.3))
                         WHERE match_id = $1 AND user_id = $2
                     """, match_id, player['user_id'])
 
             async with db.pool.acquire() as conn:
-                if is_european and 'european_npc_id' in attacker:
+                if is_european:
                     await conn.execute("""
-                        UPDATE european_npc_players
-                        SET season_goals = season_goals + 1
-                        WHERE european_npc_id = $1
-                    """, attacker['european_npc_id'])
+                        UPDATE european_npc_players SET season_goals = season_goals + 1 WHERE npc_id = $1
+                    """, attacker['npc_id'])
                 else:
                     await conn.execute("""
-                        UPDATE npc_players
-                        SET season_goals = season_goals + 1
-                        WHERE npc_id = $1
+                        UPDATE npc_players SET season_goals = season_goals + 1 WHERE npc_id = $1
                     """, attacker['npc_id'])
 
             return {'goal': True, 'scorer_name': attacker['player_name']}
@@ -2062,23 +1875,15 @@ class MatchEngine:
 
             async with db.pool.acquire() as conn:
                 position_filter = ', '.join([f"'{pos}'" for pos in defender_positions])
+
                 if is_european:
                     result = await conn.fetchrow(f"""
                         SELECT player_name, npc_id, team_id, position, pace, shooting, passing, 
                                dribbling, defending, physical, overall_rating
-                        FROM npc_players
+                        FROM european_npc_players
                         WHERE team_id = $1 AND position IN ({position_filter}) AND retired = FALSE
                         ORDER BY RANDOM() LIMIT 1
                     """, defending_team['team_id'])
-                    
-                    if not result:
-                        result = await conn.fetchrow(f"""
-                            SELECT player_name, european_npc_id as npc_id, team_id, position, pace, shooting, passing, 
-                                   dribbling, defending, physical, overall_rating
-                            FROM european_npc_players
-                            WHERE team_id = $1 AND position IN ({position_filter}) AND retired = FALSE
-                            ORDER BY RANDOM() LIMIT 1
-                        """, defending_team['team_id'])
                 else:
                     result = await conn.fetchrow(f"""
                         SELECT player_name, npc_id, team_id, position, pace, shooting, passing, 
@@ -2087,6 +1892,7 @@ class MatchEngine:
                         WHERE team_id = $1 AND position IN ({position_filter}) AND retired = FALSE
                         ORDER BY RANDOM() LIMIT 1
                     """, defending_team['team_id'])
+
                 defender = dict(result) if result else None
 
             result = await self.execute_action_with_duel(
@@ -2113,59 +1919,45 @@ class MatchEngine:
 
         position_filter = ', '.join([f"'{pos}'" for pos in defender_positions])
 
+        # ✅ FIXED: Query correct table based on is_european flag
         async with db.pool.acquire() as conn:
             if is_european:
                 result = await conn.fetchrow(f"""
-                        SELECT player_name, npc_id, team_id, position, pace, shooting, passing, 
-                               dribbling, defending, physical, overall_rating
-                        FROM npc_players
-                        WHERE team_id = $1 AND position IN ({position_filter}) AND retired = FALSE
-                        ORDER BY RANDOM() LIMIT 1
-                    """, defending_team['team_id'])
-                if not result:
-                    result = await conn.fetchrow(f"""
-                            SELECT player_name, european_npc_id as npc_id, team_id, position, pace, shooting, passing, 
-                                   dribbling, defending, physical, overall_rating
-                            FROM european_npc_players
-                            WHERE team_id = $1 AND position IN ({position_filter}) AND retired = FALSE
-                            ORDER BY RANDOM() LIMIT 1
-                        """, defending_team['team_id'])
+                    SELECT player_name, npc_id, team_id, position, pace, shooting, passing, 
+                           dribbling, defending, physical, overall_rating
+                    FROM european_npc_players
+                    WHERE team_id = $1 AND position IN ({position_filter}) AND retired = FALSE
+                    ORDER BY RANDOM() LIMIT 1
+                """, defending_team['team_id'])
             else:
                 result = await conn.fetchrow(f"""
-                        SELECT player_name, npc_id, team_id, position, pace, shooting, passing, 
-                               dribbling, defending, physical, overall_rating
-                        FROM npc_players 
-                        WHERE team_id = $1 AND position IN ({position_filter}) AND retired = FALSE
-                        ORDER BY RANDOM() LIMIT 1
-                    """, defending_team['team_id'])
+                    SELECT player_name, npc_id, team_id, position, pace, shooting, passing, 
+                           dribbling, defending, physical, overall_rating
+                    FROM npc_players 
+                    WHERE team_id = $1 AND position IN ({position_filter}) AND retired = FALSE
+                    ORDER BY RANDOM() LIMIT 1
+                """, defending_team['team_id'])
             defender = dict(result) if result else None
 
+        # ✅ FIXED: Fallback query also uses correct table
         if not defender:
             async with db.pool.acquire() as conn:
                 if is_european:
                     result = await conn.fetchrow("""
-                            SELECT player_name, npc_id, team_id, position, pace, shooting, passing, 
-                                   dribbling, defending, physical, overall_rating
-                            FROM npc_players
-                            WHERE team_id = $1 AND retired = FALSE
-                            ORDER BY RANDOM() LIMIT 1
-                        """, defending_team['team_id'])
-                    if not result:
-                        result = await conn.fetchrow("""
-                                SELECT player_name, european_npc_id as npc_id, team_id, position, pace, shooting, passing, 
-                                       dribbling, defending, physical, overall_rating
-                                FROM european_npc_players
-                                WHERE team_id = $1 AND retired = FALSE
-                                ORDER BY RANDOM() LIMIT 1
-                            """, defending_team['team_id'])
+                        SELECT player_name, npc_id, team_id, position, pace, shooting, passing, 
+                               dribbling, defending, physical, overall_rating
+                        FROM european_npc_players
+                        WHERE team_id = $1 AND retired = FALSE
+                        ORDER BY RANDOM() LIMIT 1
+                    """, defending_team['team_id'])
                 else:
                     result = await conn.fetchrow("""
-                            SELECT player_name, npc_id, team_id, position, pace, shooting, passing, 
-                                   dribbling, defending, physical, overall_rating
-                            FROM npc_players
-                            WHERE team_id = $1 AND retired = FALSE
-                            ORDER BY RANDOM() LIMIT 1
-                        """, defending_team['team_id'])
+                        SELECT player_name, npc_id, team_id, position, pace, shooting, passing, 
+                               dribbling, defending, physical, overall_rating
+                        FROM npc_players
+                        WHERE team_id = $1 AND retired = FALSE
+                        ORDER BY RANDOM() LIMIT 1
+                    """, defending_team['team_id'])
                 defender = dict(result) if result else None
 
         if defender:
@@ -2201,24 +1993,16 @@ class MatchEngine:
             inline=False
         )
 
-        # ✅ NEW: Get goalkeeper for 2-stage calculations
+        # ✅ FIXED: Get goalkeeper for 2-stage calculations using correct table
         async with db.pool.acquire() as conn:
             if is_european:
                 keeper = await conn.fetchrow("""
                     SELECT player_name, npc_id, team_id, position, pace, shooting, passing, 
                            dribbling, defending, physical, overall_rating
-                    FROM npc_players
+                    FROM european_npc_players
                     WHERE team_id = $1 AND position = 'GK' AND retired = FALSE
                     LIMIT 1
                 """, defending_team['team_id'])
-                if not keeper:
-                    keeper = await conn.fetchrow("""
-                        SELECT player_name, european_npc_id as npc_id, team_id, position, pace, shooting, passing, 
-                               dribbling, defending, physical, overall_rating
-                        FROM european_npc_players
-                        WHERE team_id = $1 AND position = 'GK' AND retired = FALSE
-                        LIMIT 1
-                    """, defending_team['team_id'])
             else:
                 keeper = await conn.fetchrow("""
                     SELECT player_name, npc_id, team_id, position, pace, shooting, passing, 
@@ -2498,27 +2282,20 @@ class MatchEngine:
             # Get the goalkeeper
             async with db.pool.acquire() as conn:
                 if is_european:
-                    keeper = await conn.fetchrow("""
+                    keeper = await conn.fetchrow('''
                         SELECT player_name, npc_id, team_id, position, pace, shooting, passing, 
-                               dribbling, defending, physical, overall_rating, season_goals, season_assists, retired
-                        FROM npc_players
+                               dribbling, defending, physical, overall_rating
+                        FROM european_npc_players
                         WHERE team_id = $1 AND position = 'GK' AND retired = FALSE
                         LIMIT 1
-                    """, defending_team['team_id'])
-                    
-                    if not keeper:
-                        keeper = await conn.fetchrow("""
-                            SELECT player_name, european_npc_id as npc_id, team_id, position, pace, shooting, passing, 
-                                   dribbling, defending, physical, overall_rating, season_goals, season_assists, retired
-                            FROM european_npc_players
-                            WHERE team_id = $1 AND position = 'GK' AND retired = FALSE
-                            LIMIT 1
-                        """, defending_team['team_id'])
+                    ''', defending_team['team_id'])
                 else:
-                    keeper = await conn.fetchrow("""
-                        SELECT * FROM npc_players
+                    keeper = await conn.fetchrow('''
+                        SELECT player_name, npc_id, team_id, position, pace, shooting, passing, 
+                               dribbling, defending, physical, overall_rating
+                        FROM npc_players
                         WHERE team_id = $1 AND position = 'GK' AND retired = FALSE LIMIT 1
-                    """, defending_team['team_id'])
+                    ''', defending_team['team_id'])
                 keeper = dict(keeper) if keeper else None
 
             if keeper:
@@ -2730,10 +2507,10 @@ class MatchEngine:
                                 WHERE team_id = $1 AND position = 'GK' AND retired = FALSE
                                 LIMIT 1
                             """, defending_team['team_id'])
-                            
+
                             if not keeper:
                                 keeper = await conn.fetchrow("""
-                                    SELECT player_name, european_npc_id as npc_id, team_id, position, pace, shooting, passing, 
+                                    SELECT player_name, npc_id as npc_id, team_id, position, pace, shooting, passing, 
                                            dribbling, defending, physical, overall_rating, season_goals, season_assists, retired
                                     FROM european_npc_players
                                     WHERE team_id = $1 AND position = 'GK' AND retired = FALSE
@@ -3013,29 +2790,19 @@ class MatchEngine:
 
     async def handle_npc_moment(self, channel, team_id, minute, attacking_team, defending_team, is_home,
                                 is_european=False):
+        """✅ FIXED: Use correct NPC table based on match type"""
         async with db.pool.acquire() as conn:
             if is_european:
                 result = await conn.fetchrow("""
                     SELECT player_name, npc_id, team_id, position, pace, shooting, passing, 
                            dribbling, defending, physical, overall_rating, season_goals, season_assists, retired
-                    FROM npc_players
-                    WHERE team_id = $1 AND retired = FALSE
-                    ORDER BY RANDOM() LIMIT 1
+                    FROM european_npc_players
+                    WHERE team_id = $1 AND retired = FALSE ORDER BY RANDOM() LIMIT 1
                 """, team_id)
-                
-                if not result:
-                    result = await conn.fetchrow("""
-                        SELECT player_name, european_npc_id as npc_id, team_id, position, pace, shooting, passing, 
-                               dribbling, defending, physical, overall_rating, season_goals, season_assists, retired
-                        FROM european_npc_players
-                        WHERE team_id = $1 AND retired = FALSE
-                        ORDER BY RANDOM() LIMIT 1
-                    """, team_id)
             else:
-                result = await conn.fetchrow(
-                    "SELECT * FROM npc_players WHERE team_id = $1 AND retired = FALSE ORDER BY RANDOM() LIMIT 1",
-                    team_id
-                )
+                result = await conn.fetchrow("""
+                    SELECT * FROM npc_players WHERE team_id = $1 AND retired = FALSE ORDER BY RANDOM() LIMIT 1
+                """, team_id)
             npc = dict(result) if result else None
 
         if not npc:
@@ -3057,10 +2824,10 @@ class MatchEngine:
             )
             await channel.send(embed=embed)
             async with db.pool.acquire() as conn:
-                if is_european and 'european_npc_id' in npc:
+                if is_european:
                     await conn.execute(
-                        "UPDATE european_npc_players SET season_goals = season_goals + 1 WHERE european_npc_id = $1",
-                        npc['european_npc_id']
+                        "UPDATE european_npc_players SET season_goals = season_goals + 1 WHERE npc_id = $1",
+                        npc['npc_id']
                     )
                 else:
                     await conn.execute(
@@ -3688,26 +3455,27 @@ class MatchEngine:
             )
 
     async def simulate_npc_match(self, home_team_id, away_team_id, week=None, is_european=False):
-        """Simulate NPC match using actual team strength"""
+        """✅ FIXED: Use correct NPC table based on match type"""
         home_team = None
         away_team = None
-        
+
         async with db.pool.acquire() as conn:
             if is_european:
-                # For European matches, try european_teams first, then teams table
+                # For European matches, check european_teams table
                 home_team = await conn.fetchrow("""
                     SELECT team_id, team_name FROM european_teams WHERE team_id = $1
                 """, home_team_id)
-                
+
+                # Fallback to regular teams if not in european_teams
                 if not home_team:
                     home_team = await conn.fetchrow("""
                         SELECT team_id, team_name FROM teams WHERE team_id = $1
                     """, home_team_id)
-                
+
                 away_team = await conn.fetchrow("""
                     SELECT team_id, team_name FROM european_teams WHERE team_id = $1
                 """, away_team_id)
-                
+
                 if not away_team:
                     away_team = await conn.fetchrow("""
                         SELECT team_id, team_name FROM teams WHERE team_id = $1
@@ -3717,37 +3485,27 @@ class MatchEngine:
                 home_team = await conn.fetchrow("""
                     SELECT team_id, team_name FROM teams WHERE team_id = $1
                 """, home_team_id)
-                
+
                 away_team = await conn.fetchrow("""
                     SELECT team_id, team_name FROM teams WHERE team_id = $1
                 """, away_team_id)
 
             if not home_team or not away_team:
-                logger.error(f"Could not find teams - home_team_id: {home_team_id} (found: {home_team is not None}), away_team_id: {away_team_id} (found: {away_team is not None}), is_european: {is_european}")
+                logger.error(
+                    f"Could not find teams - home_team_id: {home_team_id}, away_team_id: {away_team_id}, is_european: {is_european}")
                 raise ValueError(f"Could not find teams: {home_team_id}, {away_team_id}")
 
+            # ✅ FIXED: Query correct NPC table
             if is_european:
                 home_npcs = await conn.fetch("""
-                    SELECT overall_rating FROM npc_players
+                    SELECT overall_rating FROM european_npc_players
                     WHERE team_id = $1 AND retired = FALSE
                 """, home_team_id)
-                
-                if not home_npcs:
-                    home_npcs = await conn.fetch("""
-                        SELECT overall_rating FROM european_npc_players
-                        WHERE team_id = $1 AND retired = FALSE
-                    """, home_team_id)
 
                 away_npcs = await conn.fetch("""
-                    SELECT overall_rating FROM npc_players
+                    SELECT overall_rating FROM european_npc_players
                     WHERE team_id = $1 AND retired = FALSE
                 """, away_team_id)
-                
-                if not away_npcs:
-                    away_npcs = await conn.fetch("""
-                        SELECT overall_rating FROM european_npc_players
-                        WHERE team_id = $1 AND retired = FALSE
-                    """, away_team_id)
             else:
                 home_npcs = await conn.fetch("""
                     SELECT overall_rating FROM npc_players
@@ -3818,7 +3576,6 @@ class MatchEngine:
                 'home_team': home_team['team_name'],
                 'away_team': away_team['team_name']
             }
-
 
 # ═══════════════════════════════════════════════════════════════
 # ✅ BUTTON CLASSES WITH SKIP & AFK FUNCTIONALITY + SHOT PLACEMENT
