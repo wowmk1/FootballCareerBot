@@ -144,6 +144,50 @@ class FootballBot(commands.Bot):
             logger.warning(f"⚠️ Migration warning: {e}")
 
         # ============================================
+        # AUTO-MIGRATE: Add season stats to european_npc_players
+        # ============================================
+        try:
+            async with db.pool.acquire() as conn:
+                # Check if season_goals exists
+                result = await conn.fetchrow("""
+                    SELECT column_name
+                    FROM information_schema.columns
+                    WHERE table_name = 'european_npc_players'
+                      AND column_name = 'season_goals'
+                """)
+
+                if not result:
+                    logger.info("📋 Adding season_goals to european_npc_players...")
+                    await conn.execute("""
+                        ALTER TABLE european_npc_players
+                        ADD COLUMN season_goals INTEGER DEFAULT 0
+                    """)
+                    logger.info("✅ season_goals column added")
+                else:
+                    logger.info("✅ season_goals column already exists")
+
+                # Check if season_assists exists
+                result = await conn.fetchrow("""
+                    SELECT column_name
+                    FROM information_schema.columns
+                    WHERE table_name = 'european_npc_players'
+                      AND column_name = 'season_assists'
+                """)
+
+                if not result:
+                    logger.info("📋 Adding season_assists to european_npc_players...")
+                    await conn.execute("""
+                        ALTER TABLE european_npc_players
+                        ADD COLUMN season_assists INTEGER DEFAULT 0
+                    """)
+                    logger.info("✅ season_assists column added")
+                else:
+                    logger.info("✅ season_assists column already exists")
+
+        except Exception as e:
+            logger.warning(f"⚠️ European NPC stats migration warning: {e}")
+
+        # ============================================
         # AUTO-MIGRATE: Add season_motm column
         # ============================================
         try:
